@@ -1,0 +1,15 @@
+{
+  "lastRoll": 1,
+  "rngPos": 200,
+  "seed": 1,
+  "state": {
+    "lastRoll": 1,
+    "rngPos": 200,
+    "rngSeed": 1,
+    "turn": 201
+  },
+  "stateHash": "9f8f6a35",
+  "trailHash": "ccbbc84d",
+  "turn": 201,
+  "turns": 200
+}

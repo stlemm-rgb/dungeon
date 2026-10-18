@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- 검사용 페이지. 파이썬 검사 도구가 Chrome/Edge 헤드리스로 열고, 결과를 #result에 적으면 읽어 간다 -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>harness</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    #frameHost iframe { display: block; border: 0; }
+    #result { position: absolute; left: 0; top: 0; margin: 0; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="frameHost"></div>
+  <pre id="result">RUNNING</pre>
+  <script>
+    // 스크립트 오류를 모두 모은다 (harness.js보다 먼저 걸어 둠)
+    var HARNESS_ERRORS = [];
+    window.addEventListener("error", function (e) { HARNESS_ERRORS.push(String(e.message) + " @" + (e.filename || "").split("/").pop() + ":" + e.lineno); });
+  </script>
+  <!-- 게임 계산 파일만 불러온다 (화면 ui_ 파일은 제외). index.html의 순서와 맞춘다 -->
+  <script src="../data/data_config.js"></script>
+  <script src="../data/data_text.js"></script>
+  <script src="../js/core_state.js"></script>
+  <script src="../js/core_rng.js"></script>
+  <script src="../js/core_turn.js"></script>
+  <script src="../js/core_save.js"></script>
+  <script src="../js/fx.js"></script>
+  <script src="harness.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- 게임 첫 화면. file://로 더블클릭해도 돌아가게 일반 script 태그만 쓴다 (ES 모듈·외부 라이브러리 금지) -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>던전</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="app"></main>
+  <noscript>이 게임은 자바스크립트가 필요합니다.</noscript>
+
+  <!-- 불러오는 순서: 데이터 -> 게임 계산(core) -> 연출 -> 화면(ui). 새 파일을 만들면 여기와 tools/harness.html에 추가 -->
+  <script src="data/data_config.js"></script>
+  <script src="data/data_text.js"></script>
+  <script src="js/core_state.js"></script>
+  <script src="js/core_rng.js"></script>
+  <script src="js/core_turn.js"></script>
+  <script src="js/core_save.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/ui_parts.js"></script>
+  <script src="js/ui_main.js"></script>
+</body>
+</html>

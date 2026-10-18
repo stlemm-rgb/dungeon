@@ -1,0 +1,22 @@
+{
+  "_설명": "이름 앞글자 표 (원본은 여기 한 곳). JS 파일을 새로 만들면 여기에 한 줄 추가한다. tools/test_names.py와 tools/filemap.py가 읽는다.",
+  "_규칙": [
+    "함수 이름은 그 파일의 앞글자(prefixes 중 하나)로 시작해야 한다.",
+    "js/·tools/ 파일의 전역 변수는 앞글자(또는 대문자 앞글자, 예: SAVE_)로 시작하거나 allowGlobals에 있어야 한다.",
+    "data/ 파일은 함수 금지, 전역 이름은 대문자_밑줄.",
+    "전역 이름(함수·변수)은 모든 파일을 통틀어 한 번만."
+  ],
+  "allowGlobals": ["state"],
+  "files": {
+    "data/data_config.js": { "prefixes": [], "dataOnly": true },
+    "data/data_text.js": { "prefixes": [], "dataOnly": true },
+    "js/core_state.js": { "prefixes": ["state_"] },
+    "js/core_rng.js": { "prefixes": ["rng_"] },
+    "js/core_turn.js": { "prefixes": ["turn_"] },
+    "js/core_save.js": { "prefixes": ["save_"] },
+    "js/fx.js": { "prefixes": ["fx"] },
+    "js/ui_parts.js": { "prefixes": ["ui_"] },
+    "js/ui_main.js": { "prefixes": ["ui_"] },
+    "tools/harness.js": { "prefixes": ["harness_"] }
+  }
+}
