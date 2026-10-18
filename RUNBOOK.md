@@ -3,6 +3,13 @@
 > 빌드·실행·배포 명령. 같은 실수를 두 번 하면 여기에 적는다.
 
 ## 새 PC 준비 (회사 PC 등)
+0. 그 PC에서 처음 한 번만 (이미 했으면 건너뜀). Git이 없으면 https://git-scm.com/download/win 에서 기본값으로 설치하고, PowerShell을 새로 열어:
+   ```powershell
+   git config --global user.name "stlemm"
+   git config --global user.email "stlemm@gmail.com"
+   git config --global core.autocrlf true
+   ```
+   처음 push할 때 GitHub 로그인 창이 뜨면 로그인 (한 번만)
 1. 집 PC와 **같은 경로**로 받기: `git clone https://github.com/stlemm-rgb/dungeon.git C:\Project\dungeon`
 2. 필요한 것: Python 3 (`py --version`), Chrome. Node.js·pip 설치는 필요 없음
 3. `py tools/check_all.py` 실행 → 8개 통과 확인
@@ -18,6 +25,14 @@ git add 파일1 파일2           # 이름으로만
 git commit -m "무엇을 했나"
 git push                      # 원격 연결 후
 ```
+
+## git 문제가 생기면
+| 증상 | 뜻 | 할 일 |
+| --- | --- | --- |
+| push가 `rejected` | 다른 PC에서 먼저 올린 게 있음 | `git pull` 후 다시 `git push` |
+| pull 때 `Your local changes ... would be overwritten` | 이 PC에 커밋 안 한 변경이 있음 | 살리려면 커밋한 뒤 `git pull`. 버려도 되는지는 AI에게 먼저 물어보기 |
+| `CONFLICT` (충돌) | 두 PC에서 같은 파일을 따로 고침 | **더 진행하지 말고** 화면을 AI에게 보여 주기 |
+| 게임 세이브가 다른 PC에 없음 | 세이브는 브라우저에 저장돼서 git으로 안 옮겨짐 | 정상. (세이브 내보내기 기능은 나중에) |
 
 ## 실행
 - 게임: `index.html`을 더블클릭 (file://로 열림, 설치·빌드 없음). 주소 옵션: `?seed=숫자`(저장 없을 때 새 게임 씨앗), `?nostorage=1`(저장 막힘 흉내)
