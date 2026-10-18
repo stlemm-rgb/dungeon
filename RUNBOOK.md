@@ -2,6 +2,14 @@
 
 > 빌드·실행·배포 명령. 같은 실수를 두 번 하면 여기에 적는다.
 
+## 새 PC 준비 (회사 PC 등)
+1. 집 PC와 **같은 경로**로 받기: `git clone https://github.com/stlemm-rgb/dungeon.git C:\Project\dungeon`
+2. 필요한 것: Python 3 (`py --version`), Chrome. Node.js·pip 설치는 필요 없음
+3. `py tools/check_all.py` 실행 → 8개 통과 확인
+   - `shots.py`만 실패하면 글꼴 차이일 수 있음. `index.html`을 직접 열어 화면을 확인한 뒤 `py tools/shots.py --update`
+4. HANDOFF.md부터 읽고 이어서 작업
+5. PC를 옮길 때는 끝낸 PC에서 커밋·push, 새 PC에서 `git pull` 먼저. 한 번에 한 PC에서만
+
 ## 커밋 순서 (매번)
 ```bash
 git pull                      # 원격 연결 후
@@ -23,4 +31,5 @@ git push                      # 원격 연결 후
 (GitHub Pages/Actions 설정 후 적기)
 
 ## 겪은 실수
-(아직 없음)
+- Git Bash에서 `python`이 Microsoft Store 바로가기로 잡혀 아무 출력 없이 끝남 → `py`로 실행
+- 이 PC의 Edge는 헤드리스 실행에서 아무것도 출력하지 않음 → 검사는 Chrome을 먼저 씀
