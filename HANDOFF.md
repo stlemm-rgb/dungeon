@@ -5,7 +5,8 @@
 마지막 갱신: 2026-10-18
 
 ## 지금 상태
-- 작업 환경 세팅 완료 (git, 공동 규칙 문서)
+- 작업 환경 세팅 완료 (git, 공동 규칙 문서, GitHub: stlemm-rgb/dungeon)
+- 에이전트 프로필: `core-dev`(Opus 5.5 핵심 개발, 워크트리), `frontend`(화면, 워크트리), `codex-review`(Codex 리뷰). 배정 표는 CLAUDE.md
 - 게임 코드: 아직 없음. 설계는 새_게임_청사진.md
 
 ## 다음에 할 일
