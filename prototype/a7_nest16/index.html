@@ -32,6 +32,9 @@
   .door b { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #f0d34a; color: #000; font-size: 10px; border-radius: 8px; padding: 0 4px; line-height: 14px; }
   .door.unused { opacity: .35; }
   .cell.lure { background: #5a2f5a; } .cell.lure .fn { color: #ff9ff3; }
+  .result, .sheetbg { z-index: 20; } /* 창은 판의 문 숫자보다 위에 */
+  .company { font-size: 13px; margin: 6px 0; padding: 6px 8px; background: #3a3546; border-radius: 6px; } .company b { color: #f0d34a; } .cname { color: #ffb4a8; }
+  .result p.small { font-size: 11px; color: var(--dim); }
   .bar { display: flex; gap: 6px; margin: 10px 0; }
   .bar button { flex: 1; font-weight: bold; }
   .bar button.primary { background: #7a3fb0; border-color: #9a5fd0; }
@@ -61,13 +64,30 @@
 <script src="rules.js"></script>
 <script>
 var G, UNDO = [], run = null;
-function newGame(req) {
-  G = { req: req || 'trap', day: 1, layout: defaultLayout(), units: {}, history: [], phase: 'build', last: null };
-  UNDO = [];
+// 회사(meta): 회차가 바뀌어도 남는 것 = 자금, 명성, 몬스터(레벨·경험치). 이번 회차(run): 던전, 배치, 날짜
+function newCompany() {
+  var mons = [], n = 0;
+  Object.keys(A7.roster).forEach(function (t) { for (var i = 0; i < A7.roster[t]; i++) mons.push({ id: 'm' + (++n), type: t, lv: 1, exp: 0 }); });
+  G = { meta: { round: 1, gold: 300, fame: 0, mons: mons, record: [] } };
+  startRound();
 }
+function startRound() {
+  G.offers = makeContracts(G.meta.fame); G.contract = null; G.phase = 'contract';
+  G.layout = defaultLayout(); G.units = {}; G.day = 1; G.history = []; G.last = null; G.exp = {}; UNDO = [];
+}
+function takeContract(i) {
+  G.contract = G.offers[i]; applyContract(G.contract, G.meta.gold); G.phase = 'build';
+}
+A7.monOf = function (id) { return G.meta.mons.filter(function (m) { return m.id === id; })[0]; };
 // 공사는 횟수 제한 없음: 금이 남아 있으면 언제든. 되돌리기는 날짜와 상관없이 벌칙 없이 (금도 그대로 돌아옴)
-function sum() { return summaryOf(G.layout, G.units, G.req); }
-function waiting(m) { var used = 0; Object.keys(G.units).forEach(function (z) { G.units[z].forEach(function (x) { if (x === m) used++; }); }); return A7.roster[m] - used; }
+function sum() { return summaryOf(G.layout, G.units, G.contract ? G.contract.kind : 'trap'); }
+// 아직 배치 안 된 몬스터 (종류·레벨이 같으면 묶어서 보여 줌)
+function idle() { var used = {}; Object.keys(G.units).forEach(function (z) { G.units[z].forEach(function (x) { used[x] = true; }); }); return G.meta.mons.filter(function (m) { return !used[m.id]; }); }
+function idleGroups() {
+  var g = {};
+  idle().forEach(function (m) { var k = m.type + ':' + m.lv; (g[k] = g[k] || { type: m.type, lv: m.lv, ids: [] }).ids.push(m.id); });
+  return Object.keys(g).sort(function (a, b) { return g[b].lv - g[a].lv || a.localeCompare(b); }).map(function (k) { return g[k]; });
+}
 function snap() { UNDO.push(JSON.stringify({ layout: G.layout, units: G.units })); }
 function undo() { if (!UNDO.length) return; var o = JSON.parse(UNDO.pop()); G.layout = o.layout; G.units = o.units; }
 function whyNot(z, k) {
@@ -93,11 +113,10 @@ function toast(msg) {
 function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A7 구역16</h1><a href="../index.html">시안 목록 →</a></header>' +
-    '<div class="reqs" id="reqs"></div><section class="card" id="demand"></section>' +
+    '<div class="company" id="company"></div><section class="card" id="demand"></section>' +
     '<div class="day" id="day"></div><p class="rule">이동: 갈림길에서는 반반 나뉘어요. <b>미끼</b> 쪽으로는 전원 몰리고, 몬스터가 든 <b>대기실</b>은 보이니까 피해요(다른 길이 있으면). <b>함정</b>은 모르고 들어가요. 문 위 숫자는 오늘 그리로 올 인원이에요.</p><div class="yardbar" id="yard" data-z="Y"></div><div class="wrap"><div class="board" id="board"></div><div id="over"></div></div>' +
     '<div class="bar" id="bar"></div><ol class="log" id="log"></ol>' +
     '<div class="sheetbg hidden" id="sheetbg"><div class="sheet" id="sheet"></div></div><div class="result hidden" id="result"></div>';
-  el('reqs').onclick = function (e) { var b = e.target.closest('button'); if (b && !run && b.dataset.req !== G.req) { newGame(b.dataset.req); el('log').innerHTML = ''; draw(); } };
   document.body.addEventListener('click', function (e) { var z = e.target.closest('#yard, #board [data-z]'); if (!z || run || G.phase !== 'build') return; if (z.dataset.z === 'B') return toast('보스·보물방: 나중에 친위대가 들어가요'); openSheet(z.dataset.z); });
   el('sheetbg').onclick = function (e) { if (e.target.id === 'sheetbg') closeSheet(); };
   el('bar').onclick = function (e) {
@@ -105,14 +124,16 @@ function buildPage() {
     if (b.id === 'go') startRun();
     else if (b.id === 'undo') { undo(); draw(); }
     else if (b.id === 'next') { G.day++; G.phase = 'build'; G.last = null; el('log').innerHTML = ''; draw(); }
-    else if (b.id === 'again') { newGame(G.req); el('log').innerHTML = ''; draw(); }
+    else if (b.id === 'settle') showSettlement();
   };
 }
 function drawTop() {
-  el('reqs').innerHTML = Object.keys(A7.reqs).map(function (k) { return '<button data-req="' + k + '" class="' + (G.req === k ? 'on' : '') + '">' + A7.reqs[k].name + '</button>'; }).join('');
-  var s = sum(), r = A7.reqs[G.req];
+  var M = G.meta;
+  el('company').innerHTML = '<b>' + M.round + '회차</b> · 자금 <b>' + M.gold + '</b> · 명성 <b>' + M.fame + '</b> · 몬스터 ' + M.mons.length + '마리' + (G.contract ? ' · <span class="cname">' + G.contract.name + '</span>' : '');
+  if (!G.contract) { el('demand').innerHTML = '<div class="want">의뢰서를 고르세요</div>'; el('day').innerHTML = ''; return; }
+  var s = sum(), r = A7.reqs[G.contract.kind];
   function row(ok, label, val) { return '<li class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✔' : '✘') + ' ' + label + ' <b>' + val + '</b></li>'; }
-  el('demand').innerHTML = '<div class="want">마왕의 요구: ' + r.text + '</div><ul>' +
+  el('demand').innerHTML = '<div class="want">마왕의 요구: ' + (r.kind === 'trap' ? '함정 복도' : '몬스터 대기실') + ' 60% 이상 + 가치 ' + A7.minValue + ' 이상 · 보수 ' + G.contract.fee + '</div><ul>' +
     row(s.ratioOk, r.kind === 'trap' ? '함정 비율' : '대기실 비율', Math.round(s.ratio * 100) + '% (함정 ' + s.trap + ' / 대기실 ' + s.den + ')') +
     row(s.valueOk, '가치 (시설 + 몬스터)', s.value + ' / ' + A7.minValue) + row(s.left >= 0, '남은 금', s.left + ' / ' + A7.budget) + '</ul>' +
     '<div class="enemy">침입 예고: ' + A7.days.map(function (n, i) { return (i + 1) + '일째 ' + n + '명'; }).join(' → ') + ' (모험가 체력 ' + A7.inv.hp + ' · 공격 ' + A7.inv.atk + '). 3일째를 막고 요구를 맞추면 납품</div>';
@@ -147,7 +168,7 @@ function drawBoard() {
     var label = '';
     if (first) {
       label = '<div class="zn">' + A7.names[z] + '</div><div class="fn">' + f.short + '</div>';
-      if (kind === 'den') label += '<div class="mons">' + (us.length ? us.map(function (m) { return PROTO.items[m].short; }).join(' ') : '비어 있음') + ' ' + us.length + '/' + slotsOf(k, z) + '</div>';
+      if (kind === 'den') label += '<div class="mons">' + (us.length ? us.map(function (m) { var st = monStat(m); return st.short + (st.lv > 1 ? st.lv : ''); }).join(' ') : '비어 있음') + ' ' + us.length + '/' + slotsOf(k, z) + '</div>';
       else if (kind === 'trap') label += '<div class="mons">피해 ' + trapDmgOf(z) + '</div>';
       else if (kind === 'boss') label += '<div class="mons">친위대 (나중에)</div>';
       if (G.last && G.last.contrib[z] && G.last.contrib[z].dmg) label += '<div class="contrib">준 피해 ' + G.last.contrib[z].dmg + (G.last.contrib[z].kill ? '·처치 ' + G.last.contrib[z].kill : '') + '</div>';
@@ -167,7 +188,7 @@ function drawBoard() {
 }
 function drawBar() {
   var h = run ? '' : G.phase === 'build' ? '<button id="undo"' + (UNDO.length ? '' : ' disabled') + '>↶ 되돌리기</button><button id="go" class="primary">' + G.day + '일째 침입 시작</button>'
-    : G.day < 3 ? '<button id="next" class="primary">' + (G.day + 1) + '일째로</button>' : '<button id="again" class="primary">처음부터</button>';
+    : G.phase === 'contract' ? '' : G.day < 3 ? '<button id="next" class="primary">' + (G.day + 1) + '일째로</button>' : '<button id="settle" class="primary">납품하고 정산</button>';
   el('bar').innerHTML = h;
 }
 function draw() { drawTop(); drawBoard(); drawBar(); document.body.classList.toggle('running', !!run); }
@@ -180,12 +201,13 @@ function openSheet(z) {
     var us = G.units[z] || [];
     var sl = slotsOf(k, z);
     h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + sl + ') — 자리를 누르면 빼요</div><div class="slots">';
-    for (var i = 0; i < sl; i++) h += us[i] ? '<button data-out="' + i + '"><b>' + PROTO.items[us[i]].short + '</b><small>빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
+    for (var i = 0; i < sl; i++) h += us[i] ? '<button data-out="' + i + '"><b>' + monStat(us[i]).short + ' Lv' + monStat(us[i]).lv + '</b><small>빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
     h += '</div><div class="lbl">대기 중인 몬스터 — 누르면 넣어요</div><div class="roster">';
-    Object.keys(A7.roster).forEach(function (m) {
-      var it = PROTO.items[m], w = waiting(m);
-      h += '<button data-in="' + m + '"' + (w && us.length < sl ? '' : ' disabled') + '><b>' + it.short + ' ×' + w + '</b><small>체' + it.hp + ' 공' + it.atk + '</small><small>가치 ' + it.value + '</small></button>';
+    idleGroups().forEach(function (gr) {
+      var st = monStat(gr.ids[0]);
+      h += '<button data-in="' + gr.ids[0] + '"' + (us.length < sl ? '' : ' disabled') + '><b>' + st.short + ' Lv' + gr.lv + ' ×' + gr.ids.length + '</b><small>체' + st.hp + ' 공' + st.atk + '</small><small>가치 ' + st.value + '</small></button>';
     });
+    if (!idle().length) h += '<span class="why">대기 중인 몬스터가 없어요</span>';
     h += '</div>';
   }
   h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="opts">';
@@ -229,20 +251,60 @@ function step() {
 }
 function finish(res) {
   G.history.push(res.reached); G.last = res; run = null;
+  Object.keys(res.exp).forEach(function (id) { G.exp[id] = (G.exp[id] || 0) + res.exp[id]; });
   var s = sum(), r = el('result'), last = G.day === 3, deliver = last && s.ok && res.reached === 0;
   r.className = 'result ' + (res.reached ? 'lose' : 'win');
   r.innerHTML = '<h2>' + G.day + '일째: ' + (res.reached ? res.reached + '명이 보물방에!' : '모두 막았다!') + '</h2>' +
     '<p>침입자 ' + res.n + '명 중 처치 <b>' + res.killed + '</b> · 보물방 도달 <b>' + res.reached + '</b></p>' +
-    (last ? '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.reached ? '3일째에 뚫렸어요' : '요구 충족 + 방어 성공') + '</p><p>3일 기록: ' + G.history.map(function (x, i) { return (i + 1) + '일 ' + (x ? x + '명 도달' : '막음'); }).join(' · ') + '</p>'
+    (last ? '<p class="verdict">' + (deliver ? '납품 가능! 아래 [납품하고 정산]을 누르세요' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.reached ? '3일째에 뚫렸어요' : '요구 충족 + 방어 성공') + '</p><p>3일 기록: ' + G.history.map(function (x, i) { return (i + 1) + '일 ' + (x ? x + '명 도달' : '막음'); }).join(' · ') + '</p>'
       : '<p>판에 구역별 피해·처치가 표시돼요. 내일 마음껏 고쳐 보세요 (되돌리기도 자유).</p>') +
     '<button id="ok" class="primary">확인</button>';
   el('ok').onclick = function () { r.className = 'result hidden'; draw(); };
   draw();
 }
 
-newGame('trap');
+// ---------- 의뢰서 ----------
+function showContracts() {
+  var h = '<h3>' + G.meta.round + '회차 의뢰서</h3><div class="why">마왕이 던전을 주문했어요. 하나를 고르세요. 명성이 오를수록 침입자가 늘고 강해지지만 보수도 커져요.</div><div class="opts">';
+  G.offers.forEach(function (c, i) {
+    h += '<button data-c="' + i + '"><b>' + c.name + ' — 보수 ' + c.fee + '</b><small>요구: ' + (c.kind === 'trap' ? '함정 복도' : '몬스터 대기실') + ' 60% 이상 + 가치 ' + c.minValue + ' 이상</small><small>침입 예고: ' + c.days.join(' → ') + '명 (모험가 체력 ' + c.hp + ')</small><small>공사 예산: 선금 ' + c.advance + ' + 회사 자금 ' + G.meta.gold + ' = ' + (c.advance + G.meta.gold) + '</small></button>';
+  });
+  el('sheet').innerHTML = h + '</div>';
+  el('sheet').onclick = function (e) { var b = e.target.closest('[data-c]'); if (!b) return; takeContract(+b.dataset.c); closeSheet(); el('log').innerHTML = ''; draw(); };
+  el('sheetbg').className = 'sheetbg';
+}
+// ---------- 정산: 보수 + 판매 대금, 명성, 몬스터 경험치·레벨 ----------
+function showSettlement() {
+  var s = sum(), ok = s.ok && G.history[2] === 0, M = G.meta;
+  var sale = ok ? Math.floor(s.value / 2) : 0, fee = ok ? G.contract.fee : 0, spent = s.cost, before = M.gold;
+  // 성공: 남은 선금 + 보수 + 판매 대금. 실패: 남은 선금은 반납하고, 선금을 넘겨 쓴 만큼만 손해
+  var adv = G.contract.advance, over = Math.max(0, spent - adv);
+  M.gold = ok ? M.gold + adv - spent + fee + sale : M.gold - over;
+  var fameBefore = M.fame; M.fame = Math.max(0, M.fame + (ok ? 1 : -1));
+  var ups = [];
+  Object.keys(G.exp).forEach(function (id) {
+    var m = A7.monOf(id); m.exp += G.exp[id];
+    while (m.exp >= A7.levelUp(m.lv)) { m.exp -= A7.levelUp(m.lv); m.lv++; ups.push(PROTO.items[m.type].short + ' Lv' + m.lv); }
+  });
+  M.record.push({ round: M.round, name: G.contract.name, ok: ok, gold: M.gold - before });
+  var r = el('result');
+  r.className = 'result ' + (ok ? 'win' : 'lose');
+  r.innerHTML = '<h2>' + M.round + '회차 ' + (ok ? '납품 성공!' : '납품 실패') + '</h2>' +
+    '<p>' + (ok ? '보수 <b>' + fee + '</b> + 판매 대금(가치 ' + s.value + '의 절반) <b>' + sale + '</b>' : (!s.ok ? '요구를 못 맞췄어요' : '3일째에 뚫렸어요') + ' — 보수 없음') + '</p>' +
+    '<p>' + (ok ? '선금 <b>+' + adv + '</b> · 공사비 <b>-' + spent + '</b>' : '선금 ' + adv + ' 중 남은 ' + Math.max(0, adv - spent) + '은 반납' + (over ? ', 선금을 넘긴 공사비 <b>-' + over + '</b>' : '')) + ' → 자금 ' + before + ' → <b>' + M.gold + '</b></p>' +
+    '<p>명성 ' + fameBefore + ' → <b>' + M.fame + '</b>' + (M.fame > fameBefore ? ' (다음 의뢰는 침입자가 늘고 보수도 커져요)' : '') + '</p>' +
+    '<p>' + (ups.length ? '레벨 업: <b>' + ups.join(', ') + '</b>' : '레벨 업한 몬스터 없음 (몬스터는 싸우면 경험치 1, 처치하면 1 더)') + '</p>' +
+    '<p class="small">지난 기록: ' + M.record.map(function (x) { return x.round + '회 ' + (x.ok ? '성공' : '실패') + '(' + (x.gold >= 0 ? '+' : '') + x.gold + ')'; }).join(' · ') + '</p>' +
+    '<button id="nextRound" class="primary">다음 의뢰 받기</button>';
+  el('nextRound').onclick = function () { r.className = 'result hidden'; M.round++; startRound(); el('log').innerHTML = ''; draw(); showContracts(); };
+  G.phase = 'settled'; draw();
+}
+
+newCompany();
 buildPage();
 draw();
+showContracts();
+
 </script>
 </body>
 </html>

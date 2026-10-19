@@ -51,6 +51,22 @@ function costOf(k, z) { var f = A7.fac[k]; return f.perCell !== undefined ? f.pe
 function valueOf(k, z) { var f = A7.fac[k]; return f.valuePerCell !== undefined ? f.valuePerCell * sizeOf(z) : f.value; }
 function slotsOf(k, z) { return A7.fac[k].kind === 'den' ? 2 * sizeOf(z) : 0; } // 칸당 몬스터 2자리
 function trapDmgOf(z) { return A7.trapPerCell * sizeOf(z); }
+// ---------- 몬스터 한 마리씩 (회차가 바뀌어도 회사에 남음, 레벨이 오르면 체력·공격 +20%) ----------
+A7.monOf = function (id) { return { type: id, lv: 1 }; }; // 화면이 실제 명부로 바꿔 끼움 (규칙 시험용 기본값: id = 종류)
+A7.levelUp = function (lv) { return lv * 2; }; // 다음 레벨까지 필요한 처치 수
+function monStat(id) {
+  var m = A7.monOf(id), b = PROTO.items[m.type], mul = 1 + 0.2 * (m.lv - 1);
+  return { name: b.name, short: b.short, hp: Math.round(b.hp * mul), atk: Math.round(b.atk * mul), value: b.value, lv: m.lv, type: m.type };
+}
+// ---------- 회차와 의뢰서 ----------
+// 명성이 오를수록 침입자가 늘고 강해지고, 요구와 보상도 커진다
+function makeContracts(fame) {
+  return ['trap', 'den'].map(function (kind) {
+    return { kind: kind, name: A7.reqs[kind].name, days: [5 + fame, 6 + fame, 8 + fame], hp: 45 + 5 * fame,
+      minValue: 450 + 50 * fame, fee: 200 + 50 * fame, advance: 300 + 50 * fame }; // advance: 마왕이 주는 공사 선금
+  });
+}
+function applyContract(c, gold) { A7.days = c.days; A7.inv.hp = c.hp; A7.minValue = c.minValue; A7.budget = gold + c.advance; } // 공사 예산 = 회사 자금 + 선금
 function defaultLayout() {
   var L = { Y: 'forest' };
   Object.keys(A7.cells).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
@@ -62,7 +78,7 @@ function summaryOf(layout, units, req) {
     var k = layout[z], f = A7.fac[k]; s.cost += costOf(k, z); s.value += valueOf(k, z);
     if (f.kind === 'trap') s.trap++;
     if (f.kind === 'den') s.den++;
-    (units[z] || []).forEach(function (m) { s.value += PROTO.items[m].value; });
+    (units[z] || []).forEach(function (m) { s.value += monStat(m).value; });
   });
   var tot = s.trap + s.den, r = A7.reqs[req];
   s.ratio = tot ? s[r.kind] / tot : 0;
@@ -97,7 +113,7 @@ function forecast(layout, units, n) {
   return { at: at, flow: flow };
 }
 function simulate(layout, units, n) {
-  var steps = [], contrib = {}, flow = {}, groups = { E: [] };
+  var steps = [], contrib = {}, flow = {}, groups = { E: [] }, kills = {}, exp = {};
   for (var i = 0; i < n; i++) groups.E.push({ hp: A7.inv.hp, trap: false });
   function alive(g) { return g.filter(function (v) { return v.hp > 0; }); }
   steps.push({ z: 'Y', n: n, text: A7.inv.name + ' ' + n + '명이 공터에 모였다' });
@@ -113,7 +129,7 @@ function simulate(layout, units, n) {
     }
     var amb = g.some(function (v) { return v.trap; });
     g.forEach(function (v) { v.trap = false; });
-    var us = (f.kind === 'den' ? units[z] || [] : []).map(function (m) { return { m: m, hp: PROTO.items[m].hp }; });
+    var us = (f.kind === 'den' ? units[z] || [] : []).map(function (m) { var st = monStat(m); return { m: m, hp: st.hp, atk: st.atk, kills: 0 }; });
     if (!us.length) { steps.push({ z: z, n: g.length, text: f.kind === 'lure' ? A7.names[z] + ' 미끼에 ' + g.length + '명이 몰려옴' : null }); return; }
     var before = g.length;
     for (var r = 0; r < A7.rounds; r++) {
@@ -122,10 +138,11 @@ function simulate(layout, units, n) {
       us.forEach(function (u) {
         if (u.hp <= 0) return;
         var t = alive(g)[0]; if (!t) return;
-        var atk = PROTO.items[u.m].atk * (amb ? A7.ambush : 1), b = t.hp;
-        t.hp -= atk; c.dmg += Math.min(b, atk); if (t.hp <= 0) c.kill++;
+        var atk = u.atk * (amb ? A7.ambush : 1), b = t.hp;
+        t.hp -= atk; c.dmg += Math.min(b, atk); if (t.hp <= 0) { c.kill++; u.kills++; kills[u.m] = (kills[u.m] || 0) + 1; }
       });
     }
+    us.forEach(function (u) { exp[u.m] = (exp[u.m] || 0) + 1 + u.kills; }); // 경험치: 싸움에 참가 1 + 처치 1씩
     var lost = us.filter(function (u) { return u.hp <= 0; }).length;
     steps.push({ z: z, n: before, text: A7.names[z] + ' 대기실' + (amb ? ' 기습' : '') + ': 침입자 ' + before + '→' + alive(g).length + '명' + (lost ? ', 몬스터 ' + lost + '마리 쓰러짐' : '') });
   }
@@ -139,5 +156,5 @@ function simulate(layout, units, n) {
   });
   var reached = alive(groups.B || []).length;
   steps.push({ z: 'B', n: reached, text: reached ? reached + '명이 보스·보물방까지 왔다! (친위대는 나중에)' : '아무도 보스·보물방에 못 왔다' });
-  return { n: n, reached: reached, killed: n - reached, steps: steps, contrib: contrib, flow: flow };
+  return { n: n, reached: reached, killed: n - reached, steps: steps, contrib: contrib, flow: flow, kills: kills, exp: exp };
 }
