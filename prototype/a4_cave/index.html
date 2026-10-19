@@ -10,7 +10,7 @@
   .wrap { position: relative; margin-top: 8px; user-select: none; }
   .wrap.painting { touch-action: none; }
   .board { display: grid; grid-template-columns: repeat(5, 1fr); border: 2px solid var(--line); }
-  .board > div { outline: 1px dashed #ffffff26; outline-offset: -1px; } /* 칸 구분 옅은 점선 */
+  .board > div { outline: 1px dashed #ffffff26; outline-offset: -1px; flex-direction: column; } /* 칸 구분 옅은 점선, 글자는 세로로 쌓기 */
   .board > div { aspect-ratio: 1; position: relative; display: flex; align-items: center; justify-content: center;
     font-size: 12px; text-align: center; line-height: 1.2; cursor: pointer; border: 2px solid transparent; }
   .board .yard { background: #4a4234; color: #b8a888; font-size: 11px; cursor: default; }
@@ -32,6 +32,9 @@
   .board .inv::after { content: attr(data-n); position: absolute; right: 2px; bottom: 2px; background: #f0d34a; color: #000;
     font-weight: bold; font-size: 11px; padding: 0 3px; border-radius: 3px; }
   .board .inv.flee::after { background: #d9594c; color: #fff; }
+  .board .offroute { filter: saturate(.35) brightness(.8); }
+  .board small.off { color: #ffb4a8; font-size: 10px; }
+  .board .route:not(.tunnel)::before { top: 6px; right: 6px; } /* 방 안의 길 점은 귀퉁이에 (방 이름과 안 겹치게) */
   .piece.maze { color: #a6d65a; } .piece.boss { color: #ff7aa8; }
   .door, .spot { position: absolute; transform: translate(-50%, -50%); border-radius: 3px; z-index: 2; }
   .door { background: #c58b3c; border: 2px solid #f3c77a; cursor: grab; touch-action: none; }
@@ -91,7 +94,7 @@ function buildPage() {
     '<header><h1>시안 A4 동굴</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<section class="card" id="demand"></section>' +
     '<p class="rule">동굴 통로(좁은 길)가 보물방까지 이어져 있어요. 통로는 길 역할만 해요. 칸을 눌러 최대 ' + A4.maxRoom + '칸 고르고 <b>방 만들기</b> → 종류 고르면 끝 (바위·통로 어디든). ' +
-    '문은 맞닿은 길마다 <b>자동</b>으로 생겨요. 문(주황 막대)을 <b>누르면 닫히고, 끌면 옮겨져요</b>. 노란 점은 침입자가 지금 올 가장 짧은 길.</p>' +
+    '문은 2개(들어오는 문 + 나가는 문)가 <b>자동</b>으로 생겨요. 문(주황 막대)을 <b>누르면 닫히고, 끌면 옮겨져요</b>. 더 필요하면 방을 눌러 <b>문 하나 더</b>. 노란 점은 침입자가 지금 올 가장 짧은 길이고, 그 길에 없는 방은 흐리게 <b>안 지나감</b>으로 보여요.</p>' +
     '<div class="wrap" id="wrap"><div id="board" class="board"></div><div id="over"></div></div>' +
     '<div class="selbar" id="selbar"></div>' +
     '<div class="tools" id="tools"></div>' +
@@ -131,7 +134,8 @@ function edgePos(a, b) { // 변의 가운데 (판 기준 %)
 function drawBoard() {
   var f = run ? run.res.frames[Math.max(run.i - 1, 0)] : null, h = '', first = {}, onRoute = {};
   Object.keys(B.pieces).forEach(function (id) { var c = B.pieces[id].cells[0]; first[key(c)] = id; });
-  if (!run) route().forEach(function (x) { onRoute[key(x)] = true; });
+  var visited = {}; // 침입자 길(가장 짧은 길)에 있는 방
+  if (!run) route().forEach(function (x) { onRoute[key(x)] = true; if (ownerAt(x)) visited[ownerAt(x)] = true; });
   for (var r = 0; r < A4.rows; r++) for (var c = 0; c < A4.cols; c++) {
     var cell = [r, c], p = pieceAt(cell), g = groundAt(cell), cls, label = '';
     if (g === 'entry') { cls = 'entry'; label = '입구<br><small>집결지</small>'; }
@@ -150,7 +154,9 @@ function drawBoard() {
         label = '<span class="piece ' + it.kind + '">' + it.short + '</span>';
         if (it.kind === 'unit' || it.kind === 'boss') label += '<br>' + (f ? f.rooms[p.id] : (it.kind === 'boss' ? 1 : p.cells.length)) + '/' + (it.kind === 'boss' ? 1 : p.cells.length);
         else if (it.kind === 'trap') label += '<br>×' + p.cells.length;
+        if (!run && !visited[p.id]) label += '<br><small class="off">안 지나감</small>';
       }
+      if (!run && !visited[p.id]) cls += ' offroute';
     }
     // 같은 방 칸끼리는 테두리 없이, 방 바깥 변은 밝은 선
     var style = '';
@@ -229,7 +235,7 @@ function bindBoard() {
   w.addEventListener('pointerup', function (e) {
     if (S.drag) {
       var i = nearest(e), tap = Math.hypot(e.clientX - S.drag.x, e.clientY - S.drag.y) < 8;
-      if (tap) { var err = closeDoor(S.drag.k); toast(err || '문을 닫았어요 (방을 누르면 다시 열 수 있어요)'); }
+      if (tap) { var err = closeDoor(S.drag.k); toast(err || '문을 닫았어요 (방을 눌러 [문 하나 더]로 다시 낼 수 있어요)'); }
       else if (i >= 0) moveDoor(S.drag.id, S.drag.k, S.drag.targets[i]);
       else if (!S.drag.targets.length) toast('옮길 수 있는 자리가 없어요 (길이 끊기는 자리는 빠짐)');
       S.drag = null; S.justDragged = true; setTimeout(function () { S.justDragged = false; }, 60); // 바로 뒤따르는 click만 무시
@@ -304,10 +310,10 @@ function drawModal() {
     }
   }
   if (M.id) {
-    var closedN = Object.keys(B.pieces[M.id].closed).length;
-    h += '<div class="note">문 ' + doorsOf(M.id).length + '개. 문은 맞닿은 길마다 자동으로 생겨요 (최대 ' + A4.maxDoors + '개). 판에서 문을 <b>누르면 닫히고</b>, <b>끌면 옮겨져요</b>. ' +
+    var dn = doorsOf(M.id).length;
+    h += '<div class="note">문 ' + dn + '개. 방을 만들면 문 ' + A4.autoDoors + '개(들어오는 문 + 나가는 문)가 자동으로 생겨요. 판에서 문을 <b>누르면 닫히고</b>, <b>끌면 옮겨져요</b>. ' +
       '문이 적을수록 침입자를 원하는 방향으로 묶어 둘 수 있지만 침입자에게 유리한 효과가 생겨요 (효과는 아직 미정).</div>';
-    h += '<div class="foot">' + (closedN ? '<button id="reopen">닫은 문 ' + closedN + '개 다시 열기</button>' : '') + '<button class="danger" id="del">허물기</button><button id="no">닫기</button></div>';
+    h += '<div class="foot">' + (dn < A4.maxDoors ? '<button id="adddoor">문 하나 더</button>' : '') + '<button class="danger" id="del">허물기</button><button id="no">닫기</button></div>';
   } else h += '<div class="foot"><button id="no">취소</button></div>';
   el('modal').innerHTML = h;
   el('modal').onclick = function (e) {
@@ -319,7 +325,7 @@ function drawModal() {
       S.sel = []; closeModal(); return draw();
     }
     else if (b.id === 'no') return closeModal();
-    else if (b.id === 'reopen') { reopenDoors(M.id); closeModal(); return draw(); }
+    else if (b.id === 'adddoor') { var e2 = addDoor(M.id); if (e2) return toast(e2); draw(); }
     else if (b.id === 'del') { removePiece(M.id); closeModal(); return draw(); }
     drawModal();
   };

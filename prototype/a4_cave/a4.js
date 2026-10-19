@@ -6,6 +6,7 @@ var A4 = {
   budget: 180,
   maxRoom: 4,     // 방 하나에 고를 수 있는 칸 수
   maxDoors: 4,    // 방 하나의 문 최대 수
+  autoDoors: 2,   // 방을 만들면 자동으로 생기는 문 수 (들어오는 문 + 나가는 문)
   party: { name: '모험가', count: 3, hp: 60, atk: 10 },
   supplies: 45,   // 보급(초). 걷기 1칸 = 1, 전투 1합 = 2. 바닥나면 입구로 도주
   maxRounds: 3,
@@ -14,8 +15,8 @@ var A4 = {
     maze: { name: '3×3 미로', short: '미로', kind: 'maze', cost: 30, value: 20, size: [3, 3] },
     boss: { name: '2×2 보스방', short: '보스', kind: 'boss', cost: 70, value: 70, size: [2, 2], hp: 140, atk: 16, unit: '오우거' }
   },
-  // 기본 통로: 1줄 가로, 왼쪽·가운데·오른쪽 세로, 맨 아래 가로 (사용자 그림)
-  tunnels: function (r, c) { return r === 1 || r === 6 || c === 0 || c === 2 || c === 4; },
+  // 기본 통로: 고리 모양 (1줄 가로, 왼쪽·오른쪽 세로, 맨 아래 가로). 가운데 직선 길은 빼서 길 옆 방이 무시되지 않게
+  tunnels: function (r, c) { return r === 1 || r === 6 || c === 0 || c === 4; },
   speeds: [{ label: '×1', ms: 700 }, { label: '×4', ms: 175 }, { label: '즉시', ms: 0 }]
 };
 var DIRS = [{ k: 'up', dr: -1, dc: 0 }, { k: 'down', dr: 1, dc: 0 }, { k: 'left', dr: 0, dc: -1 }, { k: 'right', dr: 0, dc: 1 }];
@@ -176,12 +177,12 @@ function closeDoor(k) {
   var e = B.doors[k];
   delete B.doors[k];
   if (!connected()) { B.doors[k] = e; return '이 문을 닫으면 길이 끊겨요'; }
-  [ownerAt(e[0]), ownerAt(e[1])].forEach(function (o) { if (o) B.pieces[o].closed[k] = true; });
+  [ownerAt(e[0]), ownerAt(e[1])].forEach(function (o) { if (o) { B.pieces[o].closed[k] = true; B.pieces[o].want = doorsOf(o).length; } });
   return null;
 }
 function dirOf(s) { return (s.outer[0] - s.inner[0]) + ',' + (s.outer[1] - s.inner[1]); }
 // 판이 바뀔 때마다 문을 다시 맞춘다: 막힌 문(바위와 맞닿음)은 지우고,
-// 문이 4개 미만인 방은 새로 맞닿은 길 쪽으로 문을 더한다 (아직 문이 없는 방향 먼저, 유저가 닫은 자리는 빼고)
+// 문이 원하는 수(want, 기본 2)보다 적은 방은 맞닿은 길 쪽으로 문을 더한다 (아직 문이 없는 방향 먼저, 유저가 닫은 자리는 빼고)
 function refreshDoors() {
   Object.keys(B.doors).forEach(function (k) {
     var e = B.doors[k];
@@ -189,7 +190,7 @@ function refreshDoors() {
   });
   Object.keys(B.pieces).forEach(function (id) {
     var p = B.pieces[id];
-    for (var guard = 0; guard < 8 && doorsOf(id).length < A4.maxDoors; guard++) {
+    for (var guard = 0; guard < 8 && doorsOf(id).length < Math.min(p.want, A4.maxDoors); guard++) {
       var dirs = {};
       doorsOf(id).forEach(function (d) { dirs[dirOf(d)] = true; });
       var spots = doorSpots(id).filter(function (s) { return !B.doors[s.k] && !p.closed[s.k]; });
@@ -199,7 +200,17 @@ function refreshDoors() {
     }
   });
 }
-function reopenDoors(id) { B.pieces[id].closed = {}; refreshDoors(); }
+// 문 하나 더 (팝업). 닫은 적 없는 자리부터, 없으면 닫았던 자리도 쓴다.
+function addDoor(id) {
+  var p = B.pieces[id];
+  if (doorsOf(id).length >= A4.maxDoors) return '문은 최대 ' + A4.maxDoors + '개예요';
+  p.want = doorsOf(id).length + 1;
+  var before = doorsOf(id).length;
+  refreshDoors();
+  if (doorsOf(id).length === before) { p.closed = {}; refreshDoors(); }
+  if (doorsOf(id).length === before) { p.want = before; return '문을 낼 수 있는 자리가 없어요 (통로나 옆 방과 맞닿아야 해요)'; }
+  return null;
+}
 
 // ---------- 놓기·고치기 ----------
 function summary() {
@@ -237,11 +248,11 @@ function place(cells, content) {
   if (content === 'boss' && Object.keys(B.pieces).some(function (id) { return B.pieces[id].content === 'boss'; })) return '보스방은 층마다 1개예요';
   if (summary().cost + pieceCost(content, cells.length) > A4.budget) return '금화가 모자라요';
   var id = 'p' + B.nextId++;
-  B.pieces[id] = { id: id, content: content, cells: cells, closed: {} };
+  B.pieces[id] = { id: id, content: content, cells: cells, closed: {}, want: A4.autoDoors };
   cells.forEach(function (x) { B.owner[x[0]][x[1]] = id; });
-  var err = autoDoors(id, A4.maxDoors); // 길이 이어지는 문 조합부터 잡고
+  var err = autoDoors(id, A4.autoDoors); // 길이 이어지는 문 조합부터 잡고
   if (err) { removePiece(id); return err; }
-  refreshDoors();                       // 나머지 맞닿은 길에도 문
+  refreshDoors();                       // 원하는 문 수까지 채우기
   return null;
 }
 // 방을 허물면 그 자리는 통로가 된다. 다른 방과 맞닿은 문은 그 방의 문으로 남긴다.
