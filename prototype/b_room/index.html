@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시안 B 방 단위</title>
+<link rel="stylesheet" href="../common/proto.css">
+<style>
+  .rooms { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .room { background: var(--path); border-radius: 8px; padding: 6px 8px 8px; }
+  .room h3 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: normal; }
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .slot { height: 46px; border: 1px dashed var(--line); border-radius: 6px; display: flex; align-items: center;
+    justify-content: center; cursor: pointer; color: var(--dim); font-size: 11px; background: var(--bg); }
+  .link { text-align: center; color: var(--dim); font-size: 12px; line-height: 20px; }
+  .gold { background: #6b5a1e; color: #f6e6a6; font-weight: bold; text-align: center; padding: 10px; border-radius: 8px; }
+  .room.invader, .gold.invader { outline-offset: 0; }
+</style>
+</head>
+<body>
+<script src="../common/rules.js"></script>
+<script src="../common/ui.js"></script>
+<script>
+// 방 4개가 한 줄로 이어짐. 방마다 자리 3개. 마지막은 보물방.
+var ROOMS = 4, SLOTS = 3;
+var rooms = [];
+for (var r = 0; r < ROOMS; r++) rooms.push([null, null, null]);
+function isTrap(id) { return id && PROTO.items[id].kind === 'trap'; }
+
+UI.init({
+  title: '시안 B 방 단위',
+  other: { href: '../a_grid/index.html', label: '칸 단위 보기' },
+  rule: '방마다 자리 3개. 모험가가 방에 들어오면 <b>그 방의 함정이 먼저 모두 터지고</b>, 그다음 부대가 차례로 싸운다. ' +
+    '<b>함정이 있는 방의 부대는 기습</b>(공격 ×1.5). 같은 걸 다시 누르면 빠진다.',
+  placed: function () { return [].concat.apply([], rooms).filter(Boolean); },
+  steps: function () {
+    var steps = [];
+    rooms.forEach(function (slots, r) {
+      var hasTrap = slots.some(isTrap);
+      steps.push({ at: r, id: null });
+      slots.forEach(function (id) { if (isTrap(id)) steps.push({ at: r, id: id }); });
+      slots.forEach(function (id) { if (id && !isTrap(id)) steps.push({ at: r, id: id, ambush: hasTrap }); });
+    });
+    steps.push({ at: ROOMS, id: null });
+    return steps;
+  },
+  clear: function () { rooms = rooms.map(function () { return [null, null, null]; }); },
+  render: function (board, invAt) {
+    var html = '<div class="rooms"><div class="link">입구 ↓</div>';
+    rooms.forEach(function (slots, r) {
+      html += '<div class="room' + (invAt === r ? ' invader' : '') + '"><h3>' + (r + 1) + '번 방</h3><div class="slots">';
+      slots.forEach(function (id, s) {
+        html += '<div class="slot" data-r="' + r + '" data-s="' + s + '">' +
+          (id ? '<span class="piece ' + PROTO.items[id].kind + '">' + PROTO.items[id].short + '</span>' : '빈 자리') + '</div>';
+      });
+      html += '</div></div><div class="link">↓</div>';
+    });
+    html += '<div class="gold' + (invAt === ROOMS ? ' invader' : '') + '">보물방</div></div>';
+    board.innerHTML = html;
+    board.onclick = function (e) {
+      var d = e.target.closest('[data-r]');
+      if (!d) return;
+      var r = +d.getAttribute('data-r'), s = +d.getAttribute('data-s');
+      rooms[r][s] = UI.apply(rooms[r][s]);
+      UI.refresh();
+    };
+  }
+});
+</script>
+</body>
+</html>
