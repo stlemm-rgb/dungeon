@@ -26,6 +26,7 @@
   .board .entry { background: #2c5a3a; color: #bfe8c9; font-weight: bold; }
   .board .goldc { background: #6b5a1e; color: #f6e6a6; font-weight: bold; }
   .board .sel { box-shadow: inset 0 0 0 3px #fff; }
+  .board .pick { box-shadow: inset 0 0 0 2px #ffffff55; }
   .board .pv { box-shadow: inset 0 0 0 3px var(--ok); } .board .pv.bad { box-shadow: inset 0 0 0 3px var(--no); }
   .board .route::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #f0d34a; z-index: 1; }
   .board .inv { box-shadow: inset 0 0 0 3px #f0d34a; }
@@ -56,7 +57,11 @@
   .tools button span { font-size: 10px; color: var(--dim); }
   .tools button.on { border-color: var(--text); background: #3a3546; }
   .runbar { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); margin-top: 6px; min-height: 16px; }
-  .speed button.on { border-color: var(--text); }
+  .speedrow { display: flex; gap: 6px; margin: 4px 0 10px; }
+  .speedrow button { flex: 1; padding: 8px 4px; font: inherit; font-size: 13px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .speedrow button.on { border-color: var(--text); }
+  .speedrow button[data-ctl] { background: #3a3546; }
+  .selbar button:disabled { opacity: .4; }
   .modalbg { position: fixed; inset: 0; background: #000a; display: flex; align-items: flex-end; justify-content: center; }
   .modalbg.hidden { display: none; }
   .modal { width: 100%; max-width: 390px; background: var(--panel); border-radius: 12px 12px 0 0; padding: 12px 14px 16px; }
@@ -80,12 +85,11 @@
 <script src="../common/rules.js"></script>
 <script src="a4.js"></script>
 <script>
-var S = { sel: [], tool: null, speed: 1, pv: null, M: null, drag: null };
+// mode: normal(방 누르기·문·통로 끌기) / select(방 만들기: 칸 고르기)
+var S = { mode: 'normal', sel: [], speed: 1, M: null, drag: null, paint: null };
 var run = null;
-var TOOLS = [
-  { k: 'maze', label: '미로', sub: '3×3 끌어 놓기' }, { k: 'boss', label: '보스방', sub: '2×2 끌어 놓기' }
-];
-var CATS = { trap: ['spike', 'rock'], unit: ['gob', 'skel', 'orc'] };
+var CATS = { trap: ['spike', 'rock'], unit: ['gob', 'skel', 'orc'], special: ['maze', 'boss'] };
+var MAX_SEL = 6; // 일반 방은 4칸, 미로 2×3은 6칸
 
 function el(id) { return document.getElementById(id); }
 function toast(msg) {
@@ -97,27 +101,27 @@ function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A4 동굴</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<section class="card" id="demand"></section>' +
-    '<p class="rule"><b>칸 고르기</b>: 누르기 또는 쓸기(최대 ' + A4.maxRoom + '칸) → 종류 고르면 방 완성. <b>길게 누른 뒤 끌기</b>: 바위는 통로로 파고, 통로는 바위로 메워요. ' +
-    '<b>문</b>: 방 벽의 옅은 칸을 누르면 생기고, 문을 누르면 없어지고, 끌면 옮겨져요. 노란 점은 침입자가 올 가장 짧은 길, 그 길에 없는 방은 흐리게 <b>안 지나감</b>.</p>' +
+    '<p class="rule"><b>방 만들기</b> → 칸 고르기(누르기·쓸기) → 종류 고르기. 미로(2×3)·보스방(2×2)은 그 모양으로 고르면 <b>특수</b>에서 골라요. ' +
+    '<b>통로 끝을 끌면</b> 바위를 파서 길이 이어져요(무료). 길게 누른 뒤 끌면 통로를 메워요. ' +
+    '<b>문</b>: 방 벽의 점선 칸을 누르면 생기고, 문을 누르면 없어지고, 끌면 옮겨져요. 노란 점은 침입자가 올 가장 짧은 길.</p>' +
     '<div class="wrap" id="wrap"><div id="board" class="board"></div><div id="over"></div></div>' +
     '<div class="selbar" id="selbar"></div>' +
-    '<div class="tools" id="tools"></div>' +
     '<div class="runbar" id="runbar"></div>' +
-    '<div class="buttons"><button id="go" class="primary">침입 시작</button><button id="ten">10번 시험</button><button id="clear">처음으로</button></div>' +
-    '<div class="buttons speed" id="speed"></div>' +
+    '<div class="buttons" id="mainbtns"><button id="go" class="primary">침입 시작</button><button id="ten">10번 시험</button><button id="clear">처음으로</button></div>' +
+    '<div class="speedrow" id="speed"></div>' +
     '<ol class="log" id="log"></ol>' +
     '<div class="modalbg hidden" id="modalbg"><div class="modal" id="modal"></div></div>' +
     '<div class="result hidden" id="result"></div>';
-  el('tools').innerHTML = TOOLS.map(function (t) { return '<button data-k="' + t.k + '">' + t.label + '<span>' + t.sub + '</span></button>'; }).join('');
-  el('tools').onclick = function (e) {
-    var b = e.target.closest('button'); if (!b || run) return;
-    S.tool = S.tool === b.dataset.k ? null : b.dataset.k; S.sel = []; draw();
+  el('speed').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.i !== undefined) { S.speed = +b.dataset.i; if (run && !run.paused) { clearTimeout(run.timer); step(); } }
+    else if (b.dataset.ctl === 'pause' && run) { run.paused = !run.paused; clearTimeout(run.timer); if (!run.paused) step(); }
+    else if (b.dataset.ctl === 'stop' && run) { clearTimeout(run.timer); el('log').insertAdjacentHTML('beforeend', '<li>침입을 중단했어요</li>'); run = null; }
+    draw();
   };
-  el('speed').innerHTML = A4.speeds.map(function (s, i) { return '<button data-i="' + i + '">속도 ' + s.label + '</button>'; }).join('');
-  el('speed').onclick = function (e) { var b = e.target.closest('button'); if (b) { S.speed = +b.dataset.i; draw(); } };
   el('go').onclick = startRun;
   el('ten').onclick = tenRuns;
-  el('clear').onclick = function () { if (!run) { resetBoard(); S.sel = []; el('log').innerHTML = ''; draw(); } };
+  el('clear').onclick = function () { if (!run) { resetBoard(); S.sel = []; S.mode = 'normal'; el('log').innerHTML = ''; draw(); } };
   el('modalbg').onclick = function (e) { if (e.target.id === 'modalbg') closeModal(); };
   bindBoard();
 }
@@ -126,11 +130,6 @@ function buildPage() {
 function cellAt(e) {
   var t = document.elementFromPoint(e.clientX, e.clientY), d = t && t.closest('#board [data-r]');
   return d ? [+d.dataset.r, +d.dataset.c] : null;
-}
-function stampCells(k, cell) {
-  var sz = A4.extra[k].size, top = cell[0] - Math.floor((sz[0] - 1) / 2), left = cell[1] - Math.floor((sz[1] - 1) / 2), out = [];
-  for (var r = 0; r < sz[0]; r++) for (var c = 0; c < sz[1]; c++) out.push([top + r, left + c]);
-  return out;
 }
 function edgePos(a, b) { // 변의 가운데 (판 기준 %)
   return { x: ((a[1] + b[1]) / 2 + 0.5) / A4.cols * 100, y: ((a[0] + b[0]) / 2 + 0.5) / A4.rows * 100, h: a[1] === b[1] };
@@ -162,27 +161,25 @@ function drawBoard() {
       }
       if (!run && !visited[p.id]) cls += ' offroute';
     }
-    // 같은 방 칸끼리는 테두리 없이, 방 바깥 변은 밝은 선
-    var style = '';
+    var style = ''; // 같은 방 칸끼리는 테두리 없이, 방 바깥 변은 밝은 선
     if (p) style = DIRS.map(function (d) {
       var n = [r + d.dr, c + d.dc], side = { up: 'top', down: 'bottom', left: 'left', right: 'right' }[d.k];
       return inB(n[0], n[1]) && ownerAt(n) === p.id ? '' : 'border-' + side + '-color:#cfc8da;';
     }).join('');
     if (S.sel.some(function (x) { return same(x, cell); })) cls += ' sel';
-    if (S.pv && S.pv.cells.some(function (x) { return same(x, cell); })) cls += ' pv' + (S.pv.bad ? ' bad' : '');
+    if (S.mode === 'select' && buildable(cell) && !S.sel.some(function (x) { return same(x, cell); })) cls += ' pick';
     if (onRoute[key(cell)] && g !== 'entry' && g !== 'gold') cls += ' route';
     var n = '';
     if (f && same(f.cell, cell)) { cls += ' inv' + (f.mode === 'flee' ? ' flee' : ''); n = ' data-n="' + f.alive + '명"'; }
     h += '<div class="' + cls + '" data-r="' + r + '" data-c="' + c + '" style="' + style + '"' + n + '>' + label + '</div>';
   }
   el('board').innerHTML = h;
-  // 문과 옮길 자리
-  var o = '';
+  var o = ''; // 문, 문 자리, 옮길 자리
   Object.keys(B.doors).forEach(function (k) {
     var e = B.doors[k], pos = edgePos(e[0], e[1]);
     o += '<div class="door ' + (pos.h ? 'h' : 'v') + (S.drag && S.drag.k === k ? ' moving' : '') + '" data-door="' + k + '" style="left:' + pos.x + '%;top:' + pos.y + '%"></div>';
   });
-  if (!run && !S.drag && !S.tool) doorSlots().forEach(function (s) {
+  if (!run && !S.drag && S.mode === 'normal') doorSlots().forEach(function (s) {
     var pos = edgePos(s.inner, s.outer);
     o += '<div class="slot ' + (pos.h ? 'h' : 'v') + '" data-slot="' + s.k + '" style="left:' + pos.x + '%;top:' + pos.y + '%"></div>';
   });
@@ -202,45 +199,61 @@ function drawDemand() {
     '<div class="enemy">침입자: ' + A4.party.name + ' ' + A4.party.count + '명 (각 체력 ' + A4.party.hp + ' · 공격 ' + A4.party.atk + ') · 보급 ' + A4.supplies + '초</div>';
 }
 function drawSelbar() {
-  var left = A4.budget - summary().cost, n = S.sel.length;
-  function range(ids) { var c = ids.map(function (k) { return PROTO.items[k].cost * n; }); return Math.min.apply(null, c) + '~' + Math.max.apply(null, c); }
-  el('selbar').innerHTML = n ? '<span>' + n + '칸 · 남은 금 <b>' + left + '</b><br>함정 ' + range(CATS.trap) + ' · 몬스터 ' + range(CATS.unit) + '</span><button id="mk" class="primary">방 만들기</button><button id="cancel">취소</button>'
-    : S.paint ? '<span>' + (S.paint === 'dig' ? '통로 파는 중' : '통로 메우는 중') + ' (손을 떼면 끝)</span>'
-    : S.tool ? '<span>' + TOOLS.filter(function (t) { return t.k === S.tool; })[0].label + ': 판 위에서 끌어 놓기 (도구를 다시 누르면 끝)</span>' : '<span>남은 금 <b>' + left + '</b></span>';
-  if (el('mk')) { el('mk').onclick = function () { openModal(null); }; el('cancel').onclick = function () { S.sel = []; draw(); }; }
+  var left = A4.budget - summary().cost, n = S.sel.length, h;
+  if (run) h = '';
+  else if (S.mode === 'select') {
+    var hint = n ? n + '칸 · 남은 금 <b>' + left + '</b>' + (n <= A4.maxRoom ? '<br>함정 ' + range(CATS.trap, n) + ' · 몬스터 ' + range(CATS.unit, n) : '') + specialHint()
+      : '지을 칸을 누르거나 쓸어서 고르세요 (일반 방 최대 ' + A4.maxRoom + '칸, 미로 2×3, 보스 2×2)';
+    h = '<span>' + hint + '</span><button id="next" class="primary"' + (n ? '' : ' disabled') + '>다음</button><button id="cancel">취소</button>';
+  } else if (S.paint) h = '<span>' + (S.paint === 'dig' ? '통로 파는 중' : '통로 메우는 중') + ' (손을 떼면 끝)</span>';
+  else h = '<span>남은 금 <b>' + left + '</b></span><button id="mkroom" class="primary">방 만들기</button>';
+  el('selbar').innerHTML = h;
+  if (el('mkroom')) el('mkroom').onclick = function () { S.mode = 'select'; S.sel = []; draw(); };
+  if (el('next')) el('next').onclick = function () { openModal(null); };
+  if (el('cancel')) el('cancel').onclick = function () { S.mode = 'normal'; S.sel = []; draw(); };
+}
+function range(ids, n) { var c = ids.map(function (k) { return PROTO.items[k].cost * n; }); return Math.min.apply(null, c) + '~' + Math.max.apply(null, c); }
+function specialHint() {
+  var ok = CATS.special.filter(function (k) { return fitsShape(S.sel, k); });
+  return ok.length ? '<br>특수: ' + ok.map(function (k) { return itemOf(k).short + ' 금 ' + itemOf(k).cost; }).join(' · ') : '';
 }
 function drawRunbar() {
   var f = run ? run.res.frames[Math.max(run.i - 1, 0)] : null;
-  el('runbar').innerHTML = f ? '<span>침입자 ' + f.alive + '명 · 체력 ' + f.hp.map(function (x) { return Math.max(x, 0); }).join('/') + '</span><span>보급 ' + f.sup + '초' + (f.mode === 'flee' ? ' · 도주 중' : '') + '</span>' : '';
+  el('runbar').innerHTML = f ? '<span>침입자 ' + f.alive + '명 · 체력 ' + f.hp.map(function (x) { return Math.max(x, 0); }).join('/') + '</span><span>보급 ' + f.sup + '초' + (f.mode === 'flee' ? ' · 도주 중' : '') + (run.paused ? ' · 일시정지' : '') + '</span>' : '';
+  el('speed').innerHTML = A4.speeds.map(function (s, i) { return '<button data-i="' + i + '" class="' + (S.speed === i ? 'on' : '') + '">속도 ' + s.label + '</button>'; }).join('') +
+    (run && run.i < run.res.frames.length ? '<button data-ctl="pause">' + (run.paused ? '계속' : '일시정지') + '</button><button data-ctl="stop">중단</button>' : '');
 }
 function draw() {
   drawDemand(); drawBoard(); drawSelbar(); drawRunbar();
-  document.querySelectorAll('#tools button').forEach(function (b) { b.classList.toggle('on', b.dataset.k === S.tool); });
-  document.querySelectorAll('#speed button').forEach(function (b) { b.classList.toggle('on', +b.dataset.i === S.speed); });
   document.body.classList.toggle('running', !!run);
 }
 
-// ---------- 조작 ----------
+// ---------- 판 조작 ----------
 function bindBoard() {
-  var w = el('wrap'), g = null, LONG = 350; // g: 지금 손가락 동작 (press 누름 / swipe 쓸기 / paint 파기·메우기 / stamp 특수 방 / slot 문 자리)
+  var w = el('wrap'), g = null, LONG = 350; // g: 지금 손가락 동작
   w.addEventListener('pointerdown', function (e) {
     if (run) return;
+    var cell = cellAt(e);
+    if (S.mode === 'select') { // 방 만들기: 누르기·쓸기로 칸 고르기
+      if (!cell) return;
+      e.preventDefault(); w.setPointerCapture(e.pointerId);
+      g = { kind: 'pick', start: cell, moved: false };
+      return;
+    }
     var dn = e.target.closest('[data-door]'), sl = e.target.closest('[data-slot]');
-    if (dn && !S.tool) { // 문: 누르면 없애기, 끌면 옮기기
+    if (dn) { // 문: 누르면 없애기, 끌면 옮기기
       var k = dn.dataset.door, d = B.doors[k], id = ownerAt(d[0]) || ownerAt(d[1]);
       S.drag = { k: k, id: id, targets: moveTargets(id, k), near: -1, x: e.clientX, y: e.clientY };
-      w.setPointerCapture(e.pointerId); e.preventDefault();
-      draw(); return;
+      w.setPointerCapture(e.pointerId); e.preventDefault(); draw(); return;
     }
-    if (sl && !S.tool) { g = { kind: 'slot', k: sl.dataset.slot }; w.setPointerCapture(e.pointerId); e.preventDefault(); return; }
-    var cell = cellAt(e); if (!cell) return;
+    if (sl) { g = { kind: 'slot', k: sl.dataset.slot }; w.setPointerCapture(e.pointerId); e.preventDefault(); return; }
+    if (!cell) return;
     e.preventDefault(); w.setPointerCapture(e.pointerId);
-    if (S.tool) { g = { kind: 'stamp' }; stampAt(cell); return; }
-    var mine = g = { kind: 'press', start: cell };
-    mine.timer = setTimeout(function () { // 길게 누르기 → 바위는 파기, 통로는 메우기
+    var mine = g = { kind: 'press', start: cell, last: cell };
+    mine.timer = setTimeout(function () { // 길게 누르기 → 통로 메우기 (바위면 파기)
       if (g !== mine || mine.kind !== 'press' || pieceAt(cell)) return;
       var gr = groundAt(cell); if (gr !== 'rock' && gr !== 'tunnel') return;
-      mine.kind = 'paint'; S.paint = gr === 'rock' ? 'dig' : 'fill'; S.sel = [];
+      mine.kind = 'paint'; S.paint = gr === 'rock' ? 'dig' : 'fill';
       paintAt(cell);
     }, LONG);
   });
@@ -248,14 +261,15 @@ function bindBoard() {
     if (S.drag) { S.drag.near = nearest(e); draw(); return; }
     if (!g) return;
     var cell = cellAt(e); if (!cell) return;
-    if (g.kind === 'press' && !same(cell, g.start)) { // 길게 누르기 전에 움직이면 쓸기
+    if (g.kind === 'pick') { if (!same(cell, g.start) || g.moved) { if (!g.moved) { g.moved = true; addSel(g.start, true); } addSel(cell, true); } return; }
+    if (g.kind === 'press' && !same(cell, g.start)) { // 길게 누르기 전에 끌면: 통로(또는 입구·보물방)에서 시작했을 때만 통로 늘리기
       clearTimeout(g.timer);
-      if (!buildable(g.start)) { g = null; return; }
-      g.kind = 'swipe'; S.sel = [g.start];
+      var gr = groundAt(g.start);
+      if (pieceAt(g.start) || (gr !== 'tunnel' && gr !== 'entry' && gr !== 'gold')) { g = null; return; }
+      g.kind = 'extend'; S.paint = 'dig';
     }
-    if (g.kind === 'swipe') addSel(cell, true);
+    if (g.kind === 'extend') extendTo(cell);
     else if (g.kind === 'paint') paintAt(cell);
-    else if (g.kind === 'stamp') stampAt(cell);
   });
   w.addEventListener('pointerup', function (e) {
     if (S.drag) {
@@ -267,31 +281,35 @@ function bindBoard() {
     }
     if (!g) return;
     var k = g; g = null; clearTimeout(k.timer);
-    if (k.kind === 'slot') {
+    if (k.kind === 'pick' && !k.moved) toggleSel(k.start);
+    else if (k.kind === 'slot') {
       var s = doorSlots().filter(function (x) { return x.k === k.k; })[0];
       var e2 = s ? openDoor(s.inner, s.outer) : '여기에는 문을 낼 수 없어요';
       if (e2) toast(e2);
-    } else if (k.kind === 'press') tapCell(k.start);
-    else if (k.kind === 'swipe') { draw(); if (S.sel.length) openModal(null); return; }
-    else if (k.kind === 'paint') S.paint = null;
-    else if (k.kind === 'stamp' && S.pv) { var e3 = S.pv.bad || place(S.pv.cells, S.tool); S.pv = null; if (e3) toast(e3); }
+    } else if (k.kind === 'press') { var p = pieceAt(k.start); if (p) openModal(p.id); else if (buildable(k.start)) toast('방을 지으려면 아래 [방 만들기]를 누르세요'); }
+    S.paint = null;
     draw();
   });
-  function tapCell(cell) {
-    var p = pieceAt(cell);
-    if (p) return openModal(p.id);
-    if (!buildable(cell)) return;
+  function toggleSel(cell) {
     var i = S.sel.findIndex(function (x) { return same(x, cell); });
     if (i >= 0) S.sel.splice(i, 1); else addSel(cell, false);
   }
   function addSel(cell, quiet) {
     var msg = null;
-    if (S.sel.some(function (x) { return same(x, cell); })) return;
-    if (!buildable(cell)) return;
-    if (S.sel.length >= A4.maxRoom) msg = '방은 최대 ' + A4.maxRoom + '칸이에요';
+    if (S.sel.some(function (x) { return same(x, cell); }) || !buildable(cell)) return;
+    if (S.sel.length >= MAX_SEL) msg = '한 번에 최대 ' + MAX_SEL + '칸이에요';
     else if (S.sel.length && !S.sel.some(function (x) { return Math.abs(x[0] - cell[0]) + Math.abs(x[1] - cell[1]) === 1; })) msg = '고른 칸과 붙은 칸만 고를 수 있어요';
     else S.sel.push(cell);
     if (msg && !quiet) toast(msg);
+    draw();
+  }
+  // 통로 늘리기: 마지막으로 판 칸과 붙은 바위만 판다 (대각선·건너뛰기 없음)
+  function extendTo(cell) {
+    if (same(cell, g.last)) return;
+    if (Math.abs(cell[0] - g.last[0]) + Math.abs(cell[1] - g.last[1]) !== 1) return;
+    var gr = groundAt(cell);
+    if (gr === 'rock' && !pieceAt(cell)) digFill(cell, 'dig');
+    if (groundAt(cell) === 'tunnel' || groundAt(cell) === 'gold' || groundAt(cell) === 'entry') g.last = cell;
     draw();
   }
   function nearest(e) { // 손가락에서 가장 가까운 후보 (판 칸 크기 0.6배 안)
@@ -304,54 +322,56 @@ function bindBoard() {
     return best;
   }
   function paintAt(cell) { var err = digFill(cell, S.paint); if (err) toast(err); draw(); }
-  function stampAt(cell) {
-    var cells = stampCells(S.tool, cell);
-    S.pv = { cells: cells, bad: cells.every(buildable) ? null : '그 자리에는 못 놓아요' };
-    draw();
-  }
 }
 
 // ---------- 방 팝업 ----------
 function openModal(id) {
   var p = id ? B.pieces[id] : null, kind = p ? itemOf(p.content).kind : null;
   if (!p && !contiguous(S.sel)) { toast('고른 칸이 서로 이어져야 해요'); return; }
-  S.M = { id: id, n: p ? p.cells.length : S.sel.length, content: p ? p.content : null,
-    cat: kind === 'trap' || kind === 'unit' ? kind : null, special: !!p && !(kind === 'trap' || kind === 'unit'),
-  };
+  S.M = { id: id, cells: p ? p.cells : S.sel.slice(), n: p ? p.cells.length : S.sel.length, content: p ? p.content : null,
+    cat: kind === 'trap' || kind === 'unit' ? kind : kind ? 'special' : null };
   drawModal();
   el('modalbg').className = 'modalbg';
 }
 function closeModal() { S.M = null; el('modalbg').className = 'modalbg hidden'; }
+// 이 칸들로 이 종류를 지을 수 없는 이유 (없으면 null)
+function whyNot(M, k) {
+  var it = itemOf(k), left = A4.budget - summary().cost + (M.id ? pieceCost(M.content, M.n) : 0), cost = pieceCost(k, M.n);
+  if (it.size && !fitsShape(M.cells, k)) return it.size.join('×') + ' 모양으로 고르세요';
+  if (!it.size && M.n > A4.maxRoom) return '일반 방은 최대 ' + A4.maxRoom + '칸';
+  if (k === 'boss' && M.content !== 'boss' && Object.keys(B.pieces).some(function (i) { return B.pieces[i].content === 'boss'; })) return '층마다 1개';
+  if (cost > left) return '금 ' + (cost - left) + ' 모자람';
+  return null;
+}
 function drawModal() {
   var M = S.M, h = '<h3>' + (M.id ? itemOf(M.content).name + ' 고치기' : M.n + '칸 방 만들기') + '</h3>';
-  if (!M.special) {
-    h += '<div class="lbl">① 종류</div><div class="row">' +
-      '<button data-cat="trap" class="' + (M.cat === 'trap' ? 'on' : '') + '">함정 방<small>칸마다 함정 1개</small></button>' +
-      '<button data-cat="unit" class="' + (M.cat === 'unit' ? 'on' : '') + '">몬스터 방<small>칸마다 부대 1개</small></button></div>';
-    if (M.cat) {
-      h += '<div class="lbl">② ' + (M.cat === 'trap' ? '함정' : '몬스터') + ' 고르기 (' + M.n + '칸)</div><div class="row">';
-      var left = A4.budget - summary().cost + (M.id ? pieceCost(M.content, M.n) : 0); // 고칠 때는 지금 방 값을 돌려받는 셈
-      CATS[M.cat].forEach(function (k) {
-        var it = PROTO.items[k], stat = it.kind === 'trap' ? '피해 ' + it.dmg : '체력 ' + it.hp + ' 공격 ' + it.atk, cost = it.cost * M.n;
-        h += '<button data-ct="' + k + '" class="' + (M.content === k ? 'on' : '') + (cost > left ? ' poor' : '') + '">' + it.short + '<small>' + stat + '</small><small>금 ' + cost + ' · 가치 ' + it.value * M.n + '</small>' + (cost > left ? '<small class="lack">금 ' + (cost - left) + ' 모자람</small>' : '') + '</button>';
-      });
-      h += '</div>';
-    }
+  var catLabel = { trap: '함정 방<small>칸마다 함정 1개</small>', unit: '몬스터 방<small>칸마다 부대 1개</small>', special: '특수 방<small>미로 2×3 · 보스 2×2</small>' };
+  h += '<div class="lbl">① 종류</div><div class="row">' + Object.keys(catLabel).map(function (c) {
+    return '<button data-cat="' + c + '" class="' + (M.cat === c ? 'on' : '') + '">' + catLabel[c] + '</button>';
+  }).join('') + '</div>';
+  if (M.cat) {
+    h += '<div class="lbl">② 고르기 (' + M.n + '칸)</div><div class="row">';
+    CATS[M.cat].forEach(function (k) {
+      var it = itemOf(k), why = whyNot(M, k), cost = pieceCost(k, M.n);
+      var stat = it.kind === 'trap' ? '피해 ' + it.dmg : it.kind === 'unit' ? '체력 ' + it.hp + ' 공격 ' + it.atk : it.kind === 'boss' ? it.unit + ' 체력 ' + it.hp + ', 퇴각 없음' : '보급 -' + A4.mazeCost + '초, 문 최대 2';
+      h += '<button data-ct="' + k + '" class="' + (M.content === k ? 'on' : '') + (why ? ' poor' : '') + '">' + it.short + '<small>' + stat + '</small><small>금 ' + cost + ' · 가치 ' + (it.size ? it.value : it.value * M.n) + '</small>' + (why ? '<small class="lack">' + why + '</small>' : '') + '</button>';
+    });
+    h += '</div>';
   }
   if (M.id) {
-    var dn = doorsOf(M.id).length;
-    h += '<div class="note">문 ' + dn + '개 (최대 ' + A4.maxDoors + '개). 방 벽의 옅은 칸을 <b>누르면 문이 생기고</b>, 문을 <b>누르면 없어지고</b>, <b>끌면 옮겨져요</b>. ' +
+    h += '<div class="note">문 ' + doorsOf(M.id).length + '개 (최대 ' + maxDoorsOf(M.id) + '개). 방 벽의 점선 칸을 <b>누르면 문이 생기고</b>, 문을 <b>누르면 없어지고</b>, <b>끌면 옮겨져요</b>. ' +
       '문이 적을수록 침입자를 원하는 방향으로 묶어 둘 수 있지만 침입자에게 유리한 효과가 생겨요 (효과는 아직 미정).</div>';
     h += '<div class="foot"><button class="danger" id="del">허물기</button><button id="no">닫기</button></div>';
   } else h += '<div class="foot"><button id="no">취소</button></div>';
   el('modal').innerHTML = h;
   el('modal').onclick = function (e) {
     var b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.cat) { M.cat = b.dataset.cat; if (!M.content || itemOf(M.content).kind !== M.cat) M.content = null; }
-    else if (b.dataset.ct) { // 세부 종류를 고르면 바로 만들기·바꾸기
-      var err = M.id ? editPiece(M.id, b.dataset.ct) : place(S.sel.slice(), b.dataset.ct);
+    if (b.dataset.cat) M.cat = b.dataset.cat;
+    else if (b.dataset.ct) { // 고르면 바로 만들기·바꾸기
+      var why = whyNot(M, b.dataset.ct); if (why) return toast(why);
+      var err = M.id ? editPiece(M.id, b.dataset.ct) : place(M.cells, b.dataset.ct);
       if (err) return toast(err);
-      S.sel = []; closeModal(); return draw();
+      S.sel = []; S.mode = 'normal'; closeModal(); return draw();
     }
     else if (b.id === 'no') return closeModal();
     else if (b.id === 'del') { removePiece(M.id); closeModal(); return draw(); }
@@ -363,13 +383,14 @@ function drawModal() {
 var OUT = { wiped: '전멸시켰다!', fled: '쫓아냈다!', breach: '보물방이 뚫렸다…' };
 function startRun() {
   if (run) return;
-  S.sel = []; S.tool = null;
-  run = { res: simulate((Math.random() * 1e9) | 0), i: 0 };
+  S.sel = []; S.mode = 'normal'; closeModal();
+  run = { res: simulate((Math.random() * 1e9) | 0), i: 0, paused: false };
   el('log').innerHTML = '';
   step();
 }
 function addLog(f) { if (f.text) { el('log').insertAdjacentHTML('beforeend', '<li>' + f.text + '</li>'); el('log').lastChild.scrollIntoView({ block: 'nearest' }); } }
 function step() {
+  if (!run || run.paused) return;
   var res = run.res;
   if (run.i >= res.frames.length) return finish(res);
   var f = res.frames[run.i++], ms = A4.speeds[S.speed].ms;
@@ -387,6 +408,7 @@ function finish(res) {
     '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.outcome === 'breach' ? '보물방이 뚫렸어요' : '요구 충족 + 방어 성공') + '</p>' +
     '<button id="again" class="primary">다시 배치</button>';
   el('again').onclick = function () { r.className = 'result hidden'; run = null; draw(); };
+  draw();
 }
 function tenRuns() {
   if (run) return;

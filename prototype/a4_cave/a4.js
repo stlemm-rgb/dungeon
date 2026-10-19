@@ -12,7 +12,7 @@ var A4 = {
   maxRounds: 3,
   mazeCost: 8,
   extra: {
-    maze: { name: '3×3 미로', short: '미로', kind: 'maze', cost: 30, value: 20, size: [3, 3] },
+    maze: { name: '2×3 미로', short: '미로', kind: 'maze', cost: 30, value: 20, size: [2, 3], maxDoors: 2 },
     boss: { name: '2×2 보스방', short: '보스', kind: 'boss', cost: 70, value: 70, size: [2, 2], hp: 140, atk: 16, unit: '오우거' }
   },
   // 기본 통로: 고리 모양 (1줄 가로, 왼쪽·오른쪽 세로, 맨 아래 가로). 가운데 직선 길은 빼서 길 옆 방이 무시되지 않게
@@ -94,6 +94,7 @@ function connected() { return !!bfs(A4.entry, A4.gold); }
 function route() { return bfs(A4.entry, A4.gold) || []; }
 
 // ---------- 문 ----------
+function maxDoorsOf(id) { return itemOf(B.pieces[id].content).maxDoors || A4.maxDoors; } // 미로는 2, 나머지 4
 function doorsOf(id) { // 이 방에 닿은 문 [{k, inner, outer}]
   var out = [];
   Object.keys(B.doors).forEach(function (k) {
@@ -110,7 +111,7 @@ function doorSpots(id) {
     nb(c).forEach(function (n) {
       var o = ownerAt(n), k = edgeKey(c, n);
       if (o === id || !isOpen(n)) return;
-      if (o && !B.doors[k] && doorsOf(o).length >= A4.maxDoors) return;
+      if (o && !B.doors[k] && doorsOf(o).length >= maxDoorsOf(o)) return;
       out.push({ k: k, inner: c, outer: n });
     });
   });
@@ -130,7 +131,7 @@ function autoDoors(id, n) {
     restore();
     return fixed.length ? '문 개수로는 길이 이어지지 않아요' : '통로나 다른 방과 맞닿아야 문을 낼 수 있어요';
   }
-  n = Math.max(1, Math.min(n, A4.maxDoors - fixed.length, spots.length));
+  n = Math.max(1, Math.min(n, maxDoorsOf(id) - fixed.length, spots.length));
   var dE = distFrom(A4.entry), dG = distFrom(A4.gold);
   function v(m, x) { var t = m[key(x)]; return t === undefined ? 99 : t; }
   var order = [], used = {};
@@ -190,7 +191,7 @@ function refreshDoors() {
   });
   Object.keys(B.pieces).forEach(function (id) {
     var p = B.pieces[id];
-    for (var guard = 0; guard < 8 && doorsOf(id).length < Math.min(p.want, A4.maxDoors); guard++) {
+    for (var guard = 0; guard < 8 && doorsOf(id).length < Math.min(p.want, maxDoorsOf(id)); guard++) {
       var dirs = {};
       doorsOf(id).forEach(function (d) { dirs[dirOf(d)] = true; });
       var spots = doorSpots(id).filter(function (s) { return !B.doors[s.k] && !p.closed[s.k]; });
@@ -205,7 +206,8 @@ function openDoor(inner, outer) {
   var k = edgeKey(inner, outer), ids = [ownerAt(inner), ownerAt(outer)].filter(Boolean);
   if (B.doors[k]) return null;
   if (!isOpen(outer) || !isOpen(inner)) return '통로나 다른 방과 맞닿은 벽에만 문을 낼 수 있어요';
-  if (ids.some(function (o) { return doorsOf(o).length >= A4.maxDoors; })) return '방 하나에 문은 최대 ' + A4.maxDoors + '개예요';
+  var full = ids.filter(function (o) { return doorsOf(o).length >= maxDoorsOf(o); })[0];
+  if (full) return itemOf(B.pieces[full].content).name + ' 방은 문이 최대 ' + maxDoorsOf(full) + '개예요';
   B.doors[k] = [inner, outer];
   ids.forEach(function (o) { var p = B.pieces[o]; delete p.closed[k]; p.want = doorsOf(o).length; });
   return null;
@@ -214,7 +216,7 @@ function openDoor(inner, outer) {
 function doorSlots() {
   var out = [], seen = {};
   Object.keys(B.pieces).forEach(function (id) {
-    if (doorsOf(id).length >= A4.maxDoors) return;
+    if (doorsOf(id).length >= maxDoorsOf(id)) return;
     doorSpots(id).forEach(function (s) { if (!B.doors[s.k] && !seen[s.k]) { seen[s.k] = true; out.push(s); } });
   });
   return out;
@@ -237,6 +239,13 @@ function summary() {
   s.ok = s.ratioOk && s.valueOk && s.budgetOk;
   return s;
 }
+// 고른 칸이 특수 방 모양(꽉 찬 직사각형)과 맞나. 미로 2×3은 세로 3×2도 됨
+function fitsShape(cells, content) {
+  var sz = itemOf(content).size; if (!sz) return true;
+  var rs = cells.map(function (x) { return x[0]; }), cs = cells.map(function (x) { return x[1]; });
+  var h = Math.max.apply(null, rs) - Math.min.apply(null, rs) + 1, w = Math.max.apply(null, cs) - Math.min.apply(null, cs) + 1;
+  return cells.length === h * w && ((h === sz[0] && w === sz[1]) || (h === sz[1] && w === sz[0]));
+}
 function pieceCost(content, n) { var it = itemOf(content); return it.cost * (it.size ? 1 : n); }
 // 방은 바위든 통로든 지을 수 있다 (길이 끊기지 않으면). 통로 자체는 기능 없는 길.
 function buildable(x) { return inB(x[0], x[1]) && !ownerAt(x) && (groundAt(x) === 'rock' || groundAt(x) === 'tunnel'); }
@@ -253,6 +262,7 @@ function contiguous(cells) {
 }
 function place(cells, content) {
   if (!cells.every(buildable)) return '그 자리에는 못 놓아요';
+  if (!fitsShape(cells, content)) return itemOf(content).name + '은 ' + itemOf(content).size.join('×') + ' 모양으로 골라야 해요';
   if (content === 'boss' && Object.keys(B.pieces).some(function (id) { return B.pieces[id].content === 'boss'; })) return '보스방은 층마다 1개예요';
   if (summary().cost + pieceCost(content, cells.length) > A4.budget) return '금화가 모자라요';
   var id = 'p' + B.nextId++;
@@ -360,7 +370,10 @@ function simulate(seed) {
     }
     if (mode === 'flee') { pos = inner; return; }
     if (res === 'retreat') { avoid[id] = true; pos = from; frame(from, '밀려서 퇴각! 다른 길을 찾는다', 1); return; }
-    var exits = doorsOf(id).filter(function (d) { return canPass(d.inner, d.outer); }); // 들어온 문 포함, 문마다 같은 확률
+    // 나갈 문은 들어온 문을 빼고 무작위 (되돌아가는 건 퇴각할 때만). 다른 문이 없으면 들어온 문으로
+    var exits = doorsOf(id).filter(function (d) { return canPass(d.inner, d.outer); });
+    var fwd = exits.filter(function (d) { return !same(d.outer, from); });
+    if (fwd.length) exits = fwd;
     var ex = exits[Math.floor(rand() * exits.length)];
     pos = ex.inner; forced = ex.outer; justLeft = id;
     frame(pos, (res === 'clear' ? '방을 정리하고' : res === 'push' ? '수로 밀어붙여' : '방을 지나') + ' 문 ' + exits.length + '개 중 하나로 나감', 0);
