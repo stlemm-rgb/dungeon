@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시안 A6 둥지</title>
+<link rel="stylesheet" href="../common/proto.css">
+<style>
+  .card ul { font-size: 13px; }
+  .reqs { display: flex; gap: 6px; margin: 6px 0; }
+  button { font: inherit; }
+  .reqs button, .sheet button, .bar button { border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; padding: 8px; }
+  .reqs button { flex: 1; font-size: 13px; }
+  .reqs button.on { border-color: #f0d34a; background: #3a3546; font-weight: bold; }
+  .day { display: flex; justify-content: space-between; font-size: 13px; margin: 6px 0; }
+  .day b { color: #f0d34a; }
+  /* 칸 판: 바위 위에 통로와 구역(방) */
+  .board { display: grid; grid-template-columns: repeat(5, 1fr); border: 2px solid var(--line); background: #17151b; }
+  .board > div { aspect-ratio: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 11px; line-height: 1.2; outline: 1px dashed #ffffff1a; outline-offset: -1px; }
+  .rock { background: #17151b; background-image: radial-gradient(#25222b 1px, transparent 1px); background-size: 9px 9px; }
+  .tun i { position: absolute; background: #6a6175; }
+  .tun .tc { left: 32%; top: 32%; width: 36%; height: 36%; }
+  .tun .up { left: 32%; top: 0; width: 36%; height: 34%; } .tun .down { left: 32%; bottom: 0; width: 36%; height: 34%; }
+  .tun .left { top: 32%; left: 0; height: 36%; width: 34%; } .tun .right { top: 32%; right: 0; height: 36%; width: 34%; }
+  .yardrow { grid-column: 1 / 6; aspect-ratio: auto !important; height: 44px; background: #4a4234; color: #b8a888; cursor: pointer; }
+  .zone { cursor: pointer; border: 2px solid #cfc8da; border-radius: 4px; margin: 3px; aspect-ratio: auto !important; }
+  .zone .zn { color: #ffffffaa; font-size: 9px; } .zone .fn { font-weight: bold; font-size: 12px; }
+  .zone .mons { font-size: 9px; color: #ffffffcc; }
+  .zone.none { background: #3d3746; border-style: dashed; border-color: #8a8494; }
+  .zone.trap { background: #5a3a22; } .zone.trap .fn { color: #ffb066; }
+  .zone.den { background: #22405a; } .zone.den .fn { color: #8fc3ff; }
+  .zone.turn { background: #2c5a3a; } .zone.turn .fn { color: #bfe8c9; }
+  .zone.emptyden .mons { color: #ffb4a8; }
+  .gold { background: #6b5a1e; color: #f6e6a6; font-weight: bold; }
+  .hot { box-shadow: inset 0 0 0 3px #f0d34a; }
+  .cnt { position: absolute; right: 2px; top: 2px; background: #f0d34a; color: #000; font-size: 10px; font-weight: bold; border-radius: 3px; padding: 0 3px; z-index: 2; }
+  .contrib { position: absolute; left: 2px; bottom: 1px; font-size: 9px; color: #ffb4a8; }
+  .built::after { content: ''; position: absolute; left: 3px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: #f0d34a; }
+  .bar { display: flex; gap: 6px; margin: 10px 0; }
+  .bar button { flex: 1; font-weight: bold; }
+  .bar button.primary { background: #7a3fb0; border-color: #9a5fd0; }
+  .bar button:disabled { opacity: .4; }
+  .sheetbg { position: fixed; inset: 0; background: #000a; display: flex; align-items: flex-end; justify-content: center; }
+  .sheetbg.hidden { display: none; }
+  .sheet { width: 100%; max-width: 390px; max-height: 85vh; overflow-y: auto; background: var(--panel); border-radius: 12px 12px 0 0; padding: 12px 14px 16px; }
+  .sheet h3 { margin: 0 0 4px; font-size: 15px; }
+  .sheet .why { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+  .sheet .lbl { font-size: 12px; color: var(--dim); margin: 10px 0 4px; }
+  .sheet .opts { display: flex; flex-direction: column; gap: 6px; }
+  .sheet .opts button { text-align: left; display: flex; flex-direction: column; }
+  .sheet .opts button small { color: var(--dim); font-size: 12px; }
+  .sheet .opts button.on { border-color: #f0d34a; }
+  .sheet .opts button.poor { opacity: .45; }
+  .sheet .lack { color: var(--no); }
+  .slots, .roster { display: flex; flex-wrap: wrap; gap: 6px; }
+  .slots button, .roster button { flex: 0 0 calc(25% - 5px); padding: 6px 2px; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .slots button.emptyslot { border-style: dashed; color: var(--dim); }
+  .roster button small, .slots button small { font-size: 10px; color: var(--dim); }
+  .roster button:disabled { opacity: .35; }
+  .sheet .close { width: 100%; margin-top: 10px; }
+</style>
+</head>
+<body>
+<script src="../common/rules.js"></script>
+<script src="rules.js"></script>
+<script>
+// 판 모양 (5×8): Y 공터, E 입구, 구역 키, T 통로, G 보물방, . 바위
+var GRID = [
+  'YYYYY',
+  'TTETT',
+  'L1 . C1 . R1',
+  'L2 . C2 . R2',
+  'L3 . T . R3',
+  'TTTTT',
+  '. . N . .',
+  '. . G . .'
+].map(function (row) { return row.indexOf(' ') >= 0 ? row.split(' ') : row.split(''); });
+var G, UNDO = [], run = null;
+function newGame(req) {
+  G = { req: req || 'trap', day: 1, layout: defaultLayout(), units: {}, history: [], phase: 'build', last: null };
+  G.dayStart = JSON.stringify(G.layout);
+  UNDO = [];
+}
+// 오늘 공사 = 오늘 아침과 시설이 달라진 구역 수 (원래대로 돌리면 돌려받음)
+function buildsUsed() { var s = JSON.parse(G.dayStart), n = 0; Object.keys(s).forEach(function (z) { if (s[z] !== G.layout[z]) n++; }); return n; }
+function changedToday(z) { return JSON.parse(G.dayStart)[z] !== G.layout[z]; }
+function sum() { return summaryOf(G.layout, G.units, G.req); }
+function waiting(m) { var used = 0; Object.keys(G.units).forEach(function (z) { G.units[z].forEach(function (x) { if (x === m) used++; }); }); return A6.roster[m] - used; }
+function snap() { UNDO.push(JSON.stringify({ layout: G.layout, units: G.units })); }
+function undo() { if (!UNDO.length) return; var o = JSON.parse(UNDO.pop()); G.layout = o.layout; G.units = o.units; }
+function whyNot(z, k) {
+  if (G.layout[z] === k) return null;
+  var back = JSON.parse(G.dayStart)[z] === k; // 원래대로 돌리기는 공사를 안 씀
+  if (!back && !changedToday(z) && buildsUsed() >= A6.buildsPerDay) return '오늘 공사를 다 썼어요';
+  var left = sum().left + A6.fac[G.layout[z]].cost - A6.fac[k].cost;
+  if (left < 0) return '금 ' + (-left) + ' 모자람';
+  return null;
+}
+function setFac(z, k) {
+  var err = whyNot(z, k); if (err) return err;
+  snap();
+  G.layout[z] = k;
+  var slots = A6.fac[k].slots || 0; // 대기실이 아니게 되거나 자리가 줄면 몬스터는 대기로 돌아감
+  if (G.units[z]) { G.units[z] = G.units[z].slice(0, slots); if (!G.units[z].length) delete G.units[z]; }
+  return null;
+}
+
+function el(id) { return document.getElementById(id); }
+function toast(msg) {
+  var r = el('result'); r.className = 'result toast'; r.textContent = msg;
+  clearTimeout(toast.t); toast.t = setTimeout(function () { if (r.classList.contains('toast')) r.className = 'result hidden'; }, 1600);
+}
+function zoneOf(k) { return A6.zones.filter(function (z) { return z.k === k; })[0]; }
+function buildPage() {
+  document.body.innerHTML =
+    '<header><h1>시안 A6 둥지</h1><a href="../index.html">시안 목록 →</a></header>' +
+    '<div class="reqs" id="reqs"></div><section class="card" id="demand"></section>' +
+    '<div class="day" id="day"></div><div class="board" id="board"></div>' +
+    '<div class="bar" id="bar"></div><ol class="log" id="log"></ol>' +
+    '<div class="sheetbg hidden" id="sheetbg"><div class="sheet" id="sheet"></div></div><div class="result hidden" id="result"></div>';
+  el('reqs').onclick = function (e) { var b = e.target.closest('button'); if (b && !run && b.dataset.req !== G.req) { newGame(b.dataset.req); el('log').innerHTML = ''; draw(); } };
+  el('board').onclick = function (e) { var z = e.target.closest('[data-z]'); if (z && !run && G.phase === 'build') openSheet(z.dataset.z); };
+  el('sheetbg').onclick = function (e) { if (e.target.id === 'sheetbg') closeSheet(); };
+  el('bar').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.id === 'go') startRun();
+    else if (b.id === 'undo') { undo(); draw(); }
+    else if (b.id === 'next') { G.day++; G.phase = 'build'; G.last = null; G.dayStart = JSON.stringify(G.layout); UNDO = []; el('log').innerHTML = ''; draw(); }
+    else if (b.id === 'again') { newGame(G.req); el('log').innerHTML = ''; draw(); }
+  };
+}
+function drawTop() {
+  el('reqs').innerHTML = Object.keys(A6.reqs).map(function (k) { return '<button data-req="' + k + '" class="' + (G.req === k ? 'on' : '') + '">' + A6.reqs[k].name + '</button>'; }).join('');
+  var s = sum(), r = A6.reqs[G.req];
+  function row(ok, label, val) { return '<li class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✔' : '✘') + ' ' + label + ' <b>' + val + '</b></li>'; }
+  el('demand').innerHTML = '<div class="want">마왕의 요구: ' + r.text + '</div><ul>' +
+    row(s.ratioOk, r.kind === 'trap' ? '함정 비율' : '대기실 비율', Math.round(s.ratio * 100) + '% (함정 ' + s.trap + ' / 대기실 ' + s.den + ')') +
+    row(s.valueOk, '가치 (시설 + 몬스터)', s.value + ' / ' + A6.minValue) + row(s.left >= 0, '남은 금', s.left + ' / ' + A6.budget) + '</ul>' +
+    '<div class="enemy">침입 예고: ' + A6.days.map(function (n, i) { return (i + 1) + '일째 ' + n + '명'; }).join(' → ') + ' (모험가 체력 ' + A6.inv.hp + ' · 공격 ' + A6.inv.atk + '). 3일째를 막고 요구를 맞추면 납품</div>';
+  el('day').innerHTML = '<span><b>' + G.day + '일째</b> / 3일 · 오늘 침입 ' + A6.days[G.day - 1] + '명</span><span>' + (G.phase === 'build' ? '오늘 공사 <b>' + Math.max(0, A6.buildsPerDay - buildsUsed()) + '</b>번 남음' : '침입 ' + (run ? '중' : '끝')) + '</span>';
+}
+function isOpen(r, c) { var v = GRID[r] && GRID[r][c]; return !!v && v !== '.' && v !== 'Y'; }
+function drawBoard() {
+  var h = '', hotZ = run && run.cur ? run.cur.z : null;
+  for (var r = 0; r < GRID.length; r++) for (var c = 0; c < 5; c++) {
+    var v = GRID[r][c];
+    if (v === 'Y') {
+      if (c) continue;
+      var yf = A6.fac[G.layout.Y];
+      h += '<div class="yardrow' + (hotZ === 'Y' ? ' hot' : '') + (changedToday('Y') ? ' built' : '') + '" data-z="Y">야외 · 모험가 집결지 — <b>' + yf.name + '</b>' + (run && hotZ === 'Y' ? '<span class="cnt">' + run.cur.n + '명</span>' : '') + '</div>';
+      continue;
+    }
+    if (v === '.') { h += '<div class="rock"></div>'; continue; }
+    if (v === 'T') {
+      var arms = '<i class="tc"></i>' + [[-1, 0, 'up'], [1, 0, 'down'], [0, -1, 'left'], [0, 1, 'right']].map(function (d) { return isOpen(r + d[0], c + d[1]) ? '<i class="' + d[2] + '"></i>' : ''; }).join('');
+      h += '<div class="rock tun">' + arms + '</div>'; continue;
+    }
+    if (v === 'G') { h += '<div class="gold' + (hotZ === 'G' ? ' hot' : '') + '">보물방' + (hotZ === 'G' && run.cur.n ? '<span class="cnt">' + run.cur.n + '명</span>' : '') + '</div>'; continue; }
+    var z = zoneOf(v), k = G.layout[v], f = A6.fac[k], us = G.units[v] || [];
+    var cls = 'zone ' + f.kind + (f.kind === 'den' && us.length < f.slots ? ' emptyden' : '') + (hotZ === v ? ' hot' : '') + (changedToday(v) ? ' built' : '');
+    var mons = f.kind === 'den' ? '<div class="mons">' + (us.length ? us.map(function (m) { return PROTO.items[m].short; }).join(' ') : '비어 있음') + ' ' + us.length + '/' + f.slots + '</div>' : '';
+    var cn = G.last && G.last.contrib[v] && G.last.contrib[v].dmg ? '<span class="contrib">피해 ' + G.last.contrib[v].dmg + (G.last.contrib[v].kill ? '·처치 ' + G.last.contrib[v].kill : '') + '</span>' : '';
+    h += '<div class="' + cls + '" data-z="' + v + '"><div class="zn">' + z.name + '</div><div class="fn">' + f.short + '</div>' + mons + cn + (hotZ === v ? '<span class="cnt">' + run.cur.n + '명</span>' : '') + '</div>';
+  }
+  el('board').innerHTML = h;
+}
+function drawBar() {
+  var h = run ? '' : G.phase === 'build' ? '<button id="undo"' + (UNDO.length ? '' : ' disabled') + '>↶ 되돌리기</button><button id="go" class="primary">' + G.day + '일째 침입 시작</button>'
+    : G.day < 3 ? '<button id="next" class="primary">' + (G.day + 1) + '일째로</button>' : '<button id="again" class="primary">처음부터</button>';
+  el('bar').innerHTML = h;
+}
+function draw() { drawTop(); drawBoard(); drawBar(); document.body.classList.toggle('running', !!run); }
+
+// ---------- 구역 시트: 몬스터 대기실이면 몬스터 배치가 먼저, 아래에 시설 바꾸기 ----------
+function openSheet(z) {
+  var zn = zoneOf(z), k = G.layout[z], f = A6.fac[k], h = '<h3>' + zn.name + ' — ' + f.name + '</h3>';
+  h += '<div class="why">' + (zn.kind === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : zn.kind === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : zn.kind === 'nest' ? '모든 길이 모이는 마지막 관문.' : zn.lane === 'C' ? '가운데 길: 가장 짧아서 많이 지나는 곳.' : '옆길: 입구에서 이쪽으로 온 침입자만.') + ' 오늘 공사 ' + Math.max(0, A6.buildsPerDay - buildsUsed()) + '번 남음</div>';
+  if (f.kind === 'den') {
+    var us = G.units[z] || [];
+    h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + f.slots + ') — 공사 횟수를 쓰지 않아요. 자리를 누르면 빼요</div><div class="slots">';
+    for (var i = 0; i < f.slots; i++) h += us[i] ? '<button data-out="' + i + '"><b>' + PROTO.items[us[i]].short + '</b><small>빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
+    h += '</div><div class="lbl">대기 중인 몬스터 — 누르면 넣어요</div><div class="roster">';
+    Object.keys(A6.roster).forEach(function (m) {
+      var it = PROTO.items[m], w = waiting(m);
+      h += '<button data-in="' + m + '"' + (w && us.length < f.slots ? '' : ' disabled') + '><b>' + it.short + ' ×' + w + '</b><small>체' + it.hp + ' 공' + it.atk + '</small><small>가치 ' + it.value + '</small></button>';
+    });
+    h += '</div>';
+  }
+  h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="opts">';
+  facFor(zn).forEach(function (fk) {
+    var ff = A6.fac[fk], why = whyNot(z, fk);
+    h += '<button data-k="' + fk + '" class="' + (k === fk ? 'on' : '') + (why ? ' poor' : '') + '"><b>' + ff.name + (k === fk ? ' (지금)' : '') + '</b><small>' + ff.st + '</small><small>금 ' + ff.cost + (ff.value ? ' · 가치 ' + ff.value : '') + (why ? ' · <span class="lack">' + why + '</span>' : '') + '</small></button>';
+  });
+  h += '</div><button class="close" id="closeSheet">닫기</button>';
+  el('sheet').innerHTML = h;
+  el('sheet').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.id === 'closeSheet') return closeSheet();
+    if (b.dataset.in) { snap(); (G.units[z] = G.units[z] || []).push(b.dataset.in); draw(); return openSheet(z); }
+    if (b.dataset.out !== undefined) { snap(); G.units[z].splice(+b.dataset.out, 1); if (!G.units[z].length) delete G.units[z]; draw(); return openSheet(z); }
+    if (b.dataset.k) {
+      var err = setFac(z, b.dataset.k); if (err) return toast(err);
+      draw();
+      if (A6.fac[b.dataset.k].kind === 'den') return openSheet(z); // 대기실을 지으면 바로 몬스터 배치로
+      closeSheet();
+    }
+  };
+  el('sheetbg').className = 'sheetbg';
+}
+function closeSheet() { el('sheetbg').className = 'sheetbg hidden'; }
+
+// ---------- 침입 ----------
+function startRun() {
+  if (run) return;
+  run = { res: simulate(G.layout, G.units, A6.days[G.day - 1]), i: 0, cur: null };
+  G.phase = 'invade'; G.last = null; el('log').innerHTML = '';
+  step();
+}
+function step() {
+  var res = run.res;
+  if (run.i >= res.steps.length) return finish(res);
+  var s = res.steps[run.i++];
+  run.cur = s;
+  if (s.text) { el('log').insertAdjacentHTML('beforeend', '<li>' + s.text + '</li>'); el('log').lastChild.scrollIntoView({ block: 'nearest' }); }
+  draw();
+  setTimeout(step, s.text ? 650 : 200);
+}
+function finish(res) {
+  G.history.push(res.reached); G.last = res; run = null;
+  var s = sum(), r = el('result'), last = G.day === 3, deliver = last && s.ok && res.reached === 0;
+  r.className = 'result ' + (res.reached ? 'lose' : 'win');
+  r.innerHTML = '<h2>' + G.day + '일째: ' + (res.reached ? res.reached + '명이 보물방에!' : '모두 막았다!') + '</h2>' +
+    '<p>침입자 ' + res.n + '명 중 처치 <b>' + res.killed + '</b> · 보물방 도달 <b>' + res.reached + '</b></p>' +
+    (last ? '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.reached ? '3일째에 뚫렸어요' : '요구 충족 + 방어 성공') + '</p><p>3일 기록: ' + G.history.map(function (x, i) { return (i + 1) + '일 ' + (x ? x + '명 도달' : '막음'); }).join(' · ') + '</p>'
+      : '<p>판에 구역별 피해·처치가 표시돼요. 내일 공사 ' + A6.buildsPerDay + '번으로 고쳐 보세요.</p>') +
+    '<button id="ok" class="primary">확인</button>';
+  el('ok').onclick = function () { r.className = 'result hidden'; draw(); };
+  draw();
+}
+
+newGame('trap');
+buildPage();
+draw();
+</script>
+</body>
+</html>
