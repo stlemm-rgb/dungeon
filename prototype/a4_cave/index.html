@@ -14,14 +14,19 @@
     font-size: 12px; text-align: center; line-height: 1.2; cursor: pointer; border: 2px solid transparent; }
   .board .yard { background: #4a4234; color: #b8a888; font-size: 11px; cursor: default; }
   .board .rock { background: #17151b; background-image: radial-gradient(#25222b 1px, transparent 1px); background-size: 9px 9px; }
-  .board .tunnel { background: #4d4656; }
+  /* 통로: 바위 위에 이어진 쪽으로만 뻗은 좁은 길 (방은 칸을 꽉 채운 네모) */
+  .board .tunnel { background: #17151b; background-image: radial-gradient(#25222b 1px, transparent 1px); background-size: 9px 9px; cursor: default; border: 0; }
+  .board .tunnel i { position: absolute; background: #6a6175; }
+  .board .tunnel .tc { left: 32%; top: 32%; width: 36%; height: 36%; }
+  .board .tunnel .up { left: 32%; top: 0; width: 36%; height: 34%; } .board .tunnel .down { left: 32%; bottom: 0; width: 36%; height: 34%; }
+  .board .tunnel .left { top: 32%; left: 0; height: 36%; width: 34%; } .board .tunnel .right { top: 32%; right: 0; height: 36%; width: 34%; }
   .board .trap { background: #5a3a22; } .board .unit { background: #22405a; }
   .board .maze { background: #2e4a2a; } .board .boss { background: #5a2238; }
   .board .entry { background: #2c5a3a; color: #bfe8c9; font-weight: bold; }
   .board .goldc { background: #6b5a1e; color: #f6e6a6; font-weight: bold; }
   .board .sel { box-shadow: inset 0 0 0 3px #fff; }
   .board .pv { box-shadow: inset 0 0 0 3px var(--ok); } .board .pv.bad { box-shadow: inset 0 0 0 3px var(--no); }
-  .board .route::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #f0d34a88; }
+  .board .route::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #f0d34a; z-index: 1; }
   .board .inv { box-shadow: inset 0 0 0 3px #f0d34a; }
   .board .inv::after { content: attr(data-n); position: absolute; right: 2px; bottom: 2px; background: #f0d34a; color: #000;
     font-weight: bold; font-size: 11px; padding: 0 3px; border-radius: 3px; }
@@ -84,7 +89,7 @@ function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A4 동굴</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<section class="card" id="demand"></section>' +
-    '<p class="rule">처음부터 동굴 통로가 보물방까지 이어져 있어요. 통로나 바위 칸을 눌러 이어진 칸을 최대 ' + A4.maxRoom + '개 고른 뒤 <b>방 만들기</b>. ' +
+    '<p class="rule">처음부터 동굴 통로(좁은 길)가 보물방까지 이어져 있어요. 통로는 길 역할만 해요. <b>바위 칸</b>을 눌러 이어진 칸을 최대 ' + A4.maxRoom + '개 고른 뒤 <b>방 만들기</b>. 자리가 모자라면 통로 도구로 통로를 메워 바위로 만드세요. ' +
     '문은 자동으로 붙고, <b>문(주황 막대)을 끌면</b> 옮길 수 있는 자리가 초록 원으로 보여요. 노란 점은 침입자가 지금 올 가장 짧은 길.</p>' +
     '<div class="wrap" id="wrap"><div id="board" class="board"></div><div id="over"></div></div>' +
     '<div class="selbar" id="selbar"></div>' +
@@ -131,7 +136,12 @@ function drawBoard() {
     if (g === 'entry') { cls = 'entry'; label = '입구<br><small>집결지</small>'; }
     else if (g === 'yard') { cls = 'yard'; label = c === 0 ? '공터' : ''; }
     else if (g === 'gold') { cls = 'goldc'; label = '보물방'; }
-    else if (!p) cls = g;
+    else if (!p) {
+      cls = g;
+      if (g === 'tunnel') label = '<i class="tc"></i>' + DIRS.map(function (d) {
+        return canPass(cell, [r + d.dr, c + d.dc]) ? '<i class="' + d.k + '"></i>' : '';
+      }).join('');
+    }
     else {
       var it = itemOf(p.content);
       cls = it.kind;
@@ -233,6 +243,7 @@ function bindBoard() {
     var cell = cellAt(e); if (!cell) return;
     var p = pieceAt(cell);
     if (p) return openModal(p.id);
+    if (groundAt(cell) === 'tunnel') return toast('통로는 길이에요. 방은 바위 칸에 지어요');
     if (!buildable(cell)) return;
     var i = S.sel.findIndex(function (x) { return same(x, cell); });
     if (i >= 0) S.sel.splice(i, 1);

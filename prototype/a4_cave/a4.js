@@ -186,7 +186,8 @@ function summary() {
   return s;
 }
 function pieceCost(content, n) { var it = itemOf(content); return it.cost * (it.size ? 1 : n); }
-function buildable(x) { return inB(x[0], x[1]) && !ownerAt(x) && (groundAt(x) === 'rock' || groundAt(x) === 'tunnel'); }
+// 방은 바위를 파서만 짓는다. 통로는 길 역할만 하고 방이 될 수 없다.
+function buildable(x) { return inB(x[0], x[1]) && !ownerAt(x) && groundAt(x) === 'rock'; }
 function contiguous(cells) {
   if (!cells.length) return false;
   var seen = [cells[0]], q = [cells[0]];
