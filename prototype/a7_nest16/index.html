@@ -63,20 +63,15 @@
 var G, UNDO = [], run = null;
 function newGame(req) {
   G = { req: req || 'trap', day: 1, layout: defaultLayout(), units: {}, history: [], phase: 'build', last: null };
-  G.dayStart = JSON.stringify(G.layout);
   UNDO = [];
 }
-// 오늘 공사 = 오늘 아침과 시설이 달라진 구역 수 (원래대로 돌리면 돌려받음)
-function buildsUsed() { var s = JSON.parse(G.dayStart), n = 0; Object.keys(s).forEach(function (z) { if (s[z] !== G.layout[z]) n++; }); return n; }
-function changedToday(z) { return JSON.parse(G.dayStart)[z] !== G.layout[z]; }
+// 공사는 횟수 제한 없음: 금이 남아 있으면 언제든. 되돌리기는 날짜와 상관없이 벌칙 없이 (금도 그대로 돌아옴)
 function sum() { return summaryOf(G.layout, G.units, G.req); }
 function waiting(m) { var used = 0; Object.keys(G.units).forEach(function (z) { G.units[z].forEach(function (x) { if (x === m) used++; }); }); return A7.roster[m] - used; }
 function snap() { UNDO.push(JSON.stringify({ layout: G.layout, units: G.units })); }
 function undo() { if (!UNDO.length) return; var o = JSON.parse(UNDO.pop()); G.layout = o.layout; G.units = o.units; }
 function whyNot(z, k) {
   if (G.layout[z] === k) return null;
-  var back = JSON.parse(G.dayStart)[z] === k; // 원래대로 돌리기는 공사를 안 씀
-  if (!back && !changedToday(z) && buildsUsed() >= A7.buildsPerDay) return '오늘 공사를 다 썼어요';
   var left = sum().left + costOf(G.layout[z], z) - costOf(k, z);
   if (left < 0) return '금 ' + (-left) + ' 모자람';
   return null;
@@ -109,7 +104,7 @@ function buildPage() {
     var b = e.target.closest('button'); if (!b || b.disabled) return;
     if (b.id === 'go') startRun();
     else if (b.id === 'undo') { undo(); draw(); }
-    else if (b.id === 'next') { G.day++; G.phase = 'build'; G.last = null; G.dayStart = JSON.stringify(G.layout); UNDO = []; el('log').innerHTML = ''; draw(); }
+    else if (b.id === 'next') { G.day++; G.phase = 'build'; G.last = null; el('log').innerHTML = ''; draw(); }
     else if (b.id === 'again') { newGame(G.req); el('log').innerHTML = ''; draw(); }
   };
 }
@@ -121,7 +116,7 @@ function drawTop() {
     row(s.ratioOk, r.kind === 'trap' ? '함정 비율' : '대기실 비율', Math.round(s.ratio * 100) + '% (함정 ' + s.trap + ' / 대기실 ' + s.den + ')') +
     row(s.valueOk, '가치 (시설 + 몬스터)', s.value + ' / ' + A7.minValue) + row(s.left >= 0, '남은 금', s.left + ' / ' + A7.budget) + '</ul>' +
     '<div class="enemy">침입 예고: ' + A7.days.map(function (n, i) { return (i + 1) + '일째 ' + n + '명'; }).join(' → ') + ' (모험가 체력 ' + A7.inv.hp + ' · 공격 ' + A7.inv.atk + '). 3일째를 막고 요구를 맞추면 납품</div>';
-  el('day').innerHTML = '<span><b>' + G.day + '일째</b> / 3일 · 오늘 침입 ' + A7.days[G.day - 1] + '명</span><span>' + (G.phase === 'build' ? '오늘 공사 <b>' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '</b>번 남음' : '침입 ' + (run ? '중' : '끝')) + '</span>';
+  el('day').innerHTML = '<span><b>' + G.day + '일째</b> / 3일 · 오늘 침입 ' + A7.days[G.day - 1] + '명</span><span>' + (G.phase === 'build' ? '남은 금 <b>' + sum().left + '</b>' : '침입 ' + (run ? '중' : '끝')) + '</span>';
 }
 // 판: 칸마다 구역 색, 같은 구역 칸끼리는 테두리 없이, 구역 이름은 첫 칸에. 문 = 침입 순서로 이어지는 구역 사이
 function flowPairs() {
@@ -138,13 +133,13 @@ function sharedEdge(a, b) {
 }
 function drawBoard() {
   var h = '', hotZ = run && run.cur ? run.cur.z : null, seen = {};
-  el('yard').className = 'yardbar' + (hotZ === 'Y' ? ' hot' : '') + (changedToday('Y') ? ' built' : '');
+  el('yard').className = 'yardbar' + (hotZ === 'Y' ? ' hot' : '');
   el('yard').innerHTML = '야외 · 모험가 집결지 — <b>' + A7.fac[G.layout.Y].name + '</b>' + (hotZ === 'Y' ? '<span class="cnt">' + run.cur.n + '명</span>' : '');
   for (var r = 0; r < A7.map.length; r++) for (var c = 0; c < 5; c++) {
     var z = A7.map[r][c], k = G.layout[z], f = A7.fac[k], us = G.units[z] || [], first = !seen[z];
     seen[z] = true;
     var kind = z === 'B' ? 'boss' : f.kind;
-    var cls = 'cell ' + kind + (kind === 'den' && us.length < slotsOf(k, z) ? ' emptyden' : '') + (hotZ === z ? ' hot' : '') + (changedToday(z) && first ? ' built' : '');
+    var cls = 'cell ' + kind + (kind === 'den' && us.length < slotsOf(k, z) ? ' emptyden' : '') + (hotZ === z ? ' hot' : '');
     var style = [[-1, 0, 'top'], [1, 0, 'bottom'], [0, -1, 'left'], [0, 1, 'right']].map(function (d) {
       var nb = A7.map[r + d[0]] && A7.map[r + d[0]][c + d[1]];
       return nb === z ? 'border-' + d[2] + '-color:transparent;' : '';
@@ -180,11 +175,11 @@ function draw() { drawTop(); drawBoard(); drawBar(); document.body.classList.tog
 // ---------- 구역 시트: 몬스터 대기실이면 몬스터 배치가 먼저, 아래에 시설 바꾸기 ----------
 function openSheet(z) {
   var k = G.layout[z], f = A7.fac[k], t = zoneType(z), h = '<h3>' + A7.names[z] + ' — ' + f.name + (t === 'room' ? ' (' + sizeOf(z) + '칸)' : '') + '</h3>';
-  h += '<div class="why">' + (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : A7.center.indexOf(z) >= 0 ? '가운데 길: 옆길에서 빠져나온 침입자가 모두 모이는 큰길. 피할 수 없어요.' : A7.exits[z] && A7.exits[z].length > 1 ? '갈림길: 지나간 침입자가 아래로 내려가거나 가운데로 빠져요.' : '옆길.') + (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '') + ' 오늘 공사 ' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '번 남음</div>';
+  h += '<div class="why">' + (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : A7.center.indexOf(z) >= 0 ? '가운데 길: 옆길에서 빠져나온 침입자가 모두 모이는 큰길. 피할 수 없어요.' : A7.exits[z] && A7.exits[z].length > 1 ? '갈림길: 지나간 침입자가 아래로 내려가거나 가운데로 빠져요.' : '옆길.') + (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '') + '</div>';
   if (f.kind === 'den') {
     var us = G.units[z] || [];
     var sl = slotsOf(k, z);
-    h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + sl + ') — 공사 횟수를 쓰지 않아요. 자리를 누르면 빼요</div><div class="slots">';
+    h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + sl + ') — 자리를 누르면 빼요</div><div class="slots">';
     for (var i = 0; i < sl; i++) h += us[i] ? '<button data-out="' + i + '"><b>' + PROTO.items[us[i]].short + '</b><small>빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
     h += '</div><div class="lbl">대기 중인 몬스터 — 누르면 넣어요</div><div class="roster">';
     Object.keys(A7.roster).forEach(function (m) {
@@ -239,7 +234,7 @@ function finish(res) {
   r.innerHTML = '<h2>' + G.day + '일째: ' + (res.reached ? res.reached + '명이 보물방에!' : '모두 막았다!') + '</h2>' +
     '<p>침입자 ' + res.n + '명 중 처치 <b>' + res.killed + '</b> · 보물방 도달 <b>' + res.reached + '</b></p>' +
     (last ? '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.reached ? '3일째에 뚫렸어요' : '요구 충족 + 방어 성공') + '</p><p>3일 기록: ' + G.history.map(function (x, i) { return (i + 1) + '일 ' + (x ? x + '명 도달' : '막음'); }).join(' · ') + '</p>'
-      : '<p>판에 구역별 피해·처치가 표시돼요. 내일 공사 ' + A7.buildsPerDay + '번으로 고쳐 보세요.</p>') +
+      : '<p>판에 구역별 피해·처치가 표시돼요. 내일 마음껏 고쳐 보세요 (되돌리기도 자유).</p>') +
     '<button id="ok" class="primary">확인</button>';
   el('ok').onclick = function () { r.className = 'result hidden'; draw(); };
   draw();

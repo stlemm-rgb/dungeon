@@ -2,7 +2,7 @@
 // 구역은 칸 여러 개짜리 덩어리. 큰 구역일수록 함정이 세고 몬스터 자리가 많다.
 // 이동: 갈림길에서 나뉘고 시설에 따라 몰린다 (미끼 쪽으로 몰림, 몬스터가 보이는 대기실은 피함, 함정은 모름). 버려도 되는 코드.
 var A7 = {
-  budget: 300, buildsPerDay: 4, days: [5, 6, 8], minValue: 450,
+  budget: 300, days: [5, 6, 8], minValue: 450,
   inv: { name: '모험가', hp: 45, atk: 8 },
   trapPerCell: 6, forestDmg: 8, rounds: 4, ambush: 1.5,
   // 5×7 판의 칸마다 구역 키 (사용자 빨간 선 그림)
