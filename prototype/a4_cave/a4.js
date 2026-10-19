@@ -200,16 +200,24 @@ function refreshDoors() {
     }
   });
 }
-// 문 하나 더 (팝업). 닫은 적 없는 자리부터, 없으면 닫았던 자리도 쓴다.
-function addDoor(id) {
-  var p = B.pieces[id];
-  if (doorsOf(id).length >= A4.maxDoors) return '문은 최대 ' + A4.maxDoors + '개예요';
-  p.want = doorsOf(id).length + 1;
-  var before = doorsOf(id).length;
-  refreshDoors();
-  if (doorsOf(id).length === before) { p.closed = {}; refreshDoors(); }
-  if (doorsOf(id).length === before) { p.want = before; return '문을 낼 수 있는 자리가 없어요 (통로나 옆 방과 맞닿아야 해요)'; }
+// 벽을 눌러 문 만들기. 조건: 방(들)의 문이 4개 미만, 벽 바깥이 통로나 다른 방.
+function openDoor(inner, outer) {
+  var k = edgeKey(inner, outer), ids = [ownerAt(inner), ownerAt(outer)].filter(Boolean);
+  if (B.doors[k]) return null;
+  if (!isOpen(outer) || !isOpen(inner)) return '통로나 다른 방과 맞닿은 벽에만 문을 낼 수 있어요';
+  if (ids.some(function (o) { return doorsOf(o).length >= A4.maxDoors; })) return '방 하나에 문은 최대 ' + A4.maxDoors + '개예요';
+  B.doors[k] = [inner, outer];
+  ids.forEach(function (o) { var p = B.pieces[o]; delete p.closed[k]; p.want = doorsOf(o).length; });
   return null;
+}
+// 지금 문을 낼 수 있는 벽 자리 전부 (판에 옅게 보여 준다)
+function doorSlots() {
+  var out = [], seen = {};
+  Object.keys(B.pieces).forEach(function (id) {
+    if (doorsOf(id).length >= A4.maxDoors) return;
+    doorSpots(id).forEach(function (s) { if (!B.doors[s.k] && !seen[s.k]) { seen[s.k] = true; out.push(s); } });
+  });
+  return out;
 }
 
 // ---------- 놓기·고치기 ----------

@@ -41,13 +41,17 @@
   .door.h { width: 26px; height: 10px; } .door.v { width: 10px; height: 26px; }
   .door::before { content: ''; position: absolute; inset: -10px; } /* 누르기 쉽게 */
   .door.moving { opacity: .35; }
+  .slot { position: absolute; transform: translate(-50%, -50%); z-index: 2; border: 2px dashed #f3c77aaa; background: #f3c77a22; border-radius: 3px; cursor: pointer; }
+  .slot.h { width: 24px; height: 9px; } .slot.v { width: 9px; height: 24px; }
+  .slot::before { content: ''; position: absolute; inset: -10px; }
+  .board .painted { box-shadow: inset 0 0 0 3px #a6d65a; }
   .spot { width: 22px; height: 22px; border-radius: 50%; border: 2px dashed #a6d65a; background: #a6d65a33; pointer-events: none; }
   .spot.near { background: #a6d65a; }
   .selbar { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 13px; min-height: 36px; }
   .selbar span { flex: 1; color: var(--dim); }
   .selbar button, .tools button, .modal button { font: inherit; border-radius: 6px; border: 1px solid var(--line);
     background: var(--panel); color: var(--text); cursor: pointer; padding: 8px 10px; }
-  .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 4px; }
+  .tools { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 4px; }
   .tools button { padding: 6px 2px; font-size: 13px; display: flex; flex-direction: column; align-items: center; }
   .tools button span { font-size: 10px; color: var(--dim); }
   .tools button.on { border-color: var(--text); background: #3a3546; }
@@ -62,6 +66,7 @@
   .modal .row button { flex: 1; min-width: 30%; font-size: 13px; }
   .modal .row button small { display: block; color: var(--dim); font-size: 11px; }
   .modal button.on { border-color: var(--text); background: #3a3546; }
+  .modal button.poor { opacity: .45; } .modal small.lack { color: var(--no); }
   .modal .stepper button { flex: 0 0 48px; min-width: 0; font-size: 18px; }
   .modal .stepper b { flex: 1; text-align: center; font-size: 16px; }
   .modal .note { font-size: 11px; color: var(--dim); margin-top: 4px; }
@@ -78,7 +83,6 @@
 var S = { sel: [], tool: null, speed: 1, pv: null, M: null, drag: null };
 var run = null;
 var TOOLS = [
-  { k: 'tunnel', label: '통로', sub: '바위→파기 / 통로→메우기' },
   { k: 'maze', label: '미로', sub: '3×3 끌어 놓기' }, { k: 'boss', label: '보스방', sub: '2×2 끌어 놓기' }
 ];
 var CATS = { trap: ['spike', 'rock'], unit: ['gob', 'skel', 'orc'] };
@@ -93,8 +97,8 @@ function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A4 동굴</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<section class="card" id="demand"></section>' +
-    '<p class="rule">동굴 통로(좁은 길)가 보물방까지 이어져 있어요. 통로는 길 역할만 해요. 칸을 눌러 최대 ' + A4.maxRoom + '칸 고르고 <b>방 만들기</b> → 종류 고르면 끝 (바위·통로 어디든). ' +
-    '문은 2개(들어오는 문 + 나가는 문)가 <b>자동</b>으로 생겨요. 문(주황 막대)을 <b>누르면 닫히고, 끌면 옮겨져요</b>. 더 필요하면 방을 눌러 <b>문 하나 더</b>. 노란 점은 침입자가 지금 올 가장 짧은 길이고, 그 길에 없는 방은 흐리게 <b>안 지나감</b>으로 보여요.</p>' +
+    '<p class="rule"><b>칸 고르기</b>: 누르기 또는 쓸기(최대 ' + A4.maxRoom + '칸) → 종류 고르면 방 완성. <b>길게 누른 뒤 끌기</b>: 바위는 통로로 파고, 통로는 바위로 메워요. ' +
+    '<b>문</b>: 방 벽의 옅은 칸을 누르면 생기고, 문을 누르면 없어지고, 끌면 옮겨져요. 노란 점은 침입자가 올 가장 짧은 길, 그 길에 없는 방은 흐리게 <b>안 지나감</b>.</p>' +
     '<div class="wrap" id="wrap"><div id="board" class="board"></div><div id="over"></div></div>' +
     '<div class="selbar" id="selbar"></div>' +
     '<div class="tools" id="tools"></div>' +
@@ -178,12 +182,16 @@ function drawBoard() {
     var e = B.doors[k], pos = edgePos(e[0], e[1]);
     o += '<div class="door ' + (pos.h ? 'h' : 'v') + (S.drag && S.drag.k === k ? ' moving' : '') + '" data-door="' + k + '" style="left:' + pos.x + '%;top:' + pos.y + '%"></div>';
   });
+  if (!run && !S.drag && !S.tool) doorSlots().forEach(function (s) {
+    var pos = edgePos(s.inner, s.outer);
+    o += '<div class="slot ' + (pos.h ? 'h' : 'v') + '" data-slot="' + s.k + '" style="left:' + pos.x + '%;top:' + pos.y + '%"></div>';
+  });
   if (S.drag) S.drag.targets.forEach(function (s, i) {
     var pos = edgePos(s.inner, s.outer);
     o += '<div class="spot' + (S.drag.near === i ? ' near' : '') + '" style="left:' + pos.x + '%;top:' + pos.y + '%"></div>';
   });
   el('over').innerHTML = o;
-  el('wrap').classList.toggle('painting', !!S.tool || !!S.drag);
+  el('wrap').classList.toggle('painting', !run);
 }
 function drawDemand() {
   var s = summary(), d = PROTO.demand;
@@ -194,8 +202,11 @@ function drawDemand() {
     '<div class="enemy">침입자: ' + A4.party.name + ' ' + A4.party.count + '명 (각 체력 ' + A4.party.hp + ' · 공격 ' + A4.party.atk + ') · 보급 ' + A4.supplies + '초</div>';
 }
 function drawSelbar() {
-  el('selbar').innerHTML = S.sel.length ? '<span>' + S.sel.length + '칸 고름</span><button id="mk" class="primary">방 만들기</button><button id="cancel">취소</button>'
-    : S.tool ? '<span>' + TOOLS.filter(function (t) { return t.k === S.tool; })[0].label + ': 판 위에서 끌기 (도구를 다시 누르면 끝)</span>' : '';
+  var left = A4.budget - summary().cost, n = S.sel.length;
+  function range(ids) { var c = ids.map(function (k) { return PROTO.items[k].cost * n; }); return Math.min.apply(null, c) + '~' + Math.max.apply(null, c); }
+  el('selbar').innerHTML = n ? '<span>' + n + '칸 · 남은 금 <b>' + left + '</b><br>함정 ' + range(CATS.trap) + ' · 몬스터 ' + range(CATS.unit) + '</span><button id="mk" class="primary">방 만들기</button><button id="cancel">취소</button>'
+    : S.paint ? '<span>' + (S.paint === 'dig' ? '통로 파는 중' : '통로 메우는 중') + ' (손을 떼면 끝)</span>'
+    : S.tool ? '<span>' + TOOLS.filter(function (t) { return t.k === S.tool; })[0].label + ': 판 위에서 끌어 놓기 (도구를 다시 누르면 끝)</span>' : '<span>남은 금 <b>' + left + '</b></span>';
   if (el('mk')) { el('mk').onclick = function () { openModal(null); }; el('cancel').onclick = function () { S.sel = []; draw(); }; }
 }
 function drawRunbar() {
@@ -211,55 +222,78 @@ function draw() {
 
 // ---------- 조작 ----------
 function bindBoard() {
-  var w = el('wrap'), paint = null;
+  var w = el('wrap'), g = null, LONG = 350; // g: 지금 손가락 동작 (press 누름 / swipe 쓸기 / paint 파기·메우기 / stamp 특수 방 / slot 문 자리)
   w.addEventListener('pointerdown', function (e) {
     if (run) return;
-    var dn = e.target.closest('[data-door]');
-    if (dn && !S.tool) { // 문: 누르면 닫기, 끌면 옮기기
+    var dn = e.target.closest('[data-door]'), sl = e.target.closest('[data-slot]');
+    if (dn && !S.tool) { // 문: 누르면 없애기, 끌면 옮기기
       var k = dn.dataset.door, d = B.doors[k], id = ownerAt(d[0]) || ownerAt(d[1]);
       S.drag = { k: k, id: id, targets: moveTargets(id, k), near: -1, x: e.clientX, y: e.clientY };
       w.setPointerCapture(e.pointerId); e.preventDefault();
       draw(); return;
     }
-    if (!S.tool) return;
+    if (sl && !S.tool) { g = { kind: 'slot', k: sl.dataset.slot }; w.setPointerCapture(e.pointerId); e.preventDefault(); return; }
     var cell = cellAt(e); if (!cell) return;
-    e.preventDefault();
-    w.setPointerCapture(e.pointerId);
-    paint = { last: null, mode: S.tool === 'tunnel' ? (groundAt(cell) === 'rock' ? 'dig' : 'fill') : null };
-    paintAt(cell);
+    e.preventDefault(); w.setPointerCapture(e.pointerId);
+    if (S.tool) { g = { kind: 'stamp' }; stampAt(cell); return; }
+    var mine = g = { kind: 'press', start: cell };
+    mine.timer = setTimeout(function () { // 길게 누르기 → 바위는 파기, 통로는 메우기
+      if (g !== mine || mine.kind !== 'press' || pieceAt(cell)) return;
+      var gr = groundAt(cell); if (gr !== 'rock' && gr !== 'tunnel') return;
+      mine.kind = 'paint'; S.paint = gr === 'rock' ? 'dig' : 'fill'; S.sel = [];
+      paintAt(cell);
+    }, LONG);
   });
   w.addEventListener('pointermove', function (e) {
     if (S.drag) { S.drag.near = nearest(e); draw(); return; }
-    if (paint) { var cell = cellAt(e); if (cell) paintAt(cell); }
+    if (!g) return;
+    var cell = cellAt(e); if (!cell) return;
+    if (g.kind === 'press' && !same(cell, g.start)) { // 길게 누르기 전에 움직이면 쓸기
+      clearTimeout(g.timer);
+      if (!buildable(g.start)) { g = null; return; }
+      g.kind = 'swipe'; S.sel = [g.start];
+    }
+    if (g.kind === 'swipe') addSel(cell, true);
+    else if (g.kind === 'paint') paintAt(cell);
+    else if (g.kind === 'stamp') stampAt(cell);
   });
   w.addEventListener('pointerup', function (e) {
     if (S.drag) {
       var i = nearest(e), tap = Math.hypot(e.clientX - S.drag.x, e.clientY - S.drag.y) < 8;
-      if (tap) { var err = closeDoor(S.drag.k); toast(err || '문을 닫았어요 (방을 눌러 [문 하나 더]로 다시 낼 수 있어요)'); }
+      if (tap) { var err = closeDoor(S.drag.k); toast(err || '문을 없앴어요'); }
       else if (i >= 0) moveDoor(S.drag.id, S.drag.k, S.drag.targets[i]);
       else if (!S.drag.targets.length) toast('옮길 수 있는 자리가 없어요 (길이 끊기는 자리는 빠짐)');
-      S.drag = null; S.justDragged = true; setTimeout(function () { S.justDragged = false; }, 60); // 바로 뒤따르는 click만 무시
-      draw(); return;
+      S.drag = null; draw(); return;
     }
-    if (!paint) return;
-    paint = null;
-    if (S.pv) { var err = S.pv.bad || place(S.pv.cells, S.tool); S.pv = null; if (err) toast(err); }
+    if (!g) return;
+    var k = g; g = null; clearTimeout(k.timer);
+    if (k.kind === 'slot') {
+      var s = doorSlots().filter(function (x) { return x.k === k.k; })[0];
+      var e2 = s ? openDoor(s.inner, s.outer) : '여기에는 문을 낼 수 없어요';
+      if (e2) toast(e2);
+    } else if (k.kind === 'press') tapCell(k.start);
+    else if (k.kind === 'swipe') { draw(); if (S.sel.length) openModal(null); return; }
+    else if (k.kind === 'paint') S.paint = null;
+    else if (k.kind === 'stamp' && S.pv) { var e3 = S.pv.bad || place(S.pv.cells, S.tool); S.pv = null; if (e3) toast(e3); }
     draw();
   });
-  w.addEventListener('click', function (e) {
-    if (S.justDragged) { S.justDragged = false; return; }
-    if (run || S.tool || e.target.closest('[data-door]')) return;
-    var cell = cellAt(e); if (!cell) return;
+  function tapCell(cell) {
     var p = pieceAt(cell);
     if (p) return openModal(p.id);
     if (!buildable(cell)) return;
     var i = S.sel.findIndex(function (x) { return same(x, cell); });
-    if (i >= 0) S.sel.splice(i, 1);
-    else if (S.sel.length >= A4.maxRoom) toast('방은 최대 ' + A4.maxRoom + '칸이에요');
-    else if (S.sel.length && !S.sel.some(function (x) { return Math.abs(x[0] - cell[0]) + Math.abs(x[1] - cell[1]) === 1; })) toast('고른 칸과 붙은 칸만 고를 수 있어요');
+    if (i >= 0) S.sel.splice(i, 1); else addSel(cell, false);
+  }
+  function addSel(cell, quiet) {
+    var msg = null;
+    if (S.sel.some(function (x) { return same(x, cell); })) return;
+    if (!buildable(cell)) return;
+    if (S.sel.length >= A4.maxRoom) msg = '방은 최대 ' + A4.maxRoom + '칸이에요';
+    else if (S.sel.length && !S.sel.some(function (x) { return Math.abs(x[0] - cell[0]) + Math.abs(x[1] - cell[1]) === 1; })) msg = '고른 칸과 붙은 칸만 고를 수 있어요';
     else S.sel.push(cell);
+    if (msg && !quiet) toast(msg);
     draw();
-  });
+  }
   function nearest(e) { // 손가락에서 가장 가까운 후보 (판 칸 크기 0.6배 안)
     var rect = el('board').getBoundingClientRect(), cw = rect.width / A4.cols, best = -1, bd = cw * 0.6;
     S.drag.targets.forEach(function (s, i) {
@@ -269,16 +303,10 @@ function bindBoard() {
     });
     return best;
   }
-  function paintAt(cell) {
-    if (paint.last && same(paint.last, cell)) return;
-    paint.last = cell;
-    var err = null;
-    if (S.tool === 'tunnel') err = digFill(cell, paint.mode);
-    else {
-      var cells = stampCells(S.tool, cell);
-      S.pv = { cells: cells, bad: cells.every(buildable) ? null : '그 자리에는 못 놓아요' };
-    }
-    if (err) toast(err);
+  function paintAt(cell) { var err = digFill(cell, S.paint); if (err) toast(err); draw(); }
+  function stampAt(cell) {
+    var cells = stampCells(S.tool, cell);
+    S.pv = { cells: cells, bad: cells.every(buildable) ? null : '그 자리에는 못 놓아요' };
     draw();
   }
 }
@@ -302,18 +330,19 @@ function drawModal() {
       '<button data-cat="unit" class="' + (M.cat === 'unit' ? 'on' : '') + '">몬스터 방<small>칸마다 부대 1개</small></button></div>';
     if (M.cat) {
       h += '<div class="lbl">② ' + (M.cat === 'trap' ? '함정' : '몬스터') + ' 고르기 (' + M.n + '칸)</div><div class="row">';
+      var left = A4.budget - summary().cost + (M.id ? pieceCost(M.content, M.n) : 0); // 고칠 때는 지금 방 값을 돌려받는 셈
       CATS[M.cat].forEach(function (k) {
-        var it = PROTO.items[k], stat = it.kind === 'trap' ? '피해 ' + it.dmg : '체력 ' + it.hp + ' 공격 ' + it.atk;
-        h += '<button data-ct="' + k + '" class="' + (M.content === k ? 'on' : '') + '">' + it.short + '<small>' + stat + '</small><small>금 ' + it.cost * M.n + ' · 가치 ' + it.value * M.n + '</small></button>';
+        var it = PROTO.items[k], stat = it.kind === 'trap' ? '피해 ' + it.dmg : '체력 ' + it.hp + ' 공격 ' + it.atk, cost = it.cost * M.n;
+        h += '<button data-ct="' + k + '" class="' + (M.content === k ? 'on' : '') + (cost > left ? ' poor' : '') + '">' + it.short + '<small>' + stat + '</small><small>금 ' + cost + ' · 가치 ' + it.value * M.n + '</small>' + (cost > left ? '<small class="lack">금 ' + (cost - left) + ' 모자람</small>' : '') + '</button>';
       });
       h += '</div>';
     }
   }
   if (M.id) {
     var dn = doorsOf(M.id).length;
-    h += '<div class="note">문 ' + dn + '개. 방을 만들면 문 ' + A4.autoDoors + '개(들어오는 문 + 나가는 문)가 자동으로 생겨요. 판에서 문을 <b>누르면 닫히고</b>, <b>끌면 옮겨져요</b>. ' +
+    h += '<div class="note">문 ' + dn + '개 (최대 ' + A4.maxDoors + '개). 방 벽의 옅은 칸을 <b>누르면 문이 생기고</b>, 문을 <b>누르면 없어지고</b>, <b>끌면 옮겨져요</b>. ' +
       '문이 적을수록 침입자를 원하는 방향으로 묶어 둘 수 있지만 침입자에게 유리한 효과가 생겨요 (효과는 아직 미정).</div>';
-    h += '<div class="foot">' + (dn < A4.maxDoors ? '<button id="adddoor">문 하나 더</button>' : '') + '<button class="danger" id="del">허물기</button><button id="no">닫기</button></div>';
+    h += '<div class="foot"><button class="danger" id="del">허물기</button><button id="no">닫기</button></div>';
   } else h += '<div class="foot"><button id="no">취소</button></div>';
   el('modal').innerHTML = h;
   el('modal').onclick = function (e) {
@@ -325,7 +354,6 @@ function drawModal() {
       S.sel = []; closeModal(); return draw();
     }
     else if (b.id === 'no') return closeModal();
-    else if (b.id === 'adddoor') { var e2 = addDoor(M.id); if (e2) return toast(e2); draw(); }
     else if (b.id === 'del') { removePiece(M.id); closeModal(); return draw(); }
     drawModal();
   };
