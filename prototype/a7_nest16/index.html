@@ -29,6 +29,9 @@
   .built::after { content: ''; position: absolute; left: 3px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: #f0d34a; }
   .door { position: absolute; transform: translate(-50%, -50%); background: #c58b3c; border: 2px solid #f3c77a; border-radius: 3px; z-index: 2; pointer-events: none; }
   .door.h { width: 22px; height: 9px; } .door.v { width: 9px; height: 22px; }
+  .door b { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #f0d34a; color: #000; font-size: 10px; border-radius: 8px; padding: 0 4px; line-height: 14px; }
+  .door.unused { opacity: .35; }
+  .cell.lure { background: #5a2f5a; } .cell.lure .fn { color: #ff9ff3; }
   .bar { display: flex; gap: 6px; margin: 10px 0; }
   .bar button { flex: 1; font-weight: bold; }
   .bar button.primary { background: #7a3fb0; border-color: #9a5fd0; }
@@ -96,7 +99,7 @@ function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A7 구역16</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<div class="reqs" id="reqs"></div><section class="card" id="demand"></section>' +
-    '<div class="day" id="day"></div><div class="yardbar" id="yard" data-z="Y"></div><div class="wrap"><div class="board" id="board"></div><div id="over"></div></div>' +
+    '<div class="day" id="day"></div><p class="rule">이동: 갈림길에서는 반반 나뉘어요. <b>미끼</b> 쪽으로는 전원 몰리고, 몬스터가 든 <b>대기실</b>은 보이니까 피해요(다른 길이 있으면). <b>함정</b>은 모르고 들어가요. 문 위 숫자는 오늘 그리로 올 인원이에요.</p><div class="yardbar" id="yard" data-z="Y"></div><div class="wrap"><div class="board" id="board"></div><div id="over"></div></div>' +
     '<div class="bar" id="bar"></div><ol class="log" id="log"></ol>' +
     '<div class="sheetbg hidden" id="sheetbg"><div class="sheet" id="sheet"></div></div><div class="result hidden" id="result"></div>';
   el('reqs').onclick = function (e) { var b = e.target.closest('button'); if (b && !run && b.dataset.req !== G.req) { newGame(b.dataset.req); el('log').innerHTML = ''; draw(); } };
@@ -123,7 +126,7 @@ function drawTop() {
 // 판: 칸마다 구역 색, 같은 구역 칸끼리는 테두리 없이, 구역 이름은 첫 칸에. 문 = 침입 순서로 이어지는 구역 사이
 function flowPairs() {
   var p = [];
-  ['L', 'C', 'R'].forEach(function (ln) { var a = ['E'].concat(A7.lanes[ln]).concat(['B']); for (var i = 0; i + 1 < a.length; i++) p.push([a[i], a[i + 1]]); });
+  Object.keys(A7.exits).forEach(function (a) { A7.exits[a].forEach(function (b) { p.push([a, b]); }); });
   return p;
 }
 function sharedEdge(a, b) {
@@ -152,16 +155,19 @@ function drawBoard() {
       if (kind === 'den') label += '<div class="mons">' + (us.length ? us.map(function (m) { return PROTO.items[m].short; }).join(' ') : '비어 있음') + ' ' + us.length + '/' + slotsOf(k, z) + '</div>';
       else if (kind === 'trap') label += '<div class="mons">피해 ' + trapDmgOf(z) + '</div>';
       else if (kind === 'boss') label += '<div class="mons">친위대 (나중에)</div>';
-      if (G.last && G.last.contrib[z] && G.last.contrib[z].dmg) label += '<div class="contrib">피해 ' + G.last.contrib[z].dmg + (G.last.contrib[z].kill ? '·처치 ' + G.last.contrib[z].kill : '') + '</div>';
+      if (G.last && G.last.contrib[z] && G.last.contrib[z].dmg) label += '<div class="contrib">준 피해 ' + G.last.contrib[z].dmg + (G.last.contrib[z].kill ? '·처치 ' + G.last.contrib[z].kill : '') + '</div>';
       if (hotZ === z) label += '<span class="cnt">' + run.cur.n + '명</span>';
     }
     h += '<div class="' + cls + '" data-z="' + z + '" style="' + style + '">' + label + '</div>';
   }
   el('board').innerHTML = h;
+  // 문 위 숫자: 짓는 중에는 오늘 이리로 올 인원(미리 보기), 침입 뒤에는 실제로 지나간 인원
+  var fl = G.last ? G.last.flow : run ? null : forecast(G.layout, G.units, A7.days[G.day - 1]).flow;
   el('over').innerHTML = flowPairs().map(function (p) {
     var e = sharedEdge(p[0], p[1]); if (!e) return '';
     var x = ((e[0][1] + e[1][1]) / 2 + 0.5) / 5 * 100, y = ((e[0][0] + e[1][0]) / 2 + 0.5) / A7.map.length * 100, hz = e[0][1] === e[1][1];
-    return '<div class="door ' + (hz ? 'h' : 'v') + '" style="left:' + x + '%;top:' + y + '%"></div>';
+    var k = fl ? fl[p[0] + '>' + p[1]] || 0 : null;
+    return '<div class="door ' + (hz ? 'h' : 'v') + (k === 0 ? ' unused' : '') + '" style="left:' + x + '%;top:' + y + '%">' + (k ? '<b>' + k + '</b>' : '') + '</div>';
   }).join('');
 }
 function drawBar() {
@@ -174,7 +180,7 @@ function draw() { drawTop(); drawBoard(); drawBar(); document.body.classList.tog
 // ---------- 구역 시트: 몬스터 대기실이면 몬스터 배치가 먼저, 아래에 시설 바꾸기 ----------
 function openSheet(z) {
   var k = G.layout[z], f = A7.fac[k], t = zoneType(z), h = '<h3>' + A7.names[z] + ' — ' + f.name + (t === 'room' ? ' (' + sizeOf(z) + '칸)' : '') + '</h3>';
-  h += '<div class="why">' + (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : A7.lanes.C.indexOf(z) >= 0 ? '가운데 길: 가장 짧은 길.' : '옆길: 입구에서 이쪽으로 온 침입자만.') + (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '') + ' 오늘 공사 ' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '번 남음</div>';
+  h += '<div class="why">' + (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : A7.center.indexOf(z) >= 0 ? '가운데 길: 옆길에서 빠져나온 침입자가 모두 모이는 큰길. 피할 수 없어요.' : A7.exits[z] && A7.exits[z].length > 1 ? '갈림길: 지나간 침입자가 아래로 내려가거나 가운데로 빠져요.' : '옆길.') + (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '') + ' 오늘 공사 ' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '번 남음</div>';
   if (f.kind === 'den') {
     var us = G.units[z] || [];
     var sl = slotsOf(k, z);
