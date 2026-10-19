@@ -262,7 +262,7 @@ function contiguous(cells) {
 }
 function place(cells, content) {
   if (!cells.every(buildable)) return '그 자리에는 못 놓아요';
-  if (!fitsShape(cells, content)) return itemOf(content).name + '은 ' + itemOf(content).size.join('×') + ' 모양으로 골라야 해요';
+  if (!fitsShape(cells, content)) return itemOf(content).short + '는 ' + itemOf(content).size.join('×') + ' 모양이어야 해요';
   if (content === 'boss' && Object.keys(B.pieces).some(function (id) { return B.pieces[id].content === 'boss'; })) return '보스방은 층마다 1개예요';
   if (summary().cost + pieceCost(content, cells.length) > A4.budget) return '금화가 모자라요';
   var id = 'p' + B.nextId++;
