@@ -12,6 +12,8 @@
 | 본 게임 2단계 | 시작 안 함. 시안에서 핵심 규칙을 확정한 뒤 옮김 |
 | 최신 시안 | **A7 구역 16** `prototype/a7_nest16/` (rules.js, index.html). 시안 목록은 `prototype/index.html` |
 | 방침 | **지금은 균형 맞추기 없이 기능 위주** (몬스터 부대·부대장이 업데이트되며 강약이 바뀌므로). 공사는 횟수 제한 없이 금만 있으면, 되돌리기는 언제든 벌칙 없이 |
+| 기술 방향 (2026-10-20 결정) | 시안은 **순수 JS** 유지 → 본 게임 2단계부터 **React + Vite + TypeScript** → 출시는 **Capacitor**로 포장해 구글 플레이·앱스토어. 준비물(규칙·상태·데이터·화면 설계)은 화면 기술과 무관하게 |
+| 참고 자료 | `refs/ref_football_agency.md`: 다른 게임(풋볼 에이전시) 분석에서 가져올 패턴 33개 적용표 + 던전 가치 공식(3-A)·자동 전투(3-B) 적용안. UI·모션(3-C)은 다음에 추가. 분석 원본은 비공개 저장소 REA |
 | Codex | 하청(일반 데이터 작업)·검수에 씀. 실행법은 CLAUDE.md "Codex 하청" (`< /dev/null`, UTF-8 지시, `-o`). 검수 때 모델 지정 예: `-m gpt-6.1-sol -c model_reasoning_effort=medium` |
 
 ## 게임 컨셉 요약 (자세한 건 docs/GAME_PLAN.md)
