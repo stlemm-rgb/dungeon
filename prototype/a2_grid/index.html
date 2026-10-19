@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시안 A2 칸 단위 조각</title>
+<link rel="stylesheet" href="../common/proto.css">
+<style>
+  .palette.content { grid-template-columns: repeat(4, 1fr); }
+  .palette.shape { grid-template-columns: repeat(4, 1fr); margin-top: 0; }
+  .palette.tools { grid-template-columns: repeat(3, 1fr); margin-top: 0; }
+  .palette button.empty b { color: #b9b2c4; } .palette button.wall b { color: #8a8494; }
+  .mini { display: grid; gap: 1px; margin: 2px 0; }
+  .mini i { width: 7px; height: 7px; background: var(--dim); display: block; }
+  .mini i.x { background: transparent; }
+  .board { display: grid; grid-template-columns: repeat(7, 1fr); border: 2px solid var(--line); }
+  .board > div { aspect-ratio: 1; position: relative; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; text-align: center; line-height: 1.1; cursor: pointer; border: 3px solid transparent; }
+  .board .floor { background: var(--path); }
+  .board .floor.alt { background: #353040; }
+  .board .wallc { background: var(--wall); }
+  .board .trap { background: #4a3322; } .board .unit { background: #22344a; } .board .emptyr { background: #2f2c36; }
+  .board .entry { background: #2c4a35; color: #bfe8c9; font-weight: bold; }
+  .board .goldc { background: #6b5a1e; color: #f6e6a6; font-weight: bold; }
+  .board .sel { box-shadow: inset 0 0 0 2px #fff; }
+  .board .inv::after { content: attr(data-n); position: absolute; right: 1px; bottom: 1px; background: #f0d34a; color: #000;
+    font-weight: bold; font-size: 11px; padding: 0 3px; border-radius: 3px; }
+  .board .inv { box-shadow: inset 0 0 0 2px #f0d34a; }
+  .board .inv.flee::after { background: #d9594c; color: #fff; }
+  .doorpanel { background: var(--panel); border-radius: 8px; padding: 6px 8px; margin-top: 6px; font-size: 12px; }
+  .doorpanel button { margin: 3px 3px 0 0; padding: 6px 8px; font: inherit; border-radius: 5px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); cursor: pointer; }
+  .doorpanel button.open { background: #556b2f; border-color: #a6d65a; }
+  .doorpanel button:disabled { opacity: .35; cursor: default; }
+  .runbar { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); margin-top: 6px; min-height: 16px; }
+  .speed button.on { border-color: var(--text); }
+  .tally { font-size: 13px; }
+</style>
+</head>
+<body>
+<script src="../common/rules.js"></script>
+<script src="a2.js"></script>
+<script>
+var T = { mode: 'place', content: 'rock', shape: 'one', rot: 0, sel: null, speed: 1 };
+var run = null; // 재생 중인 침입 { res, i, timer }
+var DOOR_COLOR = '#a6d65a', EDGE_COLOR = '#cfc8da';
+
+function el(id) { return document.getElementById(id); }
+function toast(msg) {
+  var r = el('result'); r.className = 'result toast'; r.textContent = msg;
+  clearTimeout(toast.t); toast.t = setTimeout(function () { if (r.classList.contains('toast')) r.className = 'result hidden'; }, 1400);
+}
+
+function buildPage() {
+  document.body.innerHTML =
+    '<header><h1>시안 A2 칸 단위 조각</h1><a href="../index.html">시안 목록 →</a></header>' +
+    '<section class="card" id="demand"></section>' +
+    '<div class="palette content" id="pcontent"></div>' +
+    '<div class="palette shape" id="pshape"></div>' +
+    '<div class="palette tools" id="ptools"></div>' +
+    '<p class="rule">빈 바닥에 방·벽을 놓아 길을 만드세요. 방은 놓을 때 바깥 변이 모두 <b>문</b>으로 열려 있어요. 놓은 방을 다시 누르면 문을 닫고 열 수 있어요(길이 막히는 문은 못 닫음). ' +
+    '모험가 무리는 보물방까지 가장 짧은 길로 오고, 방에서 지면 <b>퇴각</b>해 다른 길을 찾고, 이기거나 수가 더 많으면 <b>문 중 하나로 무작위</b> 진행. ' +
+    '보급 ' + A2.supplies + '초가 끝나면 입구로 <b>도주</b>.</p>' +
+    '<div id="board" class="board"></div>' +
+    '<div id="doorpanel"></div>' +
+    '<div class="runbar" id="runbar"></div>' +
+    '<div class="buttons"><button id="go" class="primary">침입 시작</button><button id="ten">10번 시험</button><button id="clear">전부 지우기</button></div>' +
+    '<div class="buttons speed" id="speed"></div>' +
+    '<ol class="log" id="log"></ol>' +
+    '<div class="result hidden" id="result"></div>';
+  var h = '';
+  A2.contents.forEach(function (id) {
+    var it = itemOf(id), stat = it.kind === 'trap' ? '피해' + it.dmg : it.kind === 'unit' ? '체' + it.hp + ' 공' + it.atk : it.kind === 'wall' ? '길 막기' : '문 잇기용';
+    h += '<button data-c="' + id + '" class="' + it.kind + '"><b>' + it.short + '</b><span>금' + it.cost + ' 가치' + it.value + '</span><span>' + stat + '</span></button>';
+  });
+  el('pcontent').innerHTML = h;
+  el('pcontent').onclick = function (e) { var b = e.target.closest('button'); if (b) { T.content = b.dataset.c; T.mode = 'place'; draw(); } };
+  el('pshape').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.s === 'rot') T.rot = (T.rot + 1) % 4; else { T.shape = b.dataset.s; }
+    T.mode = 'place'; draw();
+  };
+  el('ptools').innerHTML = '<button data-t="door"><b>문</b><span>방 문 열고 닫기</span></button>' +
+    '<button data-t="erase"><b>지우기</b><span>조각 통째로 빼기</span></button>' +
+    '<button data-t="place"><b>놓기</b><span>고른 조각 놓기</span></button>';
+  el('ptools').onclick = function (e) { var b = e.target.closest('button'); if (b) { T.mode = b.dataset.t; T.sel = null; draw(); } };
+  el('speed').innerHTML = A2.speeds.map(function (s, i) { return '<button data-i="' + i + '">속도 ' + s.label + '</button>'; }).join('');
+  el('speed').onclick = function (e) { var b = e.target.closest('button'); if (b) { T.speed = +b.dataset.i; draw(); } };
+  el('go').onclick = startRun;
+  el('ten').onclick = tenRuns;
+  el('clear').onclick = function () { if (!run) { resetBoard(); T.sel = null; el('log').innerHTML = ''; draw(); } };
+  el('board').onclick = onBoard;
+}
+
+function shapeIcon(shape, rot) {
+  var cells = shapeCells(shape, rot), h = 0, w = 0;
+  cells.forEach(function (x) { h = Math.max(h, x[0] + 1); w = Math.max(w, x[1] + 1); });
+  var out = '<span class="mini" style="grid-template-columns:repeat(' + w + ',7px)">';
+  for (var r = 0; r < h; r++) for (var c = 0; c < w; c++)
+    out += '<i class="' + (cells.some(function (x) { return x[0] === r && x[1] === c; }) ? '' : 'x') + '"></i>';
+  return out + '</span>';
+}
+
+function drawPalettes() {
+  document.querySelectorAll('#pcontent button').forEach(function (b) { b.classList.toggle('on', T.mode === 'place' && b.dataset.c === T.content); });
+  var h = '';
+  Object.keys(A2.shapes).forEach(function (k) {
+    h += '<button data-s="' + k + '" class="' + (T.shape === k && T.mode === 'place' ? 'on' : '') + '"><b>' + A2.shapes[k].label + '</b>' + shapeIcon(k, T.rot) + '</button>';
+  });
+  el('pshape').innerHTML = h + '<button data-s="rot"><b>회전 ↻</b><span>' + (T.rot * 90) + '°</span></button>';
+  // 회전 버튼을 넣어 5칸이 되므로 열을 늘림
+  el('pshape').style.gridTemplateColumns = 'repeat(5, 1fr)';
+  document.querySelectorAll('#ptools button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === T.mode); });
+  document.querySelectorAll('#speed button').forEach(function (b) { b.classList.toggle('on', +b.dataset.i === T.speed); });
+}
+
+function drawDemand() {
+  var s = summary(), d = PROTO.demand;
+  function row(ok, label, val) { return '<li class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✔' : '✘') + ' ' + label + ' <b>' + val + '</b></li>'; }
+  el('demand').innerHTML = '<div class="who">마왕의 요구</div><div class="want">' + d.text + '</div><ul>' +
+    row(s.ratioOk, '함정 비율', Math.round(s.ratio * 100) + '% (함정 ' + s.traps + '칸 / 부대 ' + s.units + '칸)') +
+    row(s.valueOk, '던전 가치', s.value + ' / ' + d.minValue) +
+    row(s.budgetOk, '금화', s.cost + ' / ' + A2.budget) + '</ul>' +
+    '<div class="enemy">침입자: ' + A2.party.name + ' ' + A2.party.count + '명 (각 체력 ' + A2.party.hp + ' · 공격 ' + A2.party.atk + ')</div>';
+}
+
+function drawBoard() {
+  var f = run ? run.res.frames[Math.max(run.i - 1, 0)] : null, h = '', firstCell = {};
+  Object.keys(B.pieces).forEach(function (id) { var c = B.pieces[id].cells[0]; firstCell[c[0] + ',' + c[1]] = id; });
+  for (var r = 0; r < A2.rows; r++) for (var c = 0; c < A2.cols; c++) {
+    var cell = [r, c], p = pieceAt(cell), cls, label = '', style = '';
+    if (same(cell, A2.entry)) { cls = 'entry'; label = '입구'; }
+    else if (same(cell, A2.gold)) { cls = 'goldc'; label = '보물방'; }
+    else if (!p) cls = 'floor' + ((r + c) % 2 ? ' alt' : '');
+    else {
+      var it = itemOf(p.content);
+      cls = it.kind === 'wall' ? 'wallc' : it.kind === 'empty' ? 'emptyr' : it.kind;
+      if (firstCell[r + ',' + c] === p.id && it.kind !== 'wall') {
+        label = '<span class="piece ' + it.kind + '">' + it.short + '</span>';
+        if (it.kind === 'unit') label += '<br>' + (f ? f.rooms[p.id] : p.cells.length) + '/' + p.cells.length;
+        else if (it.kind === 'trap') label += '<br>×' + p.cells.length;
+      }
+      if (it.kind !== 'wall') style = DIRS.map(function (d) {
+        var n = [r + d.dr, c + d.dc], side = { '-1,0': 'top', '1,0': 'bottom', '0,-1': 'left', '0,1': 'right' }[d.dr + ',' + d.dc];
+        if (inB(n[0], n[1]) && ownerAt(n) === p.id) return '';
+        var door = inB(n[0], n[1]) && B.doors[edgeKey(r, c, d.dr, d.dc)];
+        return 'border-' + side + '-color:' + (door ? DOOR_COLOR : EDGE_COLOR) + ';' + (door ? 'border-' + side + '-style:dashed;' : '');
+      }).join('');
+    }
+    if (T.sel && same(T.sel, cell)) cls += ' sel';
+    var n = '';
+    if (f && same(f.cell, cell)) { cls += ' inv' + (f.mode === 'flee' ? ' flee' : ''); n = ' data-n="' + f.alive + '명"'; }
+    h += '<div class="' + cls + '" data-r="' + r + '" data-c="' + c + '" style="' + style + '"' + n + '>' + label + '</div>';
+  }
+  el('board').innerHTML = h;
+}
+
+function drawDoorPanel() {
+  var p = T.mode === 'door' && T.sel ? pieceAt(T.sel) : null;
+  if (!p) { el('doorpanel').innerHTML = T.mode === 'door' ? '<div class="doorpanel">문을 낼 방 칸을 누르세요.</div>' : ''; return; }
+  var h = '<div class="doorpanel">고른 칸(' + itemOf(p.content).name + ')의 변: ';
+  DIRS.forEach(function (d, i) {
+    var ok = doorable(T.sel, d), open = ok && B.doors[edgeKey(T.sel[0], T.sel[1], d.dr, d.dc)];
+    h += '<button data-d="' + i + '" class="' + (open ? 'open' : '') + '"' + (ok ? '' : ' disabled') + '>' + d.label + ' ' + (open ? '문' : '벽') + '</button>';
+  });
+  el('doorpanel').innerHTML = h + '</div>';
+  el('doorpanel').onclick = function (e) {
+    var b = e.target.closest('button[data-d]'); if (!b) return;
+    var err = toggleDoor(T.sel, DIRS[+b.dataset.d]); if (err) toast(err);
+    draw();
+  };
+}
+
+function drawRunbar() {
+  var f = run ? run.res.frames[Math.max(run.i - 1, 0)] : null;
+  el('runbar').innerHTML = f ? '<span>침입자 ' + f.alive + '명 · 체력 ' + f.hp.map(function (x) { return Math.max(x, 0); }).join('/') + '</span><span>보급 ' + f.sup + '초' + (f.mode === 'flee' ? ' · 도주 중' : '') + '</span>' : '';
+}
+
+function draw() { drawPalettes(); drawDemand(); drawBoard(); drawDoorPanel(); drawRunbar(); document.body.classList.toggle('running', !!run); }
+
+function onBoard(e) {
+  if (run) return;
+  var d = e.target.closest('[data-r]'); if (!d) return;
+  var cell = [+d.dataset.r, +d.dataset.c], p = pieceAt(cell), err = null;
+  if (T.mode === 'door') { T.sel = p && p.content !== 'wall' ? cell : null; if (!T.sel) toast('방 칸을 눌러 주세요'); }
+  else if (T.mode === 'erase') { if (p) removePiece(p.id); }
+  else if (p) { T.mode = 'door'; T.sel = p.content === 'wall' ? null : cell; }
+  else err = place(cell[0], cell[1], T.content, T.shape, T.rot);
+  if (err) toast(err);
+  draw();
+}
+
+var OUT = { wiped: '전멸시켰다!', fled: '쫓아냈다!', breach: '보물방이 뚫렸다…' };
+function startRun() {
+  if (run) return;
+  T.sel = null;
+  run = { res: simulate((Math.random() * 1e9) | 0), i: 0 };
+  el('log').innerHTML = '';
+  step();
+}
+function step() {
+  var res = run.res;
+  if (run.i >= res.frames.length) return finish(res);
+  var f = res.frames[run.i++];
+  if (f.text) { el('log').insertAdjacentHTML('beforeend', '<li>' + f.text + '</li>'); el('log').lastChild.scrollIntoView({ block: 'nearest' }); }
+  var ms = A2.speeds[T.speed].ms;
+  if (ms === 0) { while (run.i < res.frames.length) { var g = res.frames[run.i++]; if (g.text) el('log').insertAdjacentHTML('beforeend', '<li>' + g.text + '</li>'); } draw(); return finish(res); }
+  draw();
+  run.timer = setTimeout(step, Math.max(f.cost, 0.3) * ms);
+}
+function finish(res) {
+  var s = summary(), deliver = s.ok && res.outcome !== 'breach', r = el('result');
+  r.className = 'result ' + (deliver ? 'win' : 'lose');
+  r.innerHTML = '<h2>' + OUT[res.outcome] + '</h2>' +
+    '<p>처치 <b>' + res.killed + '</b> · 도주 <b>' + res.fled + '</b> · 잃은 부대 <b>' + res.lostUnits + '</b></p>' +
+    '<p>걸린 시간 <b>' + res.time + '초</b> · 던전 가치 <b>' + s.value + '</b> · 함정 비율 <b>' + Math.round(s.ratio * 100) + '%</b></p>' +
+    '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.outcome === 'breach' ? '보물방이 뚫렸어요' : '요구 충족 + 방어 성공') + '</p>' +
+    '<button id="again" class="primary">다시 배치</button>';
+  el('again').onclick = function () { r.className = 'result hidden'; run = null; draw(); };
+}
+function tenRuns() {
+  if (run) return;
+  var t = { wiped: 0, fled: 0, breach: 0 }, fledSum = 0, timeSum = 0;
+  for (var k = 1; k <= 10; k++) { var res = simulate(k); t[res.outcome]++; fledSum += res.fled; timeSum += res.time; }
+  el('log').innerHTML = '<li class="tally">10번 시험: 전멸 <b>' + t.wiped + '</b> · 쫓아냄 <b>' + t.fled + '</b>(도주 ' + fledSum + '명) · 뚫림 <b>' + t.breach +
+    '</b> · 평균 ' + Math.round(timeSum / 10) + '초</li>';
+}
+
+resetBoard();
+buildPage();
+draw();
+</script>
+</body>
+</html>
