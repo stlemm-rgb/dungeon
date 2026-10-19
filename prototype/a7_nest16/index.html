@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시안 A7 구역16</title>
+<link rel="stylesheet" href="../common/proto.css">
+<style>
+  .card ul { font-size: 13px; }
+  .reqs { display: flex; gap: 6px; margin: 6px 0; }
+  button { font: inherit; }
+  .reqs button, .sheet button, .bar button { border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; padding: 8px; }
+  .reqs button { flex: 1; font-size: 13px; }
+  .reqs button.on { border-color: #f0d34a; background: #3a3546; font-weight: bold; }
+  .day { display: flex; justify-content: space-between; font-size: 13px; margin: 6px 0; }
+  .day b { color: #f0d34a; }
+  /* 구역 판: 칸마다 구역 색, 같은 구역 칸끼리는 테두리 없음 */
+  .yardbar { position: relative; height: 40px; display: flex; align-items: center; justify-content: center; gap: 4px; background: #4a4234; color: #b8a888; border-radius: 6px 6px 0 0; font-size: 13px; cursor: pointer; }
+  .wrap { position: relative; }
+  .board { display: grid; grid-template-columns: repeat(5, 1fr); border: 2px solid var(--line); }
+  .cell { aspect-ratio: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 11px; line-height: 1.2; cursor: pointer; border: 2px solid #cfc8da; outline: 1px dashed #ffffff1a; outline-offset: -1px; }
+  .cell .zn { color: #ffffffaa; font-size: 9px; } .cell .fn { font-weight: bold; font-size: 12px; } .cell .mons { font-size: 9px; color: #ffffffcc; }
+  .cell.none { background: #3d3746; } .cell.trap { background: #5a3a22; } .cell.trap .fn { color: #ffb066; }
+  .cell.den { background: #22405a; } .cell.den .fn { color: #8fc3ff; } .cell.turn { background: #2c5a3a; } .cell.turn .fn { color: #bfe8c9; }
+  .cell.boss { background: #6b5a1e; } .cell.boss .fn { color: #f6e6a6; } .cell.emptyden .mons { color: #ffb4a8; }
+  .hot { box-shadow: inset 0 0 0 3px #f0d34a; }
+  .cnt { position: absolute; right: 2px; top: 2px; background: #f0d34a; color: #000; font-size: 10px; font-weight: bold; border-radius: 3px; padding: 0 3px; z-index: 2; }
+  .contrib { font-size: 9px; color: #ffb4a8; }
+  .built::after { content: ''; position: absolute; left: 3px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: #f0d34a; }
+  .door { position: absolute; transform: translate(-50%, -50%); background: #c58b3c; border: 2px solid #f3c77a; border-radius: 3px; z-index: 2; pointer-events: none; }
+  .door.h { width: 22px; height: 9px; } .door.v { width: 9px; height: 22px; }
+  .bar { display: flex; gap: 6px; margin: 10px 0; }
+  .bar button { flex: 1; font-weight: bold; }
+  .bar button.primary { background: #7a3fb0; border-color: #9a5fd0; }
+  .bar button:disabled { opacity: .4; }
+  .sheetbg { position: fixed; inset: 0; background: #000a; display: flex; align-items: flex-end; justify-content: center; }
+  .sheetbg.hidden { display: none; }
+  .sheet { width: 100%; max-width: 390px; max-height: 85vh; overflow-y: auto; background: var(--panel); border-radius: 12px 12px 0 0; padding: 12px 14px 16px; }
+  .sheet h3 { margin: 0 0 4px; font-size: 15px; }
+  .sheet .why { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+  .sheet .lbl { font-size: 12px; color: var(--dim); margin: 10px 0 4px; }
+  .sheet .opts { display: flex; flex-direction: column; gap: 6px; }
+  .sheet .opts button { text-align: left; display: flex; flex-direction: column; }
+  .sheet .opts button small { color: var(--dim); font-size: 12px; }
+  .sheet .opts button.on { border-color: #f0d34a; }
+  .sheet .opts button.poor { opacity: .45; }
+  .sheet .lack { color: var(--no); }
+  .slots, .roster { display: flex; flex-wrap: wrap; gap: 6px; }
+  .slots button, .roster button { flex: 0 0 calc(25% - 5px); padding: 6px 2px; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .slots button.emptyslot { border-style: dashed; color: var(--dim); }
+  .roster button small, .slots button small { font-size: 10px; color: var(--dim); }
+  .roster button:disabled { opacity: .35; }
+  .sheet .close { width: 100%; margin-top: 10px; }
+</style>
+</head>
+<body>
+<script src="../common/rules.js"></script>
+<script src="rules.js"></script>
+<script>
+var G, UNDO = [], run = null;
+function newGame(req) {
+  G = { req: req || 'trap', day: 1, layout: defaultLayout(), units: {}, history: [], phase: 'build', last: null };
+  G.dayStart = JSON.stringify(G.layout);
+  UNDO = [];
+}
+// 오늘 공사 = 오늘 아침과 시설이 달라진 구역 수 (원래대로 돌리면 돌려받음)
+function buildsUsed() { var s = JSON.parse(G.dayStart), n = 0; Object.keys(s).forEach(function (z) { if (s[z] !== G.layout[z]) n++; }); return n; }
+function changedToday(z) { return JSON.parse(G.dayStart)[z] !== G.layout[z]; }
+function sum() { return summaryOf(G.layout, G.units, G.req); }
+function waiting(m) { var used = 0; Object.keys(G.units).forEach(function (z) { G.units[z].forEach(function (x) { if (x === m) used++; }); }); return A7.roster[m] - used; }
+function snap() { UNDO.push(JSON.stringify({ layout: G.layout, units: G.units })); }
+function undo() { if (!UNDO.length) return; var o = JSON.parse(UNDO.pop()); G.layout = o.layout; G.units = o.units; }
+function whyNot(z, k) {
+  if (G.layout[z] === k) return null;
+  var back = JSON.parse(G.dayStart)[z] === k; // 원래대로 돌리기는 공사를 안 씀
+  if (!back && !changedToday(z) && buildsUsed() >= A7.buildsPerDay) return '오늘 공사를 다 썼어요';
+  var left = sum().left + costOf(G.layout[z], z) - costOf(k, z);
+  if (left < 0) return '금 ' + (-left) + ' 모자람';
+  return null;
+}
+function setFac(z, k) {
+  var err = whyNot(z, k); if (err) return err;
+  snap();
+  G.layout[z] = k;
+  var slots = slotsOf(k, z); // 대기실이 아니게 되거나 자리가 줄면 몬스터는 대기로 돌아감
+  if (G.units[z]) { G.units[z] = G.units[z].slice(0, slots); if (!G.units[z].length) delete G.units[z]; }
+  return null;
+}
+
+function el(id) { return document.getElementById(id); }
+function toast(msg) {
+  var r = el('result'); r.className = 'result toast'; r.textContent = msg;
+  clearTimeout(toast.t); toast.t = setTimeout(function () { if (r.classList.contains('toast')) r.className = 'result hidden'; }, 1600);
+}
+function buildPage() {
+  document.body.innerHTML =
+    '<header><h1>시안 A7 구역16</h1><a href="../index.html">시안 목록 →</a></header>' +
+    '<div class="reqs" id="reqs"></div><section class="card" id="demand"></section>' +
+    '<div class="day" id="day"></div><div class="yardbar" id="yard" data-z="Y"></div><div class="wrap"><div class="board" id="board"></div><div id="over"></div></div>' +
+    '<div class="bar" id="bar"></div><ol class="log" id="log"></ol>' +
+    '<div class="sheetbg hidden" id="sheetbg"><div class="sheet" id="sheet"></div></div><div class="result hidden" id="result"></div>';
+  el('reqs').onclick = function (e) { var b = e.target.closest('button'); if (b && !run && b.dataset.req !== G.req) { newGame(b.dataset.req); el('log').innerHTML = ''; draw(); } };
+  document.body.addEventListener('click', function (e) { var z = e.target.closest('#yard, #board [data-z]'); if (!z || run || G.phase !== 'build') return; if (z.dataset.z === 'B') return toast('보스·보물방: 나중에 친위대가 들어가요'); openSheet(z.dataset.z); });
+  el('sheetbg').onclick = function (e) { if (e.target.id === 'sheetbg') closeSheet(); };
+  el('bar').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.id === 'go') startRun();
+    else if (b.id === 'undo') { undo(); draw(); }
+    else if (b.id === 'next') { G.day++; G.phase = 'build'; G.last = null; G.dayStart = JSON.stringify(G.layout); UNDO = []; el('log').innerHTML = ''; draw(); }
+    else if (b.id === 'again') { newGame(G.req); el('log').innerHTML = ''; draw(); }
+  };
+}
+function drawTop() {
+  el('reqs').innerHTML = Object.keys(A7.reqs).map(function (k) { return '<button data-req="' + k + '" class="' + (G.req === k ? 'on' : '') + '">' + A7.reqs[k].name + '</button>'; }).join('');
+  var s = sum(), r = A7.reqs[G.req];
+  function row(ok, label, val) { return '<li class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✔' : '✘') + ' ' + label + ' <b>' + val + '</b></li>'; }
+  el('demand').innerHTML = '<div class="want">마왕의 요구: ' + r.text + '</div><ul>' +
+    row(s.ratioOk, r.kind === 'trap' ? '함정 비율' : '대기실 비율', Math.round(s.ratio * 100) + '% (함정 ' + s.trap + ' / 대기실 ' + s.den + ')') +
+    row(s.valueOk, '가치 (시설 + 몬스터)', s.value + ' / ' + A7.minValue) + row(s.left >= 0, '남은 금', s.left + ' / ' + A7.budget) + '</ul>' +
+    '<div class="enemy">침입 예고: ' + A7.days.map(function (n, i) { return (i + 1) + '일째 ' + n + '명'; }).join(' → ') + ' (모험가 체력 ' + A7.inv.hp + ' · 공격 ' + A7.inv.atk + '). 3일째를 막고 요구를 맞추면 납품</div>';
+  el('day').innerHTML = '<span><b>' + G.day + '일째</b> / 3일 · 오늘 침입 ' + A7.days[G.day - 1] + '명</span><span>' + (G.phase === 'build' ? '오늘 공사 <b>' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '</b>번 남음' : '침입 ' + (run ? '중' : '끝')) + '</span>';
+}
+// 판: 칸마다 구역 색, 같은 구역 칸끼리는 테두리 없이, 구역 이름은 첫 칸에. 문 = 침입 순서로 이어지는 구역 사이
+function flowPairs() {
+  var p = [];
+  ['L', 'C', 'R'].forEach(function (ln) { var a = ['E'].concat(A7.lanes[ln]).concat(['B']); for (var i = 0; i + 1 < a.length; i++) p.push([a[i], a[i + 1]]); });
+  return p;
+}
+function sharedEdge(a, b) {
+  for (var i = 0; i < A7.cells[a].length; i++) {
+    var x = A7.cells[a][i];
+    for (var j = 0; j < A7.cells[b].length; j++) { var y = A7.cells[b][j]; if (Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) === 1) return [x, y]; }
+  }
+  return null;
+}
+function drawBoard() {
+  var h = '', hotZ = run && run.cur ? run.cur.z : null, seen = {};
+  el('yard').className = 'yardbar' + (hotZ === 'Y' ? ' hot' : '') + (changedToday('Y') ? ' built' : '');
+  el('yard').innerHTML = '야외 · 모험가 집결지 — <b>' + A7.fac[G.layout.Y].name + '</b>' + (hotZ === 'Y' ? '<span class="cnt">' + run.cur.n + '명</span>' : '');
+  for (var r = 0; r < A7.map.length; r++) for (var c = 0; c < 5; c++) {
+    var z = A7.map[r][c], k = G.layout[z], f = A7.fac[k], us = G.units[z] || [], first = !seen[z];
+    seen[z] = true;
+    var kind = z === 'B' ? 'boss' : f.kind;
+    var cls = 'cell ' + kind + (kind === 'den' && us.length < slotsOf(k, z) ? ' emptyden' : '') + (hotZ === z ? ' hot' : '') + (changedToday(z) && first ? ' built' : '');
+    var style = [[-1, 0, 'top'], [1, 0, 'bottom'], [0, -1, 'left'], [0, 1, 'right']].map(function (d) {
+      var nb = A7.map[r + d[0]] && A7.map[r + d[0]][c + d[1]];
+      return nb === z ? 'border-' + d[2] + '-color:transparent;' : '';
+    }).join('');
+    var label = '';
+    if (first) {
+      label = '<div class="zn">' + A7.names[z] + '</div><div class="fn">' + f.short + '</div>';
+      if (kind === 'den') label += '<div class="mons">' + (us.length ? us.map(function (m) { return PROTO.items[m].short; }).join(' ') : '비어 있음') + ' ' + us.length + '/' + slotsOf(k, z) + '</div>';
+      else if (kind === 'trap') label += '<div class="mons">피해 ' + trapDmgOf(z) + '</div>';
+      else if (kind === 'boss') label += '<div class="mons">친위대 (나중에)</div>';
+      if (G.last && G.last.contrib[z] && G.last.contrib[z].dmg) label += '<div class="contrib">피해 ' + G.last.contrib[z].dmg + (G.last.contrib[z].kill ? '·처치 ' + G.last.contrib[z].kill : '') + '</div>';
+      if (hotZ === z) label += '<span class="cnt">' + run.cur.n + '명</span>';
+    }
+    h += '<div class="' + cls + '" data-z="' + z + '" style="' + style + '">' + label + '</div>';
+  }
+  el('board').innerHTML = h;
+  el('over').innerHTML = flowPairs().map(function (p) {
+    var e = sharedEdge(p[0], p[1]); if (!e) return '';
+    var x = ((e[0][1] + e[1][1]) / 2 + 0.5) / 5 * 100, y = ((e[0][0] + e[1][0]) / 2 + 0.5) / A7.map.length * 100, hz = e[0][1] === e[1][1];
+    return '<div class="door ' + (hz ? 'h' : 'v') + '" style="left:' + x + '%;top:' + y + '%"></div>';
+  }).join('');
+}
+function drawBar() {
+  var h = run ? '' : G.phase === 'build' ? '<button id="undo"' + (UNDO.length ? '' : ' disabled') + '>↶ 되돌리기</button><button id="go" class="primary">' + G.day + '일째 침입 시작</button>'
+    : G.day < 3 ? '<button id="next" class="primary">' + (G.day + 1) + '일째로</button>' : '<button id="again" class="primary">처음부터</button>';
+  el('bar').innerHTML = h;
+}
+function draw() { drawTop(); drawBoard(); drawBar(); document.body.classList.toggle('running', !!run); }
+
+// ---------- 구역 시트: 몬스터 대기실이면 몬스터 배치가 먼저, 아래에 시설 바꾸기 ----------
+function openSheet(z) {
+  var k = G.layout[z], f = A7.fac[k], t = zoneType(z), h = '<h3>' + A7.names[z] + ' — ' + f.name + (t === 'room' ? ' (' + sizeOf(z) + '칸)' : '') + '</h3>';
+  h += '<div class="why">' + (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.' : A7.lanes.C.indexOf(z) >= 0 ? '가운데 길: 가장 짧은 길.' : '옆길: 입구에서 이쪽으로 온 침입자만.') + (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '') + ' 오늘 공사 ' + Math.max(0, A7.buildsPerDay - buildsUsed()) + '번 남음</div>';
+  if (f.kind === 'den') {
+    var us = G.units[z] || [];
+    var sl = slotsOf(k, z);
+    h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + sl + ') — 공사 횟수를 쓰지 않아요. 자리를 누르면 빼요</div><div class="slots">';
+    for (var i = 0; i < sl; i++) h += us[i] ? '<button data-out="' + i + '"><b>' + PROTO.items[us[i]].short + '</b><small>빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
+    h += '</div><div class="lbl">대기 중인 몬스터 — 누르면 넣어요</div><div class="roster">';
+    Object.keys(A7.roster).forEach(function (m) {
+      var it = PROTO.items[m], w = waiting(m);
+      h += '<button data-in="' + m + '"' + (w && us.length < sl ? '' : ' disabled') + '><b>' + it.short + ' ×' + w + '</b><small>체' + it.hp + ' 공' + it.atk + '</small><small>가치 ' + it.value + '</small></button>';
+    });
+    h += '</div>';
+  }
+  h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="opts">';
+  facFor(z).forEach(function (fk) {
+    var ff = A7.fac[fk], why = whyNot(z, fk), cv = costOf(fk, z), vv = valueOf(fk, z);
+    h += '<button data-k="' + fk + '" class="' + (k === fk ? 'on' : '') + (why ? ' poor' : '') + '"><b>' + ff.name + (k === fk ? ' (지금)' : '') + '</b><small>' + ff.st + (ff.kind === 'den' ? ' (' + sizeOf(z) + '자리)' : ff.kind === 'trap' ? ' (피해 ' + trapDmgOf(z) + ')' : '') + '</small><small>금 ' + cv + (vv ? ' · 가치 ' + vv : '') + (why ? ' · <span class="lack">' + why + '</span>' : '') + '</small></button>';
+  });
+  h += '</div><button class="close" id="closeSheet">닫기</button>';
+  el('sheet').innerHTML = h;
+  el('sheet').onclick = function (e) {
+    var b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.id === 'closeSheet') return closeSheet();
+    if (b.dataset.in) { snap(); (G.units[z] = G.units[z] || []).push(b.dataset.in); draw(); return openSheet(z); }
+    if (b.dataset.out !== undefined) { snap(); G.units[z].splice(+b.dataset.out, 1); if (!G.units[z].length) delete G.units[z]; draw(); return openSheet(z); }
+    if (b.dataset.k) {
+      var err = setFac(z, b.dataset.k); if (err) return toast(err);
+      draw();
+      if (A7.fac[b.dataset.k].kind === 'den') return openSheet(z); // 대기실을 지으면 바로 몬스터 배치로
+      closeSheet();
+    }
+  };
+  el('sheetbg').className = 'sheetbg';
+}
+function closeSheet() { el('sheetbg').className = 'sheetbg hidden'; }
+
+// ---------- 침입 ----------
+function startRun() {
+  if (run) return;
+  run = { res: simulate(G.layout, G.units, A7.days[G.day - 1]), i: 0, cur: null };
+  G.phase = 'invade'; G.last = null; el('log').innerHTML = '';
+  step();
+}
+function step() {
+  var res = run.res;
+  if (run.i >= res.steps.length) return finish(res);
+  var s = res.steps[run.i++];
+  run.cur = s;
+  if (s.text) { el('log').insertAdjacentHTML('beforeend', '<li>' + s.text + '</li>'); el('log').lastChild.scrollIntoView({ block: 'nearest' }); }
+  draw();
+  setTimeout(step, s.text ? 650 : 200);
+}
+function finish(res) {
+  G.history.push(res.reached); G.last = res; run = null;
+  var s = sum(), r = el('result'), last = G.day === 3, deliver = last && s.ok && res.reached === 0;
+  r.className = 'result ' + (res.reached ? 'lose' : 'win');
+  r.innerHTML = '<h2>' + G.day + '일째: ' + (res.reached ? res.reached + '명이 보물방에!' : '모두 막았다!') + '</h2>' +
+    '<p>침입자 ' + res.n + '명 중 처치 <b>' + res.killed + '</b> · 보물방 도달 <b>' + res.reached + '</b></p>' +
+    (last ? '<p class="verdict">' + (deliver ? '납품 가능!' : '납품 불가') + ' — ' + (!s.ok ? '요구를 못 맞췄어요' : res.reached ? '3일째에 뚫렸어요' : '요구 충족 + 방어 성공') + '</p><p>3일 기록: ' + G.history.map(function (x, i) { return (i + 1) + '일 ' + (x ? x + '명 도달' : '막음'); }).join(' · ') + '</p>'
+      : '<p>판에 구역별 피해·처치가 표시돼요. 내일 공사 ' + A7.buildsPerDay + '번으로 고쳐 보세요.</p>') +
+    '<button id="ok" class="primary">확인</button>';
+  el('ok').onclick = function () { r.className = 'result hidden'; draw(); };
+  draw();
+}
+
+newGame('trap');
+buildPage();
+draw();
+</script>
+</body>
+</html>
