@@ -12,7 +12,7 @@ var A4 = {
   maxRounds: 3,
   mazeCost: 8,
   extra: {
-    maze: { name: '2×3 미로', short: '미로', kind: 'maze', cost: 30, value: 20, size: [2, 3], maxDoors: 2 },
+    maze: { name: '2×2 미로', short: '미로', kind: 'maze', cost: 30, value: 20, size: [2, 2], maxDoors: 2 },
     boss: { name: '2×2 보스방', short: '보스', kind: 'boss', cost: 70, value: 70, size: [2, 2], hp: 140, atk: 16, unit: '오우거' }
   },
   // 기본 통로: 고리 모양 (1줄 가로, 왼쪽·오른쪽 세로, 맨 아래 가로). 가운데 직선 길은 빼서 길 옆 방이 무시되지 않게
@@ -239,7 +239,7 @@ function summary() {
   s.ok = s.ratioOk && s.valueOk && s.budgetOk;
   return s;
 }
-// 고른 칸이 특수 방 모양(꽉 찬 직사각형)과 맞나. 미로 2×3은 세로 3×2도 됨
+// 고른 칸이 특수 방 모양(꽉 찬 직사각형)과 맞나 (가로·세로 뒤집어도 됨)
 function fitsShape(cells, content) {
   var sz = itemOf(content).size; if (!sz) return true;
   var rs = cells.map(function (x) { return x[0]; }), cs = cells.map(function (x) { return x[1]; });

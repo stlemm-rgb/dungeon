@@ -25,7 +25,7 @@
   .board .maze { background: #2e4a2a; } .board .boss { background: #5a2238; }
   .board .entry { background: #2c5a3a; color: #bfe8c9; font-weight: bold; }
   .board .goldc { background: #6b5a1e; color: #f6e6a6; font-weight: bold; }
-  .board .sel { box-shadow: inset 0 0 0 3px #fff; }
+  .board .sel::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 3px #fff; z-index: 3; pointer-events: none; } /* 고른 칸 테두리는 통로 그림 위에 */
   .board .pick { box-shadow: inset 0 0 0 2px #ffffff55; }
   .board .pv { box-shadow: inset 0 0 0 3px var(--ok); } .board .pv.bad { box-shadow: inset 0 0 0 3px var(--no); }
   .board .route::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #f0d34a; z-index: 1; }
@@ -89,7 +89,7 @@
 var S = { mode: 'normal', sel: [], speed: 1, M: null, drag: null, paint: null };
 var run = null;
 var CATS = { trap: ['spike', 'rock'], unit: ['gob', 'skel', 'orc'], special: ['maze', 'boss'] };
-var MAX_SEL = 6; // 일반 방은 4칸, 미로 2×3은 6칸
+var MAX_SEL = 4; // 일반 방 최대 4칸, 미로·보스 2×2
 
 function el(id) { return document.getElementById(id); }
 function toast(msg) {
@@ -101,7 +101,7 @@ function buildPage() {
   document.body.innerHTML =
     '<header><h1>시안 A4 동굴</h1><a href="../index.html">시안 목록 →</a></header>' +
     '<section class="card" id="demand"></section>' +
-    '<p class="rule"><b>방 만들기</b> → 칸 고르기(누르기·쓸기) → 종류 고르기. 미로(2×3)·보스방(2×2)은 그 모양으로 고르면 <b>특수</b>에서 골라요. ' +
+    '<p class="rule"><b>방 만들기</b> → 칸 고르기(누르기·쓸기) → 종류 고르기. 미로·보스방(2×2)은 그 모양으로 고르면 <b>특수</b>에서 골라요. ' +
     '<b>통로 끝을 끌면</b> 바위를 파서 길이 이어져요(무료). 길게 누른 뒤 끌면 통로를 메워요. ' +
     '<b>문</b>: 방 벽의 점선 칸을 누르면 생기고, 문을 누르면 없어지고, 끌면 옮겨져요. 노란 점은 침입자가 올 가장 짧은 길.</p>' +
     '<div class="wrap" id="wrap"><div id="board" class="board"></div><div id="over"></div></div>' +
@@ -203,7 +203,7 @@ function drawSelbar() {
   if (run) h = '';
   else if (S.mode === 'select') {
     var hint = n ? n + '칸 · 남은 금 <b>' + left + '</b>' + (n <= A4.maxRoom ? '<br>함정 ' + range(CATS.trap, n) + ' · 몬스터 ' + range(CATS.unit, n) : '') + specialHint()
-      : '지을 칸을 누르거나 쓸어서 고르세요 (일반 방 최대 ' + A4.maxRoom + '칸, 미로 2×3, 보스 2×2)';
+      : '지을 칸을 누르거나 쓸어서 고르세요 (일반 방 최대 ' + A4.maxRoom + '칸, 미로·보스 2×2)';
     h = '<span>' + hint + '</span><button id="next" class="primary"' + (n ? '' : ' disabled') + '>다음</button><button id="cancel">취소</button>';
   } else if (S.paint) h = '<span>' + (S.paint === 'dig' ? '통로 파는 중' : '통로 메우는 중') + ' (손을 떼면 끝)</span>';
   else h = '<span>남은 금 <b>' + left + '</b></span><button id="mkroom" class="primary">방 만들기</button>';
@@ -345,7 +345,7 @@ function whyNot(M, k) {
 }
 function drawModal() {
   var M = S.M, h = '<h3>' + (M.id ? itemOf(M.content).name + ' 고치기' : M.n + '칸 방 만들기') + '</h3>';
-  var catLabel = { trap: '함정 방<small>칸마다 함정 1개</small>', unit: '몬스터 방<small>칸마다 부대 1개</small>', special: '특수 방<small>미로 2×3 · 보스 2×2</small>' };
+  var catLabel = { trap: '함정 방<small>칸마다 함정 1개</small>', unit: '몬스터 방<small>칸마다 부대 1개</small>', special: '특수 방<small>미로·보스 2×2</small>' };
   h += '<div class="lbl">① 종류</div><div class="row">' + Object.keys(catLabel).map(function (c) {
     return '<button data-cat="' + c + '" class="' + (M.cat === c ? 'on' : '') + '">' + catLabel[c] + '</button>';
   }).join('') + '</div>';
