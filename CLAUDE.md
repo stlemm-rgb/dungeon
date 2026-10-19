@@ -34,8 +34,11 @@ Claude가 직접 해도 되지만 틀려도 크게 문제없는 단순 작업은
 2. **실행** (작업 폴더 쓰기 허용, 출력은 끝부분만 읽어 토큰 절약):
    ```bash
    BIN=$(ls -d ~/.vscode/extensions/openai.chatgpt-*/bin/windows-x86_64/codex.exe | sort -V | tail -1)
-   "$BIN" exec -s workspace-write "<지시서> 커밋하지 마. 지시서에 적힌 파일만 고쳐." 2>&1 | tail -20
+   "$BIN" exec -s workspace-write -o 결과.md "파일은 UTF-8이다. PowerShell로 읽을 때 반드시 Get-Content -Encoding UTF8 을 써라. <지시서> 커밋하지 마. 지시서에 적힌 파일만 고쳐." < /dev/null > 로그.txt 2>&1
    ```
+   - `< /dev/null` 필수: 없으면 출력을 파일로 돌릴 때 "Reading additional input from stdin"에서 멈춘다.
+   - UTF-8 지시 필수: 없으면 Codex가 PowerShell 5.1로 읽어 한글 문서가 깨진다.
+   - `-o`로 최종 답만 따로 받고, 로그는 문제가 있을 때만 읽는다 (토큰 절약). 의견만 받을 때는 `-s read-only`.
    timeout은 10분. 실패(로그인 만료 등)하면 오류를 사용자에게 보고하고 총괄이 직접 한다.
 3. **검수**: `git status --short`로 지시 밖 파일이 바뀌었으면 그 변경은 되돌린다(하청 결과는 총괄 책임이라 AGENTS.md 5번 규칙의 예외). `git diff`를 훑어보고 `py tools/check_all.py` 통과를 확인한다.
 4. **커밋**은 총괄이 한다. 메시지 앞에 `[codex]`를 붙인다.
