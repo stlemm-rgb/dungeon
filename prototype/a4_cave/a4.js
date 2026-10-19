@@ -166,7 +166,40 @@ function moveTargets(id, fromKey) {
   B.doors[fromKey] = e;
   return out;
 }
-function moveDoor(id, fromKey, s) { delete B.doors[fromKey]; B.doors[s.k] = [s.inner, s.outer]; }
+// 문 옮기기: 옛 자리는 '닫음'으로 기억해 자동으로 다시 생기지 않게 한다
+function moveDoor(id, fromKey, s) {
+  delete B.doors[fromKey]; B.doors[s.k] = [s.inner, s.outer];
+  B.pieces[id].closed[fromKey] = true; delete B.pieces[id].closed[s.k];
+}
+// 문 닫기 (판에서 문을 누름). 길이 끊기면 되돌린다.
+function closeDoor(k) {
+  var e = B.doors[k];
+  delete B.doors[k];
+  if (!connected()) { B.doors[k] = e; return '이 문을 닫으면 길이 끊겨요'; }
+  [ownerAt(e[0]), ownerAt(e[1])].forEach(function (o) { if (o) B.pieces[o].closed[k] = true; });
+  return null;
+}
+function dirOf(s) { return (s.outer[0] - s.inner[0]) + ',' + (s.outer[1] - s.inner[1]); }
+// 판이 바뀔 때마다 문을 다시 맞춘다: 막힌 문(바위와 맞닿음)은 지우고,
+// 문이 4개 미만인 방은 새로 맞닿은 길 쪽으로 문을 더한다 (아직 문이 없는 방향 먼저, 유저가 닫은 자리는 빼고)
+function refreshDoors() {
+  Object.keys(B.doors).forEach(function (k) {
+    var e = B.doors[k];
+    if (!isOpen(e[0]) || !isOpen(e[1]) || (!ownerAt(e[0]) && !ownerAt(e[1])) || ownerAt(e[0]) === ownerAt(e[1])) delete B.doors[k];
+  });
+  Object.keys(B.pieces).forEach(function (id) {
+    var p = B.pieces[id];
+    for (var guard = 0; guard < 8 && doorsOf(id).length < A4.maxDoors; guard++) {
+      var dirs = {};
+      doorsOf(id).forEach(function (d) { dirs[dirOf(d)] = true; });
+      var spots = doorSpots(id).filter(function (s) { return !B.doors[s.k] && !p.closed[s.k]; });
+      if (!spots.length) break;
+      spots.sort(function (a, b) { return (dirs[dirOf(a)] ? 1 : 0) - (dirs[dirOf(b)] ? 1 : 0); });
+      B.doors[spots[0].k] = [spots[0].inner, spots[0].outer];
+    }
+  });
+}
+function reopenDoors(id) { B.pieces[id].closed = {}; refreshDoors(); }
 
 // ---------- 놓기·고치기 ----------
 function summary() {
@@ -186,8 +219,8 @@ function summary() {
   return s;
 }
 function pieceCost(content, n) { var it = itemOf(content); return it.cost * (it.size ? 1 : n); }
-// 방은 바위를 파서만 짓는다. 통로는 길 역할만 하고 방이 될 수 없다.
-function buildable(x) { return inB(x[0], x[1]) && !ownerAt(x) && groundAt(x) === 'rock'; }
+// 방은 바위든 통로든 지을 수 있다 (길이 끊기지 않으면). 통로 자체는 기능 없는 길.
+function buildable(x) { return inB(x[0], x[1]) && !ownerAt(x) && (groundAt(x) === 'rock' || groundAt(x) === 'tunnel'); }
 function contiguous(cells) {
   if (!cells.length) return false;
   var seen = [cells[0]], q = [cells[0]];
@@ -199,15 +232,16 @@ function contiguous(cells) {
   }
   return seen.length === cells.length;
 }
-function place(cells, content, nDoors) {
+function place(cells, content) {
   if (!cells.every(buildable)) return '그 자리에는 못 놓아요';
   if (content === 'boss' && Object.keys(B.pieces).some(function (id) { return B.pieces[id].content === 'boss'; })) return '보스방은 층마다 1개예요';
   if (summary().cost + pieceCost(content, cells.length) > A4.budget) return '금화가 모자라요';
   var id = 'p' + B.nextId++;
-  B.pieces[id] = { id: id, content: content, cells: cells, was: cells.map(groundAt) };
+  B.pieces[id] = { id: id, content: content, cells: cells, closed: {} };
   cells.forEach(function (x) { B.owner[x[0]][x[1]] = id; });
-  var err = autoDoors(id, nDoors);
+  var err = autoDoors(id, A4.maxDoors); // 길이 이어지는 문 조합부터 잡고
   if (err) { removePiece(id); return err; }
+  refreshDoors();                       // 나머지 맞닿은 길에도 문
   return null;
 }
 // 방을 허물면 그 자리는 통로가 된다. 다른 방과 맞닿은 문은 그 방의 문으로 남긴다.
@@ -216,12 +250,11 @@ function removePiece(id) {
   doorsOf(id).forEach(function (d) { if (!ownerAt(d.outer) || ownerAt(d.outer) === id) delete B.doors[d.k]; });
   p.cells.forEach(function (x) { B.owner[x[0]][x[1]] = null; B.ground[x[0]][x[1]] = 'tunnel'; });
   delete B.pieces[id];
-  Object.keys(B.doors).forEach(function (k) { var e = B.doors[k]; if (!ownerAt(e[0]) && !ownerAt(e[1])) delete B.doors[k]; });
+  refreshDoors();
 }
-function editPiece(id, content, nDoors) {
+function editPiece(id, content) {
   var p = B.pieces[id], others = summary().cost - pieceCost(p.content, p.cells.length);
   if (others + pieceCost(content, p.cells.length) > A4.budget) return '금화가 모자라요';
-  if (nDoors !== doorsOf(id).length) { var err = autoDoors(id, nDoors); if (err) return err; }
   p.content = content;
   return null;
 }
@@ -229,7 +262,7 @@ function editPiece(id, content, nDoors) {
 function digFill(x, mode) {
   if (!inB(x[0], x[1]) || ownerAt(x)) return null;
   var g = groundAt(x);
-  if (mode === 'dig' && g === 'rock') { B.ground[x[0]][x[1]] = 'tunnel'; return null; }
+  if (mode === 'dig' && g === 'rock') { B.ground[x[0]][x[1]] = 'tunnel'; refreshDoors(); return null; }
   if (mode === 'fill' && g === 'tunnel') {
     var gone = {};
     Object.keys(B.doors).forEach(function (k) { var e = B.doors[k]; if (same(e[0], x) || same(e[1], x)) { gone[k] = e; delete B.doors[k]; } });
@@ -239,6 +272,7 @@ function digFill(x, mode) {
       Object.keys(gone).forEach(function (k) { B.doors[k] = gone[k]; });
       return '여기를 메우면 길이 끊겨요';
     }
+    refreshDoors();
   }
   return null;
 }
