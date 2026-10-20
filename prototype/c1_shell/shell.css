@@ -176,6 +176,7 @@ body.reduce .slot { animation: none; }
 /* 토스트 */
 #toasts { position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 366px; display: flex; flex-direction: column;
   gap: 6px; pointer-events: none; z-index: 10; }
+#app:has(#tabs[hidden]) + #toasts { bottom: auto; top: 56px; } /* 탭 없는 화면(전투 등)에서는 카드·버튼을 가리지 않게 위로 */
 .toast { background: var(--text); color: var(--bg); padding: 9px 12px; border-radius: 8px; font-weight: bold; font-size: 13px; text-align: center; animation: toast-in var(--dur-fade) var(--ease-out); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
