@@ -9,6 +9,7 @@
  *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고,
  *    값을 바꾸는 것은 PROGRESS의 정해진 함수(build·nextWeek·applyBattle·deliver·pickQuest …)로만 한다.
  *  - 화면 지킴이(render 안): 정산 중이면 어느 화면이든 result로, 의뢰가 없으면 contract로, 의뢰가 있으면 contract 못 들어감.
+ *  - 건설 화면(구역 판)은 build.js, 전투 화면은 battle.js (SCREEN_PLUGINS). 판 규칙은 zones.js.
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
  *  - 숫자는 가짜(균형 없음). 상태(RUN)는 progress.js가 localStorage에 자동 저장한다. 설정은 이 파일이 따로 저장.
@@ -49,7 +50,6 @@
     { name: '영양 만점 사료', desc: '몬스터 경험치 +1', price: 600 },
     { name: '마왕 인증 도장', desc: '선금 +10%',     price: 900 }
   ];
-  var BOARD = ['.....', '.B...', '.....', '..S..', '.....', '.....', '..E..']; // B=보스 S=시설 E=입구 (가짜)
 
   // ---------- 설정 (localStorage, 막혀도 동작) ----------
   var SETTINGS_KEY = 'dunguen_c1_settings';
@@ -98,17 +98,6 @@
     h.innerHTML += '<h2>' + title + '</h2>' + (right || '');
     return h;
   }
-  function boardHtml() {
-    var s = '';
-    BOARD.forEach(function (row) {
-      row.split('').forEach(function (c) {
-        var mark = c === 'B' ? '보스' : c === 'S' ? '시설' : c === 'E' ? '입구' : '';
-        s += '<i' + (mark ? ' class="sp"' : '') + '>' + mark + '</i>';
-      });
-    });
-    return '<div class="board">' + s + '</div>';
-  }
-
   function money(n) { return Number(n).toLocaleString('en-US'); }
   function questTag(q) { return q.kind === 'main' ? '메인 · ' + q.grade + '급' : '일반'; }
   function goalLabel(g) { return P.GOAL_TYPES.filter(function (x) { return x.id === g.type; })[0]; }
@@ -219,15 +208,18 @@
   SCREENS.dungeon = function (el) {
     el.appendChild(head('던전 관리'));
     el.appendChild(div('seg', '<button class="on">1층</button><button disabled>2층 잠김</button><button disabled>3층 잠김</button>'));
-    el.appendChild(div('card', '<h3>1층 판 (5×7)</h3>' + boardHtml() + '<p class="dim small-text" style="text-align:center;margin:6px 0 0">가짜 미리보기</p>'));
-    var count = {};
-    RUN.site.facilities.forEach(function (id) { count[id] = (count[id] || 0) + 1; });
-    var rows = P.FACILITIES.filter(function (f) { return count[f.id]; })
-      .map(function (f) { return '<div class="stat"><span>' + f.name + '</span><b>' + count[f.id] + '곳</b></div>'; }).join('');
+    var Z = window.ZONES, fc = P.forecast();
+    el.appendChild(div('card', '<h3>1층 판 (5×7)</h3><div class="zboard">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, flow: fc.flow }) +
+      '</div><p class="dim small-text" style="text-align:center;margin:6px 0 0">문 위 숫자 = 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 지나갈 인원</p>'));
+    var count = {}, skip = ['empty', 'boss', 'forest', 'split'];
+    Object.keys(RUN.site.zones).forEach(function (zk) { var k = RUN.site.zones[zk]; if (skip.indexOf(k) < 0) count[k] = (count[k] || 0) + 1; });
+    var rows = Object.keys(count).map(function (k) { return '<div class="stat"><span>' + Z.FAC[k].name + '</span><b>' + count[k] + '곳</b></div>'; }).join('');
+    var sm = P.siteSummary();
     el.appendChild(div('card',
       '<h3>이 부지의 던전 (' + RUN.siteNo + '번째 부지)</h3>' +
-      '<div class="stat"><span>던전 가치</span><b>' + RUN.site.value + '</b></div>' +
+      '<div class="stat"><span>던전 가치</span><b>' + sm.value + '</b></div>' +
       '<div class="stat"><span>건설 횟수</span><b>' + RUN.site.builds + '회</b></div>' +
+      '<div class="stat"><span>대기실 몬스터</span><b>' + sm.monsters + '마리</b></div>' +
       (rows || '<div class="dim small-text">아직 지은 시설이 없어요</div>')));
     if (RUN.quest) el.appendChild(div('card', '<h3>의뢰 목표</h3>' + goalsHtml(RUN.quest, true)));
     el.appendChild(div('mt-auto', '<button class="btn primary" data-go="' + (RUN.quest ? 'build' : 'contract') + '">' + (RUN.quest ? '건설하기' : '의뢰 고르기') + '</button>'));
@@ -349,7 +341,7 @@
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { hold.addEventListener(ev, stopHold); });
     el.appendChild(hold);
     el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·자금·명성·몬스터·의뢰가 모두 처음으로 돌아갑니다.'));
-    el.appendChild(div('mt-auto dim small-text', '버전: C1 진행 구조 시안 0.2 (자동 저장)'));
+    el.appendChild(div('mt-auto dim small-text', '버전: C1 진행 구조 시안 0.3 (구역 판 건설, 자동 저장)'));
   };
 
   SCREENS.records = function (el) {
@@ -385,32 +377,7 @@
     });
   };
 
-  // 건설: 언제든, 금이 있는 만큼. 쓴 금은 환불 없음.
-  SCREENS.build = function (el) {
-    el.appendChild(head('건설', 'home'));
-    el.appendChild(div('card',
-      '<div class="stat"><span>부지 가치</span><b>' + RUN.site.value + '</b></div>' +
-      '<div class="stat"><span>건설 횟수</span><b>' + RUN.site.builds + '회</b></div>' +
-      '<div class="stat"><span>자금</span><b>' + money(RUN.gold) + '</b></div>'));
-    if (RUN.quest) el.appendChild(div('card quest' + (RUN.quest.kind === 'main' ? ' main' : ''),
-      '<div class="qhead"><span class="chip accent">' + questTag(RUN.quest) + '</span><b>' + RUN.quest.name + '</b></div>' + goalsHtml(RUN.quest, true)));
-    var box = div('facs');
-    P.FACILITIES.forEach(function (f) {
-      var b = document.createElement('button');
-      b.className = 'btn fac';
-      b.disabled = RUN.gold < f.cost;
-      b.innerHTML = '<span class="nm">' + f.name + '</span><span class="sub">비용 ' + f.cost + ' · 가치 +' + f.value + '</span>';
-      b.addEventListener('click', function () {
-        var r = P.build(f.id);
-        toast(r.msg);
-        if (r.ok) { buzz('good'); if (!autoDeliver()) render(); } else buzz('warn');
-      });
-      box.appendChild(b);
-    });
-    el.appendChild(box);
-    el.appendChild(div('dim small-text', '쓴 금은 돌려받지 못해요. 지으면 던전 상태가 저장됩니다.'));
-    el.appendChild(div('mt-auto', '<a class="btn" href="../a7_nest16/index.html">시안 A7에서 짓기 (참고용)</a>'));
-  };
+  // 건설 화면은 build.js (구역 판). SCREEN_PLUGINS.build 가 아래에서 SCREENS.build 로 등록된다.
 
   // 납품·정산: 목표를 다 채운 순간 자동으로 여기로 온다
   SCREENS.result = function (el) {
@@ -465,6 +432,8 @@
   var leaveHooks = [];
   var API = {
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
+    // 건설 화면용 (build.js)
+    head: head, questTag: questTag, goalsHtml: goalsHtml, autoDeliver: autoDeliver,
     // 전투 화면용: 지금이 예고된 침입 주인가 / 결과 반영 (연습 전투는 부르지 않는다)
     battleInfo: function () { return { invasion: !!RUN.quest && P.isInvasionWeek(), week: RUN.week }; },
     finishBattle: function (result) {
@@ -498,6 +467,7 @@
     var name = guardScreen((location.hash || '#home').slice(1));
     var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
     lastName = name;
+    P.setBattle(name === 'battle'); // 전투 화면에 있는 동안은 건설 불가
     document.body.setAttribute('data-screen', name);
     var el = div('screen');
     SCREENS[name](el);

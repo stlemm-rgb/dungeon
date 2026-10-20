@@ -4,7 +4,9 @@
  *  1) 끝없이 이어진다. "다음 주"를 누르면 한 주가 지난다 (nextWeek). 한 판 길이·휴식주 없음.
  *  2) 침입 전투는 예고된 주(nextInvasionWeek)에만 있다. 침입 주에는 "다음 주"가 막히고 전투를 치러야 한다.
  *     전투 결과를 반영(applyBattle)하면 그 주가 끝나고, 2~4주 뒤로 다음 침입이 예고된다.
- *  3) 건설(build)은 언제든, 금이 있는 만큼. 지으면 부지(site)에 저장된다. 쓴 금은 환불 없음.
+ *  3) 건설(buildZone)은 언제든, 금이 있는 만큼, 전투 중에는 못 지음. 구역 16곳에 시설을 하나씩 (규칙은 zones.js).
+ *     지으면 부지(site.zones)에 저장된다. 쓴 금은 환불 없음 (바꿔 지어도 이전 시설 값은 안 돌아옴).
+ *     대기실 몬스터 넣고 빼기(placeMonster/removeMonster)는 공짜. 건설 횟수(builds)는 금을 쓴 건설만 센다.
  *  4) 의뢰는 하나씩. 목표 2개(일반) / 3개(메인), 기한 없음. 목표를 다 채우면(checkQuest) 즉시 납품(deliver).
  *  5) 일반 의뢰를 3번 끝내면(questsDone) 다음 후보에 메인 의뢰가 한 장 끼어든다. 메인은 등급이 C -> B -> A -> S로 오른다.
  *  6) 납품하면 정산(보상) -> 친위대 고르기(최대 3) -> 다음 의뢰 후보 중 고르기(pickQuest) -> 새 부지에 새로 짓기.
@@ -20,7 +22,7 @@
 
   // ---------- 데이터 (고칠 때는 여기만) ----------
   var SAVE_KEY = 'dunguen_c1_run';
-  var VERSION = 1;
+  var VERSION = 2;                // 저장 형식이 바뀌면 올린다 (옛 저장은 버리고 새로 시작). 2: 부지가 구역별 시설(site.zones)
   var START_GOLD = 2000, START_FAME = 1;
   var WEEKLY_INCOME = 100;        // 다음 주마다 들어오는 돈
   var KILL_LOOT = 20;             // 침입자 한 명 처치당 전리품
@@ -41,14 +43,6 @@
   var NAMES_NORMAL = ['지하 창고 증축', '버섯 농장 던전', '폐광 개조 공사', '늪지 초소 건설', '도둑 소굴 리모델링',
     '해골 묘지 확장', '박쥐 동굴 정비', '안개 숲 함정길'];
   var NAMES_MAIN = ['북쪽 관문 요새', '용암 지대 거점', '구름 위 성채', '마왕의 옥좌실'];
-  // 시설 (가짜): 이름, 비용, 던전 가치
-  var FACILITIES = [
-    { id: 'spike',  name: '가시 함정',     cost: 120, value: 40 },
-    { id: 'poison', name: '독 안개 복도',  cost: 150, value: 50 },
-    { id: 'wait',   name: '몬스터 대기실', cost: 200, value: 70 },
-    { id: 'bait',   name: '보물방 미끼',   cost: 300, value: 110 },
-    { id: 'statue', name: '마왕 조각상',   cost: 500, value: 180 }
-  ];
   var START_MONSTERS = [
     { name: '슬라임',   lv: 4, hp: 120, atk: 8 },  { name: '고블린',   lv: 3, hp: 90,  atk: 14 },
     { name: '스켈레톤', lv: 5, hp: 140, atk: 16 }, { name: '박쥐 떼',  lv: 2, hp: 60,  atk: 10 },
@@ -59,6 +53,9 @@
   // ---------- 상태: RUN 하나 (객체 자체는 바뀌지 않고 안의 값만 바뀐다) ----------
   var RUN = {};
 
+  // 새 부지: 구역별 시설(zones), 대기실 몬스터(units: 구역 -> 몬스터 id 목록), 가치(value, 저장 때 맞춰 둠), 건설 횟수
+  function freshSite() { return { value: 0, builds: 0, zones: ZONES.defaultZones(), units: {} }; }
+
   function freshRun() {
     var monsters = START_MONSTERS.map(function (m, i) {
       return { id: i, name: m.name, lv: m.lv, exp: 0, hp: m.hp, atk: m.atk };
@@ -68,7 +65,7 @@
       week: 1, gold: START_GOLD, fame: START_FAME,
       phase: 'choose', quest: null, offers: null, report: null,
       questsDone: 0, mainGrade: 0, qid: 1, siteNo: 0,
-      site: { value: 0, builds: 0, facilities: [] },
+      site: freshSite(),
       monsters: monsters, guards: [],
       nextInvasionWeek: 3, history: []
     };
@@ -80,6 +77,7 @@
 
   // ---------- 저장 (막혀도 동작) ----------
   function save() {
+    if (RUN.site && RUN.site.zones) RUN.site.value = siteValue(); // 저장된 가치는 늘 지금 값
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(RUN)); } catch (e) { /* 저장이 막힌 환경: 그냥 계속 */ }
   }
   function load() {
@@ -87,7 +85,7 @@
       var raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         var d = JSON.parse(raw);
-        if (d && d.v === VERSION && d.site && d.monsters && typeof d.week === 'number') { setRun(d); return true; }
+        if (d && d.v === VERSION && d.site && d.site.zones && d.site.units && d.monsters && typeof d.week === 'number') { setRun(d); return true; }
       }
     } catch (e) { /* 깨진 저장은 무시하고 새로 시작 */ }
     setRun(freshRun());
@@ -116,9 +114,14 @@
   function isInvasionWeek() { return RUN.week >= RUN.nextInvasionWeek; }
   function invasionIn() { return Math.max(0, RUN.nextInvasionWeek - RUN.week); }
 
+  function monById(id) { for (var i = 0; i < RUN.monsters.length; i++) { if (RUN.monsters[i].id === id) return RUN.monsters[i]; } return null; }
+  // 던전 가치 = 시설 가치 + 대기실에 든 몬스터 가치 (몬스터가 크면 가치도 오른다)
+  function siteSummary() { return ZONES.summary(RUN.site.zones, RUN.site.units, monById); }
+  function siteValue() { return siteSummary().value; }
+
   // 목표 하나의 지금 값. value·builds는 부지에서, 나머지는 의뢰를 받은 뒤 쌓인 값
   function goalNow(g) {
-    if (g.type === 'value') return RUN.site.value;
+    if (g.type === 'value') return siteValue();
     if (g.type === 'builds') return RUN.site.builds;
     return RUN.quest && RUN.quest.prog[g.type] || 0;
   }
@@ -172,7 +175,7 @@
     if (!found) return false;
     found.startWeek = RUN.week;
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
-    RUN.site = { value: 0, builds: 0, facilities: [] };
+    RUN.site = freshSite();
     RUN.siteNo++;
     save();
     return true;
@@ -186,6 +189,7 @@
   function deliver() {
     if (!checkQuest()) return null;
     var q = RUN.quest;
+    RUN.site.value = siteValue();
     var sale = Math.floor(RUN.site.value / 2);                 // 판매 대금: 던전 가치의 절반
     var total = q.reward.gold + sale;
     var wasMain = q.kind === 'main';
@@ -218,18 +222,77 @@
   }
 
   // ---------- 건설 ----------
-  function facility(id) { for (var i = 0; i < FACILITIES.length; i++) { if (FACILITIES[i].id === id) return FACILITIES[i]; } return null; }
-  function build(id) {
-    var f = facility(id);
-    if (!f) return { ok: false, msg: '알 수 없는 시설' };
-    if (RUN.phase !== 'play') return { ok: false, msg: '진행 중인 의뢰가 없어요' };
-    if (RUN.gold < f.cost) return { ok: false, msg: '금이 모자라요 (' + f.cost + ' 필요)' };
-    RUN.gold -= f.cost;                    // 쓴 금은 환불 없음
-    RUN.site.value += f.value; RUN.site.builds++;
-    RUN.site.facilities.push(f.id);
-    save();
-    return { ok: true, msg: f.name + ' 완공 (금 -' + f.cost + ', 가치 +' + f.value + ')' };
+  // 전투 화면에 있는 동안은 못 짓는다 (shell.js가 setBattle로 알려 줌. 저장하지 않음)
+  var battling = false;
+  function setBattle(b) { battling = !!b; }
+  function usedIds() {
+    var used = {};
+    Object.keys(RUN.site.units).forEach(function (z) { RUN.site.units[z].forEach(function (id) { used[id] = true; }); });
+    return used;
   }
+  function idleMonsters() { var used = usedIds(); return RUN.monsters.filter(function (m) { return !used[m.id]; }); }
+  function canEdit() {
+    if (RUN.phase !== 'play') return '진행 중인 의뢰가 없어요';
+    if (battling) return '전투 중에는 지을 수 없어요';
+    return '';
+  }
+  // 구역 z를 시설 k로 지으면: 비용·가치 변화·막히는 이유. 짓기 전 미리보기용 (아무것도 바꾸지 않음)
+  function previewBuild(z, k) {
+    var f = ZONES.FAC[k];
+    if (!f || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) return { ok: false, why: '지을 수 없는 시설' };
+    var cur = RUN.site.zones[z], cost = ZONES.costOf(k, z);
+    var zones2 = {}; Object.keys(RUN.site.zones).forEach(function (q) { zones2[q] = RUN.site.zones[q]; });
+    zones2[z] = k;
+    var units2 = {}; Object.keys(RUN.site.units).forEach(function (q) { units2[q] = RUN.site.units[q].slice(); });
+    var slots = ZONES.slotsOf(k, z), back = 0;
+    if (units2[z]) { back = Math.max(0, units2[z].length - slots); units2[z] = units2[z].slice(0, slots); if (!units2[z].length) delete units2[z]; }
+    var after = ZONES.summary(zones2, units2, monById), now = siteSummary();
+    var why = canEdit();
+    if (!why && cur === k) why = '이미 이 시설이에요';
+    if (!why && RUN.gold < cost) why = '금 ' + (cost - RUN.gold) + ' 모자람';
+    return {
+      ok: !why, why: why, cost: cost, counts: cost > 0, goldAfter: RUN.gold - cost, valueNow: now.value, valueAfter: after.value,
+      back: back, zones: zones2, units: units2, from: cur
+    };
+  }
+  function buildZone(z, k) {
+    var p = previewBuild(z, k);
+    if (!p.ok) return { ok: false, msg: p.why };
+    RUN.gold -= p.cost;                    // 쓴 금은 환불 없음
+    RUN.site.zones[z] = k;
+    RUN.site.units = p.units;
+    if (p.counts) RUN.site.builds++;       // 금을 쓴 건설만 횟수에 센다 (공짜로 바꾸는 건 횟수 아님)
+    save();
+    var dv = p.valueAfter - p.valueNow;
+    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (금 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' };
+  }
+  // 몬스터 대기실에 몬스터 한 마리 넣기·빼기 (공짜)
+  function placeMonster(z, id) {
+    var why = canEdit();
+    if (why) return { ok: false, msg: why };
+    var k = RUN.site.zones[z], slots = k ? ZONES.slotsOf(k, z) : 0;
+    var us = RUN.site.units[z] || [];
+    if (!slots) return { ok: false, msg: '몬스터 대기실이 아니에요' };
+    if (us.length >= slots) return { ok: false, msg: '자리가 없어요' };
+    var m = monById(id);
+    if (!m || usedIds()[id]) return { ok: false, msg: '넣을 수 없는 몬스터' };
+    RUN.site.units[z] = us.concat([id]);
+    save();
+    return { ok: true, msg: m.name + ' 배치' };
+  }
+  function removeMonster(z, index) {
+    var why = canEdit();
+    if (why) return { ok: false, msg: why };
+    var us = RUN.site.units[z] || [];
+    if (us[index] === undefined) return { ok: false, msg: '빼낼 몬스터가 없어요' };
+    var m = monById(us[index]);
+    RUN.site.units[z] = us.slice(0, index).concat(us.slice(index + 1));
+    if (!RUN.site.units[z].length) delete RUN.site.units[z];
+    save();
+    return { ok: true, msg: (m ? m.name : '몬스터') + ' 대기로' };
+  }
+  // 문 위 숫자 미리 보기: 침입자 n명이 이 판을 지나면 각 길로 몇 명씩 (zones·units를 주면 그 배치로, 아니면 지금 부지)
+  function forecast(zones, units) { return ZONES.forecast(zones || RUN.site.zones, units || RUN.site.units, ZONES.PREVIEW_INVADERS); }
 
   // ---------- 몬스터 성장 ----------
   function addExp(m, n, msgs) {
@@ -292,10 +355,12 @@
   load();
 
   window.PROGRESS = {
-    RUN: RUN, GOAL_TYPES: GOAL_TYPES, FACILITIES: FACILITIES, MAIN_GRADES: MAIN_GRADES,
+    RUN: RUN, GOAL_TYPES: GOAL_TYPES, MAIN_GRADES: MAIN_GRADES,
     NORMAL_TO_MAIN: NORMAL_TO_MAIN, GUARD_MAX: GUARD_MAX,
     goalNow: goalNow, goalText: goalText, monGrade: monGrade, isInvasionWeek: isInvasionWeek, invasionIn: invasionIn,
-    nextWeek: nextWeek, build: build, applyBattle: applyBattle, checkQuest: checkQuest, deliver: deliver,
+    nextWeek: nextWeek, applyBattle: applyBattle, checkQuest: checkQuest, deliver: deliver,
+    siteSummary: siteSummary, siteValue: siteValue, idleMonsters: idleMonsters, previewBuild: previewBuild, buildZone: buildZone,
+    placeMonster: placeMonster, removeMonster: removeMonster, forecast: forecast, setBattle: setBattle, monById: monById,
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract,
     save: save, load: load, reset: reset
   };
