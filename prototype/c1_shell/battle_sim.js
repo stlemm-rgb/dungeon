@@ -9,20 +9,22 @@
  *  - 몬스터 대기실: 산 몬스터가 있으면 분대가 멈추고 싸움. 바로 앞 구역이 함정이면 몬스터 피해 ×AMBUSH
  *  - 1분(TIME_LIMIT) 지나면 남은 분대는 퇴각 (보물방 침입으로 치지 않음)
  *  - 무작위는 plan.seed로 만든 시드 무작위만 (게임용). 연출용 무작위는 쓰지 않는다.
+ *    무작위 상태(S.rs)도 S 안에 숫자로 들고 있어서 S를 통째로 저장·복원할 수 있다.
+ *  - snapshot(S): 저장용 순수 데이터 (plan·zones·units·icard 참조는 뺌). restore(o, snap): create와 같은 o로 S를 되살림.
+ *    카드를 고른 순간이 저장 지점 (battle.js가 progress.js saveBattle로 RUN에 넣음)
+ *  - 침입자 강함: 레벨(plan.groups[].lv) × 던전 가치 배율(plan.power). 둘 다 progress.js가 전투 시작 때 확정
  */
 (function () {
   'use strict';
   var BD = window.BATTLE_DATA, Z = window.ZONES;
 
-  function seeded(seed) {
-    var a = seed | 0;
-    return function () {
-      a = (a + 0x6D2B79F5) | 0;
-      var t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+  // 시드 무작위 (게임용). 상태는 S.rs 숫자 하나
+  function rand(S) {
+    S.rs = (S.rs + 0x6D2B79F5) | 0;
+    var t = S.rs;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
   function cardById(id) { return BD.INVADER_CARDS.filter(function (c) { return c.id === id; })[0] || BD.INVADER_CARDS[0]; }
   function kindOf(S, z) { return z === 'B' || z === 'Y' ? 'none' : Z.FAC[S.zones[z]].kind; }
@@ -31,7 +33,7 @@
   function create(o) {
     var plan = o.plan, zones = o.zones, units = o.units;
     var S = {
-      plan: plan, zones: zones, units: units, rng: seeded(plan.seed), t: 0, released: 0, releaseT: 0,
+      plan: plan, zones: zones, units: units, rs: plan.seed | 0, t: 0, released: 0, releaseT: 0,
       icard: cardById(plan.card), squads: [], dens: {}, guard: 0, freeze: 0, done: false, timeout: false, maxProg: 0,
       mod: { trapDmg: 0, trapRate: 0, monAtk: 0, slow: 0, weak: 0 },
       gain: { gold: 0, gems: 0, exp: 0, kills: 0, porterKills: 0 }, reached: 0, retreated: 0, loot: 0, total: 0
@@ -47,7 +49,7 @@
     // 분대 만들기: 무리 순서(등급 낮은 무리부터)대로. 대기 장소(야외)에 한 줄로 선다
     var turn = {}, all = [];
     plan.groups.forEach(function (g, gi) {
-      var st = BD.GRADE_STAT[g.grade], grow = 1 + BD.LVL_GROW * g.lv;
+      var st = BD.GRADE_STAT[g.grade], grow = (1 + BD.LVL_GROW * g.lv) * (plan.power || 1);
       for (var k = 0; k < g.count / BD.SQUAD; k++) {
         var mem = [];
         for (var i = 0; i < BD.SQUAD; i++) {
@@ -104,7 +106,7 @@
 
   function trapRoll(S, q, ev) {
     var chance = (BD.TRAP_CHANCE + S.mod.trapRate) * (1 - (S.icard.fx.trap || 0));
-    if (S.rng() >= chance) { ev.push({ type: 'trapMiss', z: q.zone, x: q.x, y: q.y }); return; }
+    if (rand(S) >= chance) { ev.push({ type: 'trapMiss', z: q.zone, x: q.x, y: q.y }); return; }
     var dmg = Z.trapDmgOf(q.zone) * (1 + S.mod.trapDmg);
     ev.push({ type: 'trap', z: q.zone, x: q.x, y: q.y, dmg: Math.round(dmg) });
     hurtAll(S, q, dmg, ev);
@@ -225,7 +227,21 @@
       timeout: S.timeout, loot: S.loot, damage: damage, time: S.t
     };
   }
+  // 저장 지점: S를 순수 데이터로 (참조 빼고 깊은 복사)
+  var REFS = { plan: 1, zones: 1, units: 1, icard: 1 };
+  function snapshot(S) {
+    var o = {};
+    Object.keys(S).forEach(function (k) { if (!REFS[k]) o[k] = S[k]; });
+    return JSON.parse(JSON.stringify(o));
+  }
+  // o = create와 같은 { plan, zones, units, monById }. snap이 이상하면 null (그러면 처음부터)
+  function restore(o, snap) {
+    if (!snap || typeof snap.t !== 'number' || typeof snap.rs !== 'number' || !snap.squads || !snap.dens || !snap.mod || !snap.gain) return null;
+    var S = JSON.parse(JSON.stringify(snap));
+    S.plan = o.plan; S.zones = o.zones; S.units = o.units; S.icard = cardById(o.plan.card);
+    return S;
+  }
   function squadInfo(q) { var a = aliveMem(q); return { alive: a.length, porters: a.filter(function (m) { return m.porter; }).length }; }
 
-  window.BSIM = { create: create, step: step, applyCard: applyCard, progress: progress, result: result, squadInfo: squadInfo, cardById: cardById, livingMon: livingMon };
+  window.BSIM = { create: create, snapshot: snapshot, restore: restore, step: step, applyCard: applyCard, progress: progress, result: result, squadInfo: squadInfo, cardById: cardById, livingMon: livingMon };
 })();
