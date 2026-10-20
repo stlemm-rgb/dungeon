@@ -95,7 +95,7 @@ body.reduce .slot { animation: none; }
 .bubble small { display: block; font-size: 10px; opacity: .65; }
 @keyframes bubble-pop { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
 .quick { display: flex; gap: 8px; }
-.quick .btn { flex: 1; padding: 10px 4px; font-size: 13px; position: relative; }
+.quick .btn { flex: 1; padding: 7px 4px; font-size: 13px; position: relative; }
 .badge { position: absolute; right: 6px; top: -6px; background: var(--accent); color: var(--accent-ink); border-radius: 99px; font-size: 11px; padding: 0 6px; }
 
 /* 판 미리보기 */
@@ -288,3 +288,42 @@ body.reduce .bz-room.boost { animation: none; }
 .bz-resbox h3 { font-size: 20px; text-align: center; margin-bottom: 8px; color: var(--accent); }
 .bz-resbtns { display: flex; gap: 8px; margin-top: 12px; }
 .bz-resbtns .btn { flex: 1; min-width: 0; }
+
+/* ---- 진행 구조 (progress.js 연결 화면) ---- */
+body[data-screen="home"] #toasts { bottom: auto; top: 56px; } /* 홈은 아래 버튼 줄을 가리지 않게 토스트를 위로 */
+body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="contract"] #app:has(#tabs[hidden]) + #toasts,
+body[data-screen="build"] #app:has(#tabs[hidden]) + #toasts { top: auto; bottom: 100px; }
+.bz-resbtns .btn { font-size: 13px; }
+.bz-resbtns .btn.primary { flex: 1.5; } /* 도장·의뢰 카드를 가리지 않게 아래로 */
+.stage .quick { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; }
+.homebar { position: sticky; bottom: 0; margin-top: auto; display: flex; gap: 8px; padding: 8px 0 2px; background: var(--bg); z-index: 3; }
+.homebar .btn { flex: 1; min-width: 0; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: var(--text); }
+.quest { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.quest.main, .contract.main { border: 3px solid var(--accent); background: var(--accent-soft); }
+.qhead { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.qhead b, .qhead h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contract .qhead h3 { white-space: normal; }
+.goal { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 13px; }
+.goal b { font-size: 13px; }
+.goal .meter { grid-column: 1 / 3; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.goal .meter i { display: block; height: 100%; background: var(--accent); }
+.goal.done b { color: var(--ready); }
+.goal.done .meter i { background: var(--ready); }
+.mainline { margin: 2px 0 0; padding-top: 5px; border-top: 1px solid var(--line); }
+.invade { flex: none; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); text-align: center; font-size: 13px; color: var(--dim); }
+.invade.now { border: 2px solid var(--danger); color: var(--text); font-weight: bold; background: var(--panel-2); }
+.facs { display: flex; flex-direction: column; gap: 6px; }
+.fac { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; padding: 11px 12px; }
+.fac .nm { min-width: 0; }
+.fac .sub { flex: none; font-size: 12px; font-weight: normal; color: var(--dim); }
+.stamp.main { font-size: 30px; border-width: 5px; padding: 10px 26px; background: var(--accent-soft); }
+.payout.main { border: 3px solid var(--accent); background: var(--accent-soft); }
+.payout.main .stat.total b { font-size: 20px; }
+.stat.total { font-weight: bold; color: var(--accent); }
+.guards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.gbtn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border: 2px solid var(--line); border-radius: 8px; background: var(--panel-2); font-size: 12px; }
+.gbtn b { font-size: 13px; }
+.gbtn span { color: var(--dim); font-size: 11px; }
+.gbtn.on { border-color: var(--ready); background: var(--ready-soft); }
+.head h2 small { font-size: 11px; font-weight: normal; }

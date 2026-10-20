@@ -108,6 +108,9 @@
     var div = api.div, buzz = api.buzz, fxRandom = api.fxRandom;
 
     function start(el) {
+      // 예고된 침입 주에만 진짜 전투 (결과가 의뢰 진척에 반영됨). 아니면 연습 전투 (반영 안 함).
+      var info = api.battleInfo();
+      var practice = !info.invasion;
       var run = { alive: true, raf: 0 };
       api.onLeave(function () { run.alive = false; cancelAnimationFrame(run.raf); });
       el.className = 'screen bz-screen';
@@ -122,7 +125,8 @@
 
       // ---------- 화면 만들기 ----------
       el.innerHTML =
-        '<div class="head"><button class="back" data-back="home">← 홈</button><h2>침입 전투</h2>' +
+        '<div class="head"><button class="back" data-back="home">← 홈</button><h2>' +
+        (practice ? '연습 전투 <small class="dim">(결과 반영 안 됨)</small>' : info.week + '주째 침입 전투') + '</h2>' +
         '<button class="btn small bz-fast" type="button">빨리 감기 ×1</button></div>' +
         '<div class="bz-modebar"><div class="seg bz-seg"><button type="button" data-mode="mix">섞기</button><button type="button" data-mode="fix">고정</button></div>' +
         '<div class="bz-modedesc dim"></div></div>' +
@@ -519,7 +523,13 @@
           '<div class="stat"><span>카드 방식</span><b>' + modeLabel + '</b></div>' +
           '<div class="stat"><span>마왕 기분 · 자금</span><b>' + B.mood + ' · ' + B.gold + '</b></div>' +
           '<div class="bz-resbtns"><button class="btn" type="button" data-again>다시 해 보기</button>' +
-          '<button class="btn primary" type="button" data-go="result">정산으로</button></div></div>');
+          (practice ? '<button class="btn primary" type="button" data-go="home">홈으로 (연습이라 반영 안 됨)</button>'
+                    : '<button class="btn primary" type="button" data-apply>결과 반영하고 홈으로</button>') + '</div></div>');
+        var applyBtn = box.querySelector('[data-apply]');
+        if (applyBtn) applyBtn.addEventListener('click', function () {
+          applyBtn.disabled = true; // 두 번 반영되지 않게
+          api.finishBattle({ kills: B.killed, breached: B.breached });
+        });
         box.querySelector('.card').animate([{ transform: 'scale(.7)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }],
           { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
         box.querySelector('[data-again]').addEventListener('click', function () {
