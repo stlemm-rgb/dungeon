@@ -157,7 +157,7 @@
     // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
     if (q) {
       var pi = P.planInfo(), n = P.surgeIn();
-      var line = '이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급';
+      var line = '이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급 · 평균 Lv ' + pi.lv;
       var inv = div('invade' + (pi.surge ? ' now' : ''),
         '<span>' + (pi.surge ? '⚠ 모험가 대량 출현 예정! ' + (pi.ad ? '(광고) ' : '') : '') + line +
         (pi.surge ? '' : ' <span class="dim">· 대량 출현 ' + n + '주 뒤</span>') + '</span>' +
