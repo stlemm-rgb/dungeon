@@ -367,8 +367,17 @@
     buzz('stamp');
   };
 
+  // ---------- 화면 플러그인 (화면을 별도 파일로 뺄 때: battle.js) ----------
+  // 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; } 로 등록한다.
+  // api.onLeave(fn): 다른 화면으로 나갈 때 한 번 불러 준다 (타이머·루프 정리용).
+  var leaveHooks = [];
+  var API = { toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); } };
+  var plugins = window.SCREEN_PLUGINS || {};
+  Object.keys(plugins).forEach(function (k) { SCREENS[k] = plugins[k](API); });
+
   // ---------- 화면 바꾸기 ----------
   function render() {
+    leaveHooks.splice(0).forEach(function (fn) { fn(); });
     var name = (location.hash || '#home').slice(1);
     if (!SCREENS[name]) { name = 'home'; history.replaceState(null, '', '#home'); }
     var el = div('screen');
