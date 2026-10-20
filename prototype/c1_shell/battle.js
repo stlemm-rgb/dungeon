@@ -7,7 +7,9 @@
  *  ⑤ 가장 앞선 분대 진행도 15·30·45·60%에서 이벤트 카드 (위·아래·왼쪽·오른쪽으로 끌기, 칸을 눌러도 됨). 떠 있는 동안 0.3배
  *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표 -> 홈
  *  - 배속 1·2·3·5. 배속을 켜면 그 전투 이벤트 카드는 켠 뒤 처음 닿는 지점 1장만
- *  - 결과는 전투가 끝나는 순간 api.finishBattle로 한 번만 반영 (새로고침해도 두 번 반영 안 됨). 전투 도중 새로고침하면 같은 계획으로 처음부터
+ *  - 결과는 전투가 끝나는 순간 api.finishBattle로 한 번만 반영 (새로고침해도 두 번 반영 안 됨)
+ *  - 저장 지점 = 전투 시작 + 이벤트 카드를 고른 순간 (P.saveBattle에 전투 계산 상태를 통째로). 새로고침하면 마지막 저장 지점부터
+ *    일시정지 상태로 이어지고, 고른 카드는 바꿀 수 없다. 배속은 바꿀 때마다 저장 (P.setBattleSpeed)
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드)
  */
 (function () {
@@ -30,11 +32,22 @@
       api.onLeave(function () { run.alive = false; cancelAnimationFrame(run.raf); });
       el.className = 'screen bt-screen';
 
-      var S = SIM.create({ plan: plan, zones: RUN.site.zones, units: RUN.site.units, monById: P.monById });
+      var simIn = { plan: plan, zones: RUN.site.zones, units: RUN.site.units, monById: P.monById };
+      var bs = P.battleSave() || {};
+      var S = bs.snap ? SIM.restore(simIn, bs.snap) : null, resumed = !!S;
+      if (!S) S = SIM.create(simIn);
       var U = {
-        phase: 'ready', paused: false, speedIdx: 0, fastUsed: false, fastCardDone: false,
-        appearIdx: 0, appearT: 0, secT: 0, card: null, queue: [], nextAt: 0, cardsShown: 0, cardsUsed: 0, skipped: 0, cardNo: 0
+        phase: 'ready', paused: false, speedIdx: bs.speedIdx || 0, fastUsed: !!bs.fastUsed, fastCardDone: false,
+        appearIdx: 0, appearT: 0, secT: 0, card: null, queue: [], nextAt: 0, cardsShown: 0, cardsUsed: 0, skipped: 0, cardNo: 0, picks: []
       };
+      // 저장 지점에 넣는 화면 진행 (카드 몇 장째·고른 카드 목록 등)
+      var UI_KEYS = ['fastCardDone', 'queue', 'nextAt', 'cardsShown', 'cardsUsed', 'skipped', 'cardNo', 'picks'];
+      if (resumed && bs.ui) UI_KEYS.forEach(function (k) { if (bs.ui[k] !== undefined) U[k] = bs.ui[k]; });
+      if (resumed) { U.phase = 'fight'; U.paused = true; U.appearIdx = plan.groups.length; }
+      function checkpoint() {
+        var ui = {}; UI_KEYS.forEach(function (k) { ui[k] = U[k]; });
+        P.saveBattle({ snap: SIM.snapshot(S), ui: JSON.parse(JSON.stringify(ui)) });
+      }
       var top = plan.groups[plan.groups.length - 1];
 
       el.innerHTML =
@@ -92,6 +105,10 @@
         var d = div('bt-sq wait', '<i class="bt-hp"><u></u></i><b>' + BD.SQUAD + '</b>');
         d.setAttribute('data-g', q.grade); d.style.left = pctX(q.x); d.style.top = pctY(q.y);
         d.hidden = true; layer.appendChild(d); sqEls[q.id] = d;
+        if (resumed) { // 저장 지점부터: 이미 나온 무리는 보이고, 끝난 분대는 처음부터 치움
+          if (q.state === 'dead' || q.state === 'reached' || q.state === 'retreat') d.classList.add('out');
+          else d.hidden = false;
+        }
       });
       Object.keys(S.dens).forEach(function (z) {
         var a = Z.anchorOf(z);
@@ -219,7 +236,10 @@
         card.state = 'done'; U.cardsUsed++; card.el.classList.add('done');
         var side = card.data[dir];
         endCard();
-        show(SIM.applyCard(S, side));
+        var cev = SIM.applyCard(S, side);
+        U.picks.push({ at: card.at, id: card.data.id, dir: dir });
+        checkpoint(); // 고른 순간이 저장 지점: 새로고침해도 이 카드는 그대로
+        show(cev);
         log(BD.DIR_MARK[dir] + ' ' + side.text + (side.once ? '' : ' (전투 끝까지)'), 'card');
         if (side.kind === 'quake') board.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-6px,4px)' }, { transform: 'translate(5px,-4px)' }, { transform: 'translate(0,0)' }],
           { duration: MOTION.dur.fx, easing: MOTION.ease.shake });
@@ -338,8 +358,13 @@
         speedBtn.textContent = '배속 ×' + sp;
         speedBtn.classList.toggle('on', sp > 1);
         if (sp > 1 && !U.fastUsed) { U.fastUsed = true; api.toast('배속을 켰어요: 이번 전투 이벤트 카드는 다음 1장만'); }
+        P.setBattleSpeed(U.speedIdx, U.fastUsed);
         buzz('tap');
       });
+      function drawSpeed() {
+        var sp = BD.SPEEDS[U.speedIdx];
+        speedBtn.textContent = '배속 ×' + sp; speedBtn.classList.toggle('on', sp > 1);
+      }
 
       // ---------- 루프 ----------
       var last = performance.now();
@@ -371,9 +396,22 @@
           if (S.done) finish();
         }
       }
+      drawSpeed();
       paint();
-      log(plan.surge ? '<b>모험가 대량 출현!</b> 무리 ' + plan.groups.length + '개가 옵니다' : '이번 주 일반 침입자 무리 ' + plan.groups.length + '개', plan.surge ? 'bad' : '');
-      log('"전투 시작"을 누르세요. 최고 등급: ' + top.grade + '급', 'dim');
+      var dlvLine = '던전 레벨 ' + (plan.dlv || 0) + ((plan.power || 1) < 1 ? ' · 새 던전이라 침입자 힘 ×' + plan.power : '');
+      if (resumed) {
+        log('저장 지점부터 이어집니다 (고른 카드 ' + U.picks.length + '장 · ' + Math.floor(S.t) + '초)', 'good');
+        U.picks.forEach(function (pk) {
+          var cd = BD.EVENT_CARDS.filter(function (c) { return c.id === pk.id; })[0];
+          if (cd) log('진행도 ' + pk.at + '% ' + BD.DIR_MARK[pk.dir] + ' ' + cd[pk.dir].text, 'card');
+        });
+        log('침입자 카드: ' + S.icard.tag + ' (' + S.icard.text + ') · ' + dlvLine, 'icard');
+        startBtn.textContent = '계속 ▶';
+      } else {
+        log(plan.surge ? '<b>모험가 대량 출현!</b> 무리 ' + plan.groups.length + '개가 옵니다' : '이번 주 일반 침입자 무리 ' + plan.groups.length + '개', plan.surge ? 'bad' : '');
+        log(dlvLine, 'dim');
+        log('"전투 시작"을 누르세요. 최고 등급: ' + top.grade + '급', 'dim');
+      }
       run.raf = requestAnimationFrame(frame);
     };
   };
