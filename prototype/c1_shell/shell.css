@@ -37,6 +37,42 @@
   --grade-b: #6cb4f0;
   --grade-a: #c99af5;
   --grade-s: #f0c070;
+  /* 홈 무대 = 아이소메트릭 방 (stage.js 가 class 이름만 붙임). 어두운 돌벽·나무 바닥, 경고 노랑(--accent) 강조 */
+  --room-floor-a: #4a3b30;
+  --room-floor-b: #43352a;
+  --room-floor-line: #2b2119;
+  --room-slab-l: #2a2119;
+  --room-slab-r: #1f1812;
+  --room-wall-l: #3b4252;
+  --room-wall-r: #2f3543;
+  --room-brick: #262b36;
+  --room-base: #20232b;
+  --room-trim: #566070;
+  --room-edge: #14161a;
+  --room-shadow: rgba(8, 9, 11, .4);
+  --room-glass: #3d2c55;
+  --room-glass-lo: #7c4560;
+  --room-frame: #6a5744;
+  --room-hearth: #5b6270;
+  --room-firebox: #121418;
+  --room-board: #5d4631;
+  --room-paper: #a9bccd;
+  --room-ink: #2d4a66;
+  --room-plate: #262930;
+  --room-door: #4a3322;
+  --room-doorframe: #2a1e15;
+  --rug-a: #5a2a3a;
+  --rug-b: #7a3a4c;
+  --stage-slot: rgba(22, 24, 28, .6);
+  /* 가구 재질: 윗면(t) · 왼쪽 옆면(l) · 오른쪽 옆면(r) */
+  --wood-t: #7a5a3c; --wood-l: #5f452e; --wood-r: #4a3523;
+  --stone-t: #7c8494; --stone-l: #5f6675; --stone-r: #4a505c;
+  --metal-t: #8a94a4; --metal-l: #68717f; --metal-r: #4f5662;
+  --cloth-t: #8a3a4a; --cloth-l: #6c2c3a; --cloth-r: #52222d;
+  --paper-t: #d8d1be; --paper-l: #b6b09f; --paper-r: #968f80;
+  --crate-t: #9a7648; --crate-l: #7a5c37; --crate-r: #5f4629;
+  --dark-t: #4a5060; --dark-l: #343844; --dark-r: #262932;
+  --haz-t: #f0b94a; --haz-l: #c4852a; --haz-r: #9a6720;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -91,20 +127,61 @@ ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .status .line2 { display: flex; gap: 6px; }
 .status .line2 .chip { flex: 1; text-align: center; border-radius: 6px; padding: 4px 6px; font-size: 13px; }
 .gear { width: 38px; height: 34px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; font-size: 18px; line-height: 1; }
-.stage { position: relative; width: 100%; aspect-ratio: 360 / 400; background: var(--stage-sky); border: 1px solid var(--line);
-  border-radius: 10px; overflow: hidden; flex: none; }
-.stage .floor { position: absolute; left: 0; right: 0; top: 75%; bottom: 0; background: var(--stage-floor); border-top: 2px solid var(--line-strong); }
-.stage .hint { position: absolute; left: 8px; top: 6px; font-size: 11px; color: var(--dim); }
-.slot { position: absolute; padding: 0; border: 2px dashed var(--line-strong); background: transparent; border-radius: 6px;
+.stage { position: relative; width: 100%; flex: 1 0 auto; display: flex; align-items: center; justify-content: center;
+  background: var(--stage-sky); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; isolation: isolate; } /* isolate: 캐릭터 z-index 가 팝업 위로 새지 않게 */
+.stagebox { position: relative; width: 100%; aspect-ratio: 360 / 400; flex: none; }
+/* 아이소메트릭 방 (그림은 stage.js 의 SVG, 색은 위 변수) */
+.room { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.room .ft { stroke: var(--room-floor-line); stroke-width: .5; }
+.room .ft.a { fill: var(--room-floor-a); } .room .ft.b { fill: var(--room-floor-b); }
+.room .slab-l { fill: var(--room-slab-l); } .room .slab-r { fill: var(--room-slab-r); }
+.room .wall-l { fill: var(--room-wall-l); } .room .wall-r { fill: var(--room-wall-r); }
+.room .base { fill: var(--room-base); } .room .trim { fill: var(--room-trim); }
+.room .brick { stroke: var(--room-brick); stroke-width: 1; }
+.room .post { stroke: var(--room-edge); stroke-width: 2; }
+.room .frame { fill: var(--room-frame); } .room .sill { fill: var(--room-frame); }
+.room .glass { fill: var(--room-glass); } .room .glass-lo { fill: var(--room-glass-lo); }
+.room .moon { fill: var(--accent); }
+.room .mullion { stroke: var(--room-frame); stroke-width: 1.6; }
+.room .hearth { fill: var(--room-hearth); } .room .mantel { fill: var(--room-trim); } .room .firebox { fill: var(--room-firebox); }
+.room .fire.a { fill: var(--danger); } .room .fire.b { fill: var(--accent); }
+.room .flame { animation: flicker calc(var(--dur-fx) * 1.4) ease-in-out infinite alternate; }
+@keyframes flicker { from { opacity: .72; } to { opacity: 1; } }
+body.reduce .room .flame { animation: none; }
+.room .board { fill: var(--room-board); } .room .paper { fill: var(--room-paper); } .room .ink { stroke: var(--room-ink); stroke-width: 1.2; }
+.room .plate { fill: var(--room-plate); } .room .hzband { fill: url(#hz); }
+.room .hz-a { fill: var(--accent); } .room .hz-b { fill: var(--room-plate); }
+.room .signtext { fill: var(--accent); font-size: 8px; font-weight: bold; font-family: inherit; }
+.room .doorframe { fill: var(--room-doorframe); } .room .door { fill: var(--room-door); }
+.room .plank { stroke: var(--room-doorframe); stroke-width: 1; }
+.room .doorplate { fill: var(--accent); } .room .knob { fill: var(--accent); }
+.room .rug-a { fill: var(--rug-a); } .room .rug-b { fill: var(--rug-b); stroke: var(--rug-a); stroke-width: 1; }
+.room .t, .room .fl, .room .fr { stroke: var(--room-edge); stroke-width: .5; stroke-linejoin: round; }
+.room .t { fill: var(--m-t); } .room .fl { fill: var(--m-l); } .room .fr { fill: var(--m-r); }
+.m-wood { --m-t: var(--wood-t); --m-l: var(--wood-l); --m-r: var(--wood-r); }
+.m-stone { --m-t: var(--stone-t); --m-l: var(--stone-l); --m-r: var(--stone-r); }
+.m-metal { --m-t: var(--metal-t); --m-l: var(--metal-l); --m-r: var(--metal-r); }
+.m-cloth { --m-t: var(--cloth-t); --m-l: var(--cloth-l); --m-r: var(--cloth-r); }
+.m-paper { --m-t: var(--paper-t); --m-l: var(--paper-l); --m-r: var(--paper-r); }
+.m-crate { --m-t: var(--crate-t); --m-l: var(--crate-l); --m-r: var(--crate-r); }
+.m-dark { --m-t: var(--dark-t); --m-l: var(--dark-l); --m-r: var(--dark-r); }
+.m-hazard { --m-t: var(--haz-t); --m-l: var(--haz-l); --m-r: var(--haz-r); }
+
+/* 캐릭터 자리: 걸어 다니는 틀(.actor) 안에 도트 자리 버튼(.slot). 발 밑에 그림자 */
+.actor { position: absolute; transition-property: left, top; transition-timing-function: linear; transition-duration: var(--dur-return); }
+.actor::after { content: ""; position: absolute; left: 6%; right: 6%; bottom: -3px; height: 7px; border-radius: 50%; background: var(--room-shadow); z-index: -1; }
+.slot { position: relative; width: 100%; height: 100%; padding: 0; border: 2px dashed var(--line-strong); background: var(--stage-slot); border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.2;
-  font-size: 9px; color: var(--dim); animation: breathe 3.6s ease-in-out infinite; }
+  font-size: 8px; color: var(--dim); white-space: nowrap; overflow: hidden; animation: breathe 3.6s ease-in-out infinite; }
 .slot b { font-size: 10px; color: var(--text); }
 .slot.boss { border-color: var(--accent); }
 .slot.boss b { color: var(--accent); }
 @keyframes breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
-body.reduce .slot { animation: none; }
+.actor.walk .slot { animation: stride calc(var(--dur-tap) * 3) ease-in-out infinite; }
+@keyframes stride { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .bubble { position: absolute; width: 170px; padding: 7px 9px; background: var(--text); color: var(--bg); border-radius: 10px; font-size: 12px; font-weight: bold;
-  line-height: 1.3; animation: bubble-pop var(--dur-panel) var(--ease-pop-m); z-index: 2; pointer-events: none; }
+  line-height: 1.3; animation: bubble-pop var(--dur-panel) var(--ease-pop-m); z-index: 1100; pointer-events: none; }
 .bubble::after { content: ""; position: absolute; top: 100%; left: var(--tail, 50%); margin-left: -6px; border: 6px solid transparent; border-top-color: var(--text); }
 .bubble small { display: block; font-size: 10px; opacity: .65; }
 @keyframes bubble-pop { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
@@ -314,11 +391,25 @@ body.reduce .bt-sq.fight { animation: none; }
 /* ---- 진행 구조 (progress.js 연결 화면) ---- */
 body[data-screen="home"] #toasts { bottom: auto; top: 56px; } /* 홈은 아래 버튼 줄을 가리지 않게 토스트를 위로 */
 body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="contract"] #app:has(#tabs[hidden]) + #toasts { top: auto; bottom: 100px; }
-.stage .quick { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; }
+.stage .quick { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 1000; }
+/* 퀘스트 버튼 (무대 오른쪽 위) + 팝업 */
+.questbtn { position: absolute; right: 8px; top: 8px; z-index: 1000; display: flex; align-items: center; gap: 6px; padding: 5px 8px 5px 6px;
+  border: 2px solid var(--accent); border-radius: 8px; background: var(--panel); color: var(--text); font-weight: bold; font-size: 13px; }
+.questbtn.main { background: var(--accent-soft); }
+.questbtn .qmark { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 12px; line-height: 18px; text-align: center; }
+.questbtn .qbadge { padding: 0 6px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 11px; }
+.popbg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim);
+  animation: zfade var(--dur-fade) var(--ease-out); }
+.pop { width: 100%; max-width: 340px; max-height: 80vh; max-height: 80dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  background: var(--panel); border: 2px solid var(--line-strong); border-radius: 12px; animation: pop-in var(--dur-panel) var(--ease-pop-s); }
+.pop.main { border: 3px solid var(--accent); background: var(--accent-soft); }
+.pop .qhead b { font-size: 16px; }
+.poplabel { font-size: 12px; color: var(--dim); }
+@keyframes pop-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
 .homebar { position: sticky; bottom: 0; margin-top: auto; display: flex; gap: 8px; padding: 8px 0 2px; background: var(--bg); z-index: 3; }
 .homebar .btn { flex: 1; min-width: 0; }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--text); }
-.quest { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.quest { display: flex; flex-direction: column; gap: 6px; flex: none; } /* 건설 화면(build.js)의 의뢰 카드 */
 .quest.main, .contract.main { border: 3px solid var(--accent); background: var(--accent-soft); }
 .qhead { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .qhead b, .qhead h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

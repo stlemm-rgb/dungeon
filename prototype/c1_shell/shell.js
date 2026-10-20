@@ -31,13 +31,9 @@
   ];
   var TAB_IDS = TABS.map(function (t) { return t.id; });
 
-  // 홈 무대의 도트 캐릭터 자리. 나중에 그림만 끼우면 된다. 좌표는 360x400 무대 기준 (바닥선 y=300).
-  var STAGE_W = 360, STAGE_H = 400;
-  var STAGE_SLOTS = [
-    { id: 'demon',   name: '은발 마왕', x: 22,  y: 198, w: 72, h: 102, lines: ['흥, 이번엔 제대로 지어 와.', '늦으면 보수 깎는다. 알겠어?', '...기대 같은 건 안 하니까.'] },
-    { id: 'boss',    name: '소장',     x: 144, y: 220, w: 72, h: 80,  lines: ['오늘도 안전 제일입니다.', '도면은 머릿속에 다 있죠.', '납기만 맞추면 됩니다.'] },
-    { id: 'captain', name: '부대장 1', x: 266, y: 220, w: 64, h: 80,  lines: ['명령만 내리십시오.', '침입자는 제가 막죠.', '오늘 훈련은 끝났습니다.'] }
-  ];
+  // 홈 무대 = 아이소메트릭 방. 캐릭터·가구·벽 소품 자리는 stage.js 표에 있다 (나중에 도트 그림만 끼우면 됨)
+  var ST = window.STAGE;
+  var STAGE_POS = {}; // 캐릭터별 지금 서 있는 칸 [gx, gy]. 화면을 다시 그려도 제자리에 있게 기억 (저장 안 함)
 
   var LEADERS = [
     { name: '철벽 카르마', trait: '문 앞에서 버티는 수비형', skill: '방패 올리기: 3초간 받는 피해 절반' },
@@ -136,35 +132,30 @@
       '<div class="line2"><span class="chip">금 ' + money(RUN.gold) + '</span><span class="chip">보석 ' + RUN.gems + '</span><span class="chip">명성 ' + RUN.fame + '</span></div>');
     el.appendChild(status);
 
-    // 대기 화면 무대: STAGE_SLOTS를 그대로 그린다
-    var stage = div('stage', '<div class="floor"></div><span class="hint">대기 화면 무대 (캐릭터를 누르면 말함)</span>');
-    STAGE_SLOTS.forEach(function (s, i) {
-      var b = document.createElement('button');
-      b.className = 'slot' + (s.id === 'demon' ? ' boss' : '');
-      b.style.left = pct(s.x, STAGE_W); b.style.top = pct(s.y, STAGE_H);
-      b.style.width = pct(s.w, STAGE_W); b.style.height = pct(s.h, STAGE_H);
-      b.style.animationDelay = (-i * 0.7) + 's';
-      b.innerHTML = '도트 자리<b>' + s.name + '</b>' + s.w + '×' + s.h;
-      b.addEventListener('click', function () { say(stage, s); });
-      stage.appendChild(b);
-    });
+    // 대기 화면 무대: 아이소메트릭 방 (그림 = stage.js SVG) + 캐릭터 자리 (stage.js 표)
+    // 바깥 틀(.stage)은 남는 높이를 채우고, 방(.stagebox)은 가로세로 비율을 지킨 채 가운데에 놓는다
+    var stage = div('stage'), box = div('stagebox', ST.roomSvg());
+    stage.appendChild(box);
+    var actors = startActors(stage, box);
     // 부대장·기록·우편함 버튼은 무대 바닥 위에 얹는다 (홈이 한 화면에 들어오게)
     stage.appendChild(div('quick',
       '<button class="btn" data-go="leaders">부대장</button>' +
       '<button class="btn" data-go="records">기록·도감</button>' +
       '<button class="btn" data-toast="우편함은 아직 비어 있어요">우편함<span class="badge">2</span></button>'));
-    el.appendChild(stage);
-
-    // 현재 의뢰 카드 + 메인 의뢰까지 + 침입 예고
+    // 퀘스트 버튼: 무대 오른쪽 위. 누르면 현재 의뢰 팝업
     if (q) {
-      var nextGrade = P.MAIN_GRADES[Math.min(P.MAIN_GRADES.length - 1, RUN.mainGrade + 1)];
-      var mainLine = q.kind === 'main' ? '지금 의뢰가 메인 의뢰예요. 끝내면 다음 메인은 ' + nextGrade + '급'
-        : RUN.questsDone >= P.NORMAL_TO_MAIN ? '메인 의뢰가 열렸어요. 다음 후보에 나옵니다'
-        : '메인 의뢰까지 일반 의뢰 ' + RUN.questsDone + '/' + P.NORMAL_TO_MAIN + ' (다음 메인 ' + P.MAIN_GRADES[RUN.mainGrade] + '급)';
-      el.appendChild(div('card quest' + (q.kind === 'main' ? ' main' : ''),
-        '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' + goalsHtml(q, true) +
-        '<div class="dim small-text mainline">' + mainLine + '</div>'));
-      // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
+      var qb = document.createElement('button');
+      qb.className = 'questbtn' + (q.kind === 'main' ? ' main' : '');
+      qb.setAttribute('data-quest', '');
+      qb.innerHTML = '<span class="qmark">!</span>퀘스트<b class="qbadge">' + questDone(q) + '/' + q.goals.length + '</b>';
+      qb.addEventListener('click', function () { buzz('tap'); openQuestPop(q); });
+      stage.appendChild(qb);
+    }
+    el.appendChild(stage);
+    wanderActors(actors, stage);
+
+    // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
+    if (q) {
       var pi = P.planInfo(), n = P.surgeIn();
       var line = '이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급';
       var inv = div('invade' + (pi.surge ? ' now' : ''),
@@ -197,24 +188,123 @@
     el.appendChild(bar);
   };
 
-  // 말풍선: 하나만 떠 있고 3초 뒤 사라진다
-  var bubbleTimer = null;
-  function say(stage, slot) {
+  // ---------- 홈 무대: 캐릭터 자리 · 걷기 · 말풍선 · 퀘스트 팝업 ----------
+  // 캐릭터 한 명 = div.actor (움직이는 틀) 안에 button.slot (도트 자리). 위치는 칸 좌표 -> 무대 비율(%)로 둔다.
+  function placeActor(act, pos) {
+    var a = act.a, f = ST.feet(pos[0], pos[1]), s = act.node.style;
+    s.left = pct(f.x - a.w / 2, ST.W); s.top = pct(f.y - a.h, ST.H);
+    s.width = pct(a.w, ST.W); s.height = pct(a.h, ST.H);
+    s.zIndex = Math.round(f.y); // 아래(앞)에 선 사람이 위에 보이게
+    act.at = pos; STAGE_POS[a.id] = pos;
+  }
+  function startActors(stage, box) {
+    return ST.ACTORS.map(function (a, i) {
+      var node = div('actor'), btn = document.createElement('button');
+      btn.className = 'slot' + (a.boss ? ' boss' : '');
+      btn.setAttribute('aria-label', a.name);
+      btn.innerHTML = '<b>' + a.tag + '</b>' + a.w + '×' + a.h; // 도트 그림이 들어갈 자리 표시
+      btn.style.animationDelay = (-i * 0.7) + 's';
+      node.appendChild(btn);
+      var act = { a: a, node: node, at: null, held: false, timer: null };
+      placeActor(act, STAGE_POS[a.id] || a.at);
+      btn.addEventListener('click', function () { say(stage, act); });
+      box.appendChild(node);
+      return act;
+    });
+  }
+  // 가끔 한 명이 방 안 다른 자리로 천천히 걸어간다. 움직임 줄이기가 켜져 있으면 가만히 서 있는다.
+  function wanderActors(actors, stage) {
+    var timer = null;
+    function walk(act) {
+      var taken = actors.map(function (x) { return x.at; }).filter(function (p) { return p !== act.at; });
+      var to = ST.pickSpot(act.a, act.at, taken, fxRandom);
+      if (!to) return;
+      var dx = to[0] - act.at[0], dy = to[1] - act.at[1];
+      var ms = Math.round(MOTION.dur.fx * 1.6 * Math.max(1, Math.sqrt(dx * dx + dy * dy)));
+      act.node.style.transitionDuration = ms + 'ms';
+      act.node.classList.add('walk');
+      placeActor(act, to);
+      clearTimeout(act.timer);
+      act.timer = setTimeout(function () { act.node.classList.remove('walk'); }, ms);
+    }
+    function next() {
+      timer = setTimeout(function () {
+        if (!S.reduce) {
+          var free = actors.filter(function (x) { return !x.held && !x.node.classList.contains('walk'); });
+          if (free.length) walk(free[Math.floor(fxRandom() * free.length)]);
+        }
+        next();
+      }, DUR0.fx * (5 + fxRandom() * 6)); // 2.5~5.5초마다
+    }
+    next();
+    leaveHooks.push(function () {
+      clearTimeout(timer);
+      actors.forEach(function (x) { clearTimeout(x.timer); });
+      speaking = null; clearTimeout(bubbleTimer);
+    });
+  }
+  // 걷는 도중이면 그 자리에서 멈춘다 (지금 보이는 위치를 새 위치로)
+  function freezeActor(act) {
+    var cs = getComputedStyle(act.node), a = act.a, box = act.node.parentNode;
+    var x = parseFloat(cs.left) / box.clientWidth * ST.W + a.w / 2, y = parseFloat(cs.top) / box.clientHeight * ST.H + a.h;
+    act.node.style.transitionDuration = '0ms';
+    act.node.classList.remove('walk');
+    clearTimeout(act.timer);
+    var g = ST.grid(x, y);
+    placeActor(act, [g[0], g[1]]);
+  }
+
+  // 말풍선: 하나만 떠 있고 3초 뒤 사라진다. 말하는 동안 그 캐릭터는 멈춰 있는다.
+  var bubbleTimer = null, speaking = null;
+  function say(stage, act) {
     var old = stage.querySelector('.bubble');
     if (old) stage.removeChild(old);
     clearTimeout(bubbleTimer);
-    var W = stage.clientWidth, H = stage.clientHeight, bw = 170;
-    var cx = (slot.x + slot.w / 2) / STAGE_W * W;
-    var left = Math.max(4, Math.min(W - bw - 4, cx - bw / 2));
-    var line = slot.lines[Math.floor(fxRandom() * slot.lines.length)];
-    var b = div('bubble', '<small>' + slot.name + '</small>' + line);
+    if (speaking) speaking.held = false;
+    speaking = act; act.held = true;
+    freezeActor(act);
+    var sr = stage.getBoundingClientRect(), nr = act.node.getBoundingClientRect(), bw = 170;
+    var cx = nr.left - sr.left + nr.width / 2;
+    var left = Math.max(4, Math.min(sr.width - bw - 4, cx - bw / 2));
+    var line = act.a.lines[Math.floor(fxRandom() * act.a.lines.length)];
+    var b = div('bubble', '<small>' + act.a.name + '</small>' + line);
     b.style.left = left + 'px';
     b.style.setProperty('--tail', (cx - left) + 'px');
     stage.appendChild(b);
-    b.style.top = Math.max(4, slot.y / STAGE_H * H - b.offsetHeight - 10) + 'px';
+    b.style.top = Math.max(4, nr.top - sr.top - b.offsetHeight - 10) + 'px';
     buzz('tap');
-    bubbleTimer = setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 3000);
+    bubbleTimer = setTimeout(function () {
+      if (b.parentNode) b.parentNode.removeChild(b);
+      act.held = false; if (speaking === act) speaking = null;
+    }, 3000);
   }
+
+  // 퀘스트 팝업: 현재 의뢰 이름·일반/메인·목표 진행도·메인까지 남은 정보. 바깥 누르기·닫기 버튼·Esc 로 닫는다.
+  var questPop = null;
+  function questDone(q) { return q.goals.filter(function (g) { return P.goalNow(g) >= g.target; }).length; }
+  function mainLineText(q) {
+    var nextGrade = P.MAIN_GRADES[Math.min(P.MAIN_GRADES.length - 1, RUN.mainGrade + 1)];
+    return q.kind === 'main' ? '지금 의뢰가 메인 의뢰예요. 끝내면 다음 메인은 ' + nextGrade + '급'
+      : RUN.questsDone >= P.NORMAL_TO_MAIN ? '메인 의뢰가 열렸어요. 다음 후보에 나옵니다'
+      : '메인 의뢰까지 일반 의뢰 ' + RUN.questsDone + '/' + P.NORMAL_TO_MAIN + ' (다음 메인 ' + P.MAIN_GRADES[RUN.mainGrade] + '급)';
+  }
+  function closeQuestPop() { if (questPop && questPop.parentNode) questPop.parentNode.removeChild(questPop); questPop = null; }
+  function openQuestPop(q) {
+    closeQuestPop();
+    var bg = div('popbg', '<div class="pop' + (q.kind === 'main' ? ' main' : '') + '" role="dialog" aria-label="퀘스트">' +
+      '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' +
+      '<div class="poplabel">목표 ' + questDone(q) + '/' + q.goals.length + '</div>' + goalsHtml(q, true) +
+      '<div class="stat"><span>보수</span><b>금 ' + money(q.reward.gold) + ' · 명성 +' + q.reward.fame + '</b></div>' +
+      '<div class="dim small-text mainline">' + mainLineText(q) + '</div>' +
+      '<button class="btn primary" data-closepop>닫기</button></div>');
+    bg.addEventListener('click', function (e) {
+      if (e.target === bg || (e.target.closest && e.target.closest('[data-closepop]'))) { closeQuestPop(); buzz('tap'); }
+    });
+    document.body.appendChild(bg);
+    questPop = bg;
+    leaveHooks.push(closeQuestPop); // 다른 화면으로 가거나 홈을 다시 그리면 같이 닫힘
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQuestPop(); });
 
   SCREENS.dungeon = function (el) {
     el.appendChild(head('던전 관리'));
