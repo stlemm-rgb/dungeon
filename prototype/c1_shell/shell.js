@@ -4,10 +4,11 @@
  *  - 한 페이지 안에서 주소 끝의 해시(#home 등)로 화면을 바꾼다. 브라우저 뒤로 가기 = 이전 화면
  *    (나중에 안드로이드 뒤로 버튼과 연결).
  *  - 하단 탭 5개 화면: home · dungeon · units · shop · settings  (탭 막대가 보임)
- *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · build(건설) · battle(침입 주에만) · settings(톱니)
+ *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · build(건설) · battle(다음 주 = 매주 전투) · settings(톱니)
  *  - 진행 화면 (탭 막대 숨김): contract(의뢰 고르기) -> home -> build / battle -> (목표 달성 즉시) result(납품·정산) -> contract
+ *  - 홈 "다음 주"를 누르면 이번 주 전투가 시작되고(PROGRESS.startBattle) 결과를 반영할 때까지 전투 화면에서 못 나간다.
  *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고,
- *    값을 바꾸는 것은 PROGRESS의 정해진 함수(build·nextWeek·applyBattle·deliver·pickQuest …)로만 한다.
+ *    값을 바꾸는 것은 PROGRESS의 정해진 함수(buildZone·startBattle·watchAd·applyBattle·deliver·pickQuest …)로만 한다.
  *  - 화면 지킴이(render 안): 정산 중이면 어느 화면이든 result로, 의뢰가 없으면 contract로, 의뢰가 있으면 contract 못 들어감.
  *  - 건설 화면(구역 판)은 build.js, 전투 화면은 battle.js (SCREEN_PLUGINS). 판 규칙은 zones.js.
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
@@ -132,7 +133,7 @@
     var status = div('status',
       '<div class="line1"><span class="company">검은망치 건설</span><span class="chip accent">' + RUN.week + '주째</span>' +
       '<button class="gear" data-go="settings" aria-label="설정">&#9881;&#xFE0E;</button></div>' +
-      '<div class="line2"><span class="chip">자금 ' + money(RUN.gold) + '</span><span class="chip">명성 ' + RUN.fame + '</span></div>');
+      '<div class="line2"><span class="chip">금 ' + money(RUN.gold) + '</span><span class="chip">보석 ' + RUN.gems + '</span><span class="chip">명성 ' + RUN.fame + '</span></div>');
     el.appendChild(status);
 
     // 대기 화면 무대: STAGE_SLOTS를 그대로 그린다
@@ -163,8 +164,20 @@
       el.appendChild(div('card quest' + (q.kind === 'main' ? ' main' : ''),
         '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' + goalsHtml(q, true) +
         '<div class="dim small-text mainline">' + mainLine + '</div>'));
-      var n = P.invasionIn();
-      el.appendChild(div('invade' + (n === 0 ? ' now' : ''), n === 0 ? '이번 주 침입!' : '다음 침입: ' + n + '주 뒤'));
+      // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
+      var pi = P.planInfo(), n = P.surgeIn();
+      var line = '이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급';
+      var inv = div('invade' + (pi.surge ? ' now' : ''),
+        '<span>' + (pi.surge ? '⚠ 모험가 대량 출현 예정! ' + (pi.ad ? '(광고) ' : '') : '') + line +
+        (pi.surge ? '' : ' <span class="dim">· 대량 출현 ' + n + '주 뒤</span>') + '</span>' +
+        (pi.surge ? '' : '<button class="btn small adbtn" data-ad>광고 보기</button>'));
+      var ad = inv.querySelector('[data-ad]');
+      if (ad) ad.addEventListener('click', function () {
+        var r = P.watchAd();
+        toast(r.msg); buzz(r.ok ? 'warn' : 'tap');
+        render();
+      });
+      el.appendChild(inv);
     }
 
     // 아래 버튼 줄은 화면 아래에 붙여 둔다 (스크롤해도 보임)
@@ -173,14 +186,12 @@
       bar.innerHTML = '<button class="btn primary big" data-go="contract">의뢰 고르기</button>';
     } else {
       bar.innerHTML = '<button class="btn big" data-go="build">건설</button>' +
-        (P.isInvasionWeek() ? '<button class="btn primary big danger" data-go="battle">침입 맞기 ⚔</button>'
-          : '<button class="btn primary big" data-week>다음 주 ▶</button>');
-      var wb = bar.querySelector('[data-week]');
-      if (wb) wb.addEventListener('click', function () {
-        var r = P.nextWeek();
-        showMsgs(r.msgs);
-        if (r.invasion) buzz('warn'); else buzz('tap');
-        if (!autoDeliver()) render();
+        '<button class="btn primary big' + (P.planInfo().surge ? ' danger' : '') + '" data-week>다음 주 ▶</button>';
+      bar.querySelector('[data-week]').addEventListener('click', function () {
+        var r = P.startBattle();
+        if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
+        buzz('tap');
+        go('battle', true);
       });
     }
     el.appendChild(bar);
@@ -340,8 +351,8 @@
     });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { hold.addEventListener(ev, stopHold); });
     el.appendChild(hold);
-    el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·자금·명성·몬스터·의뢰가 모두 처음으로 돌아갑니다.'));
-    el.appendChild(div('mt-auto dim small-text', '버전: C1 진행 구조 시안 0.3 (구역 판 건설, 자동 저장)'));
+    el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·금·보석·명성·몬스터·의뢰가 모두 처음으로 돌아갑니다.'));
+    el.appendChild(div('mt-auto dim small-text', '버전: C1 진행 구조 시안 0.4 (매주 전투, 구역 판 건설, 자동 저장)'));
   };
 
   SCREENS.records = function (el) {
@@ -434,13 +445,9 @@
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
     // 건설 화면용 (build.js)
     head: head, questTag: questTag, goalsHtml: goalsHtml, autoDeliver: autoDeliver,
-    // 전투 화면용: 지금이 예고된 침입 주인가 / 결과 반영 (연습 전투는 부르지 않는다)
-    battleInfo: function () { return { invasion: !!RUN.quest && P.isInvasionWeek(), week: RUN.week }; },
-    finishBattle: function (result) {
-      var r = P.applyBattle(result);
-      showMsgs(r.msgs);
-      if (!autoDeliver()) go('home', false);
-    }
+    // 전투 화면용: 결과 반영(한 번만, 결과표 내용을 돌려줌) / 결과표에서 홈으로 (목표를 채웠으면 바로 납품)
+    finishBattle: function (result) { return P.applyBattle(result); },
+    backHome: function () { if (!autoDeliver()) go('home', false); }
   };
   var plugins = window.SCREEN_PLUGINS || {};
   Object.keys(plugins).forEach(function (k) { SCREENS[k] = plugins[k](API); });
@@ -454,6 +461,8 @@
     else if (to === 'result') to = 'home';
     else if (RUN.phase === 'choose' && (to === 'build' || to === 'battle')) to = 'contract'; // 의뢰 없이 건설·전투 불가
     else if (RUN.phase === 'play' && to === 'contract') to = 'home';
+    else if (RUN.phase === 'play' && RUN.battling) to = 'battle';                 // 전투를 시작했으면 끝날 때까지 전투 화면
+    else if (to === 'battle' && !(RUN.phase === 'play' && RUN.battling)) to = 'home'; // 다음 주를 눌러야만 전투
     else if (bootCheck && to === 'home' && RUN.phase === 'choose') to = 'contract'; // 켜자마자 의뢰가 없으면 바로 고르게
     bootCheck = false;
     if (to !== name) history.replaceState(null, '', '#' + to);
@@ -465,6 +474,7 @@
   function render() {
     leaveHooks.splice(0).forEach(function (fn) { fn(); });
     var name = guardScreen((location.hash || '#home').slice(1));
+    if (name === 'home' && P.checkQuest() && autoDeliver()) return; // 결과표에서 새로고침한 경우 등: 목표를 채웠으면 납품
     var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
     lastName = name;
     P.setBattle(name === 'battle'); // 전투 화면에 있는 동안은 건설 불가

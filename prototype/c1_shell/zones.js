@@ -5,13 +5,14 @@
  *  - 이동 (사용자 결정): 갈림길에서 반반 나뉨, 미끼 쪽으로 몰림, 몬스터가 든 대기실은 피함, 함정은 모르고 들어감.
  *    forecast = 길만 계산해서 "침입자 n명이 각 문을 몇 명 지나가나" 미리 보기 (전투 없음).
  *  - 몬스터 가치는 A7이 종류 표를 썼지만 C1 몬스터는 하나씩 능력치가 달라서 임시 식으로 바꿈 (monValue).
+ *  - 전투(battle_sim.js)는 routeOf(분대마다 길)·anchorOf·doorOf(칸 좌표)로 같은 판·같은 길 규칙을 따른다.
  *  - 상태는 갖지 않는다. 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
  */
 (function () {
   'use strict';
 
   var TRAP_PER_CELL = 6;          // 함정 복도: 칸당 피해
-  var PREVIEW_INVADERS = 12;      // 문 위 숫자를 계산할 침입자 수 (battle.js의 TOTAL과 같게, 임시)
+  var PREVIEW_INVADERS = 20;      // 문 위 숫자를 계산할 침입자 수 (평소 전투 = 무리 2개 × 10명, battle_data.js NORMAL과 같게, 임시)
 
   // 5x7 판의 칸마다 구역 키 (사용자 빨간 선 그림)
   var MAP = [
@@ -123,10 +124,35 @@
     return p;
   }
 
+  // 전투 화면용 좌표 (칸 단위: x = 열 + 0.5, y = 행 + 0.5. 야외는 y < 0)
+  function anchorOf(z) {
+    if (z === 'Y') return { x: 2.5, y: -0.3 };
+    var cs = CELLS[z], x = 0, y = 0;
+    cs.forEach(function (c) { x += c[1] + 0.5; y += c[0] + 0.5; });
+    return { x: x / cs.length, y: y / cs.length };
+  }
+  function doorOf(a, b) {
+    if (a === 'Y') return { x: 2.5, y: 0 };
+    var e = sharedEdge(a, b);
+    return { x: (e[0][1] + e[1][1]) / 2 + 0.5, y: (e[0][0] + e[1][0]) / 2 + 0.5 };
+  }
+  // 분대 하나의 길: 입구부터 보물방까지 구역 목록. turn = 구역마다 몇 번째로 지나가는 분대인가 (갈림길에서 번갈아 나뉨)
+  function routeOf(zones, units, turn) {
+    var path = ['E'], z = 'E';
+    while (z !== 'B') {
+      var to = chooseExits(zones, units, z), k = turn[z] || 0;
+      turn[z] = k + 1;
+      z = to[k % to.length];
+      path.push(z);
+    }
+    return path;
+  }
+
   window.ZONES = {
     MAP: MAP, NAMES: NAMES, EXITS: EXITS, CENTER: CENTER, FAC: FAC, CELLS: CELLS,
     PREVIEW_INVADERS: PREVIEW_INVADERS, ALL: Object.keys(CELLS).concat(['Y']),
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
-    monValue: monValue, defaultZones: defaultZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs
+    monValue: monValue, defaultZones: defaultZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
+    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf
   };
 })();

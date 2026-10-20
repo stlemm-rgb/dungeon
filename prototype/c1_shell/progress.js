@@ -1,19 +1,20 @@
 /* C1 진행 상태와 규칙 (화면 그리기 없음, 가짜 숫자, 균형 없음)
  *
- * 규칙 요약 (docs/GAME_PLAN.md "진행 구조" 줄 기준)
- *  1) 끝없이 이어진다. "다음 주"를 누르면 한 주가 지난다 (nextWeek). 한 판 길이·휴식주 없음.
- *  2) 침입 전투는 예고된 주(nextInvasionWeek)에만 있다. 침입 주에는 "다음 주"가 막히고 전투를 치러야 한다.
- *     전투 결과를 반영(applyBattle)하면 그 주가 끝나고, 2~4주 뒤로 다음 침입이 예고된다.
+ * 규칙 요약 (docs/GAME_PLAN.md "플레이 흐름 (2026-10-21 사용자, 최우선)" 기준)
+ *  1) 끝없이 이어진다. 홈의 "다음 주"를 누르면(startBattle) **매주 반드시 전투**를 치른다.
+ *     전투 결과를 반영(applyBattle)하면 그 주가 끝나고 다음 주가 된다. 전투 중(RUN.battling)에는 다른 화면으로 못 간다.
+ *  2) 이번 주 침입자 계획(RUN.plan: 무리·짐꾼·침입자 카드)은 미리 만들어 둔다 (홈에 "이번 주 침입자 N명 · 최고 X급").
+ *     평소 = 일반 침입자(battle_data.js NORMAL), 예고된 주(RUN.surgeWeek)와 광고 본 주(watchAd) = 대량 출현(SURGE).
  *  3) 건설(buildZone)은 언제든, 금이 있는 만큼, 전투 중에는 못 지음. 구역 16곳에 시설을 하나씩 (규칙은 zones.js).
- *     지으면 부지(site.zones)에 저장된다. 쓴 금은 환불 없음 (바꿔 지어도 이전 시설 값은 안 돌아옴).
- *     대기실 몬스터 넣고 빼기(placeMonster/removeMonster)는 공짜. 건설 횟수(builds)는 금을 쓴 건설만 센다.
- *  4) 의뢰는 하나씩. 목표 2개(일반) / 3개(메인), 기한 없음. 목표를 다 채우면(checkQuest) 즉시 납품(deliver).
+ *     쓴 금은 환불 없음. 대기실 몬스터 넣고 빼기는 공짜. 건설 횟수(builds)는 금을 쓴 건설만 센다.
+ *  4) 의뢰는 하나씩. 목표 2개(일반) / 3개(메인), 기한 없음. 목표 = 전투로 얻은 금·보석·몬스터 경험치 + 보물방 방어 횟수.
+ *     목표를 다 채우면(checkQuest) 즉시 납품(deliver).
  *  5) 일반 의뢰를 3번 끝내면(questsDone) 다음 후보에 메인 의뢰가 한 장 끼어든다. 메인은 등급이 C -> B -> A -> S로 오른다.
  *  6) 납품하면 정산(보상) -> 친위대 고르기(최대 3) -> 다음 의뢰 후보 중 고르기(pickQuest) -> 새 부지에 새로 짓기.
- *     던전 가치와 건설 횟수는 초기화되고, 몬스터·자금·명성은 이어진다.
- *  7) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장 (막혀 있어도 동작). 이어하기 버튼은 없다: 켜면 그대로 이어진다.
- *  8) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 시드는 RUN.seed에 저장되어 새로고침해도 이어진다.
- *     (새 게임 시작 때만 시계로 시드를 만든다. 연출용 무작위는 shell.js의 fxRandom)
+ *  7) 재화: 금(gold) = 건설·수리, 보석(gems) = 1종, 지금은 쌓이기만.
+ *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
+ *  9) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 전투 안의 무작위는 계획에 저장한 시드(plan.seed)로 battle_sim.js가 굴린다.
+ *     (연출용 무작위는 shell.js의 fxRandom)
  *
  * phase(RUN.phase): choose = 의뢰를 고르는 중(진행 중 의뢰 없음) · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면
  */
@@ -22,22 +23,20 @@
 
   // ---------- 데이터 (고칠 때는 여기만) ----------
   var SAVE_KEY = 'dunguen_c1_run';
-  var VERSION = 2;                // 저장 형식이 바뀌면 올린다 (옛 저장은 버리고 새로 시작). 2: 부지가 구역별 시설(site.zones)
+  var VERSION = 3;                // 저장 형식이 바뀌면 올린다 (옛 저장은 버리고 새로 시작). 2: 부지가 구역별 시설(site.zones). 3: 매주 전투(plan·battling·surgeWeek·adWeek), 보석(gems), 새 목표 종류
   var START_GOLD = 2000, START_FAME = 1;
-  var WEEKLY_INCOME = 100;        // 다음 주마다 들어오는 돈
-  var KILL_LOOT = 20;             // 침입자 한 명 처치당 전리품
+  var BD = window.BATTLE_DATA;    // 전투 숫자 표 (battle_data.js)
   var NORMAL_TO_MAIN = 3;         // 일반 의뢰 몇 번이면 메인이 나오나
   var GUARD_MAX = 3;
   var MAIN_GRADES = ['C', 'B', 'A', 'S'];
   var MON_GRADES = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
 
-  // 목표 종류. calc(s): s = 의뢰 크기 (일반 1, 메인 C=2 B=3 A=4 S=5) -> 목표 숫자
+  // 목표 종류. calc(s): s = 의뢰 크기 (일반 1, 메인 C=2 B=3 A=4 S=5) -> 목표 숫자. 모두 전투에서 쌓인다 (quest.prog)
   var GOAL_TYPES = [
-    { id: 'value',   label: '던전 가치',     unit: '',  calc: function (s) { return 150 + 150 * (s - 1); } },
-    { id: 'builds',  label: '건설',          unit: '회', calc: function (s) { return s === 1 ? 3 : s + 3; } },
-    { id: 'levelups', label: '몬스터 레벨업', unit: '회', calc: function (s) { return s === 1 ? 2 : s + 2; } },
-    { id: 'kills',   label: '침입자 처치',   unit: '명', calc: function (s) { return 6 + 5 * (s - 1); } },
-    { id: 'rankups', label: '몬스터 등급 상승', unit: '회', calc: function (s) { return s <= 2 ? 1 : Math.ceil(s / 2); } }
+    { id: 'gold',    label: '전투로 얻은 금',  unit: '',  calc: function (s) { return 250 + 200 * (s - 1); } },
+    { id: 'gems',    label: '전투로 얻은 보석', unit: '개', calc: function (s) { return 4 + 3 * (s - 1); } },
+    { id: 'exp',     label: '몬스터 경험치',   unit: '',  calc: function (s) { return 30 + 25 * (s - 1); } },
+    { id: 'defends', label: '보물방 방어',     unit: '회', calc: function (s) { return 2 + (s - 1); } }
   ];
   // 의뢰 이름표
   var NAMES_NORMAL = ['지하 창고 증축', '버섯 농장 던전', '폐광 개조 공사', '늪지 초소 건설', '도둑 소굴 리모델링',
@@ -48,7 +47,7 @@
     { name: '스켈레톤', lv: 5, hp: 140, atk: 16 }, { name: '박쥐 떼',  lv: 2, hp: 60,  atk: 10 },
     { name: '늑대 사냥개', lv: 3, hp: 110, atk: 18 }, { name: '돌 골렘', lv: 6, hp: 300, atk: 12 }
   ];
-  var LEVEL_NEED = 2;             // 경험치 몇이면 레벨업
+  function levelNeed(lv) { return 4 + lv * 2; } // 경험치 몇이면 레벨업 (임시)
 
   // ---------- 상태: RUN 하나 (객체 자체는 바뀌지 않고 안의 값만 바뀐다) ----------
   var RUN = {};
@@ -62,12 +61,12 @@
     });
     return {
       v: VERSION, seed: (Date.now() ^ 0x5bd1e995) | 0,
-      week: 1, gold: START_GOLD, fame: START_FAME,
+      week: 1, gold: START_GOLD, gems: 0, fame: START_FAME,
       phase: 'choose', quest: null, offers: null, report: null,
       questsDone: 0, mainGrade: 0, qid: 1, siteNo: 0,
       site: freshSite(),
       monsters: monsters, guards: [],
-      nextInvasionWeek: 3, history: []
+      surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, lastBattle: null, history: []
     };
   }
   function setRun(src) {
@@ -85,7 +84,9 @@
       var raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         var d = JSON.parse(raw);
-        if (d && d.v === VERSION && d.site && d.site.zones && d.site.units && d.monsters && typeof d.week === 'number') { setRun(d); return true; }
+        if (d && d.v === VERSION && d.site && d.site.zones && d.site.units && d.monsters && typeof d.week === 'number' && typeof d.gems === 'number') {
+          setRun(d); ensurePlan(); return true;
+        }
       }
     } catch (e) { /* 깨진 저장은 무시하고 새로 시작 */ }
     setRun(freshRun());
@@ -111,20 +112,16 @@
   function goalType(id) { for (var i = 0; i < GOAL_TYPES.length; i++) { if (GOAL_TYPES[i].id === id) return GOAL_TYPES[i]; } return null; }
   function gradeIdx(lv) { return Math.max(0, Math.min(MON_GRADES.length - 1, Math.floor(lv / 2))); }
   function monGrade(lv) { return MON_GRADES[gradeIdx(lv)]; }
-  function isInvasionWeek() { return RUN.week >= RUN.nextInvasionWeek; }
-  function invasionIn() { return Math.max(0, RUN.nextInvasionWeek - RUN.week); }
+  function isSurgeWeek() { return RUN.week >= RUN.surgeWeek || RUN.adWeek === RUN.week; }
+  function surgeIn() { return Math.max(0, RUN.surgeWeek - RUN.week); }
 
   function monById(id) { for (var i = 0; i < RUN.monsters.length; i++) { if (RUN.monsters[i].id === id) return RUN.monsters[i]; } return null; }
   // 던전 가치 = 시설 가치 + 대기실에 든 몬스터 가치 (몬스터가 크면 가치도 오른다)
   function siteSummary() { return ZONES.summary(RUN.site.zones, RUN.site.units, monById); }
   function siteValue() { return siteSummary().value; }
 
-  // 목표 하나의 지금 값. value·builds는 부지에서, 나머지는 의뢰를 받은 뒤 쌓인 값
-  function goalNow(g) {
-    if (g.type === 'value') return siteValue();
-    if (g.type === 'builds') return RUN.site.builds;
-    return RUN.quest && RUN.quest.prog[g.type] || 0;
-  }
+  // 목표 하나의 지금 값: 의뢰를 받은 뒤 전투에서 쌓인 값
+  function goalNow(g) { return RUN.quest && RUN.quest.prog[g.type] || 0; }
   function goalText(g) {
     var t = goalType(g.type);
     return t.label + ' ' + Math.min(goalNow(g), g.target) + '/' + g.target + t.unit;
@@ -137,9 +134,7 @@
     var pool = GOAL_TYPES.slice();
     var goals = [];
     for (var i = 0; i < count; i++) {
-      // 첫 목표는 건설 쪽(가치·건설 횟수) 중 하나, 나머지는 진행 쪽(레벨업·처치·등급): 건설과 주 넘기기가 함께 필요하도록
-      var cand = pool.filter(function (x) { var b = x.id === 'value' || x.id === 'builds'; return i === 0 ? b : !b; });
-      var t = cand[rint(cand.length)];
+      var t = pool[rint(pool.length)];
       pool.splice(pool.indexOf(t), 1);
       goals.push({ type: t.id, target: t.calc(s) });
     }
@@ -154,7 +149,7 @@
       : { gold: 500 + rint(5) * 50, fame: 1 };
     return {
       id: RUN.qid++, kind: kind, grade: kind === 'main' ? MAIN_GRADES[RUN.mainGrade] : '',
-      name: name, goals: goals, reward: reward, prog: { levelups: 0, kills: 0, rankups: 0 }, startWeek: 0
+      name: name, goals: goals, reward: reward, prog: { gold: 0, gems: 0, exp: 0, defends: 0 }, startWeek: 0
     };
   }
   // 후보: 일반 2~3장, 메인이 열렸으면 메인 1장 더. 한 번 만들면 저장해 두어 새로고침해도 같다.
@@ -177,6 +172,7 @@
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
     RUN.site = freshSite();
     RUN.siteNo++;
+    ensurePlan();
     save();
     return true;
   }
@@ -233,7 +229,7 @@
   function idleMonsters() { var used = usedIds(); return RUN.monsters.filter(function (m) { return !used[m.id]; }); }
   function canEdit() {
     if (RUN.phase !== 'play') return '진행 중인 의뢰가 없어요';
-    if (battling) return '전투 중에는 지을 수 없어요';
+    if (battling || RUN.battling) return '전투 중에는 지을 수 없어요';
     return '';
   }
   // 구역 z를 시설 k로 지으면: 비용·가치 변화·막히는 이유. 짓기 전 미리보기용 (아무것도 바꾸지 않음)
@@ -297,59 +293,115 @@
   // ---------- 몬스터 성장 ----------
   function addExp(m, n, msgs) {
     m.exp += n;
-    while (m.exp >= LEVEL_NEED) {
+    while (m.exp >= levelNeed(m.lv)) {
       var gBefore = gradeIdx(m.lv);
-      m.exp -= LEVEL_NEED; m.lv++;
+      m.exp -= levelNeed(m.lv); m.lv++;
       m.hp = Math.round(m.hp * 1.1); m.atk += 1;
-      if (RUN.quest) RUN.quest.prog.levelups++;
       var line = m.name + ' Lv ' + m.lv + ' 레벨업';
-      if (gradeIdx(m.lv) > gBefore) {
-        if (RUN.quest) RUN.quest.prog.rankups++;
-        line += ' · 등급 ' + monGrade(m.lv) + ' 상승';
-      }
+      if (gradeIdx(m.lv) > gBefore) line += ' · 등급 ' + monGrade(m.lv) + ' 상승';
       msgs.push(line);
     }
   }
-  // 경험치가 가장 많은 몬스터들(같으면 무작위)을 n마리 고른다
-  function topMonsters(n) {
-    var arr = RUN.monsters.map(function (m) { return { m: m, k: m.exp + rnd() * 0.5 }; });
-    arr.sort(function (a, b) { return b.k - a.k; });
-    return arr.slice(0, n).map(function (a) { return a.m; });
+
+  // ---------- 이번 주 침입자 계획 ----------
+  // 무리: { name, grade, count(명), lv(평균), porters(분대 10명 중 짐꾼 수) }. 등급 낮은 무리부터 (등장 순서).
+  // card = 가장 높은 등급 무리의 침입자 카드 id. order = 이벤트 카드 순서. seed = 전투 안 무작위 시드.
+  function makePlan(surge) {
+    var spec = surge ? BD.SURGE : BD.NORMAL, groups = [], used = {};
+    var card = BD.INVADER_CARDS[rint(BD.INVADER_CARDS.length)];
+    spec.grades.forEach(function (g, i) {
+      var st = BD.GRADE_STAT[g], names = BD.GROUP_NAMES[g], name;
+      do { name = names[rint(names.length)]; } while (used[name] && names.length > 1);
+      used[name] = true;
+      var squads = spec.squads[0] + rint(spec.squads[1] - spec.squads[0] + 1);
+      groups.push({
+        name: name, grade: g, count: squads * BD.SQUAD, top: i === spec.grades.length - 1,
+        lv: BD.BASE_LV + RUN.fame + Math.floor(RUN.week / 4) + st.lvAdd + rint(3),
+        porters: BD.PORTER_MIN + rint(BD.PORTER_MAX - BD.PORTER_MIN + 1)
+      });
+    });
+    var order = BD.EVENT_CARDS.map(function (c, i) { return i; });
+    for (var k = order.length - 1; k > 0; k--) { var j = rint(k + 1), t = order[k]; order[k] = order[j]; order[j] = t; }
+    return { week: RUN.week, surge: !!surge, ad: RUN.adWeek === RUN.week, groups: groups, card: card.id, order: order, seed: (rnd() * 4294967296) | 0 };
+  }
+  function ensurePlan() {
+    if (RUN.phase !== 'play' || RUN.battling) return;
+    if (!RUN.plan || RUN.plan.week !== RUN.week || RUN.plan.surge !== isSurgeWeek()) RUN.plan = makePlan(isSurgeWeek());
+  }
+  // 홈 알림용: 이번 주 침입자 수·최고 등급·대량 출현 여부
+  function planInfo() {
+    ensurePlan();
+    var p = RUN.plan; if (!p) return null;
+    var n = 0; p.groups.forEach(function (g) { n += g.count; });
+    return { count: n, top: p.groups[p.groups.length - 1].grade, surge: p.surge, ad: p.ad, groups: p.groups.length };
+  }
+  // 광고 보기 (가짜): 이번 주를 대량 출현으로. 이미 대량 출현이면 아무 일 없음
+  function watchAd() {
+    if (RUN.phase !== 'play' || RUN.battling) return { ok: false, msg: '지금은 볼 수 없어요' };
+    if (isSurgeWeek()) return { ok: false, msg: '이번 주는 이미 대량 출현이에요' };
+    RUN.adWeek = RUN.week;
+    ensurePlan();
+    save();
+    return { ok: true, msg: '광고 보상: 이번 주 모험가 대량 출현!' };
   }
 
-  // ---------- 주 넘기기 ----------
-  function passWeek(msgs) {
-    RUN.week++;
-    RUN.gold += WEEKLY_INCOME;
-    msgs.push('주간 수입 +' + WEEKLY_INCOME);
-    addExp(topMonsters(1)[0], 1, msgs); // 훈련
-  }
-  function nextWeek() {
-    var msgs = [];
+  // ---------- 다음 주 = 이번 주 전투 시작 ----------
+  // "다음 주"를 누르면 이번 주 전투가 시작된다 (취소 없음). 결과를 반영하면 한 주가 지나 다음 주가 된다
+  function startBattle() {
     if (RUN.phase !== 'play') return { ok: false, msgs: ['진행 중인 의뢰가 없어요'] };
-    if (isInvasionWeek()) return { ok: false, invasion: true, msgs: ['이번 주는 침입이 있어요. 먼저 맞서야 해요'] };
-    passWeek(msgs);
-    var inv = isInvasionWeek();
-    if (inv) msgs.push('침입 주예요! 침입자가 몰려옵니다');
+    ensurePlan();
+    RUN.battling = true;
     save();
-    return { ok: true, invasion: inv, msgs: msgs };
+    return { ok: true, plan: RUN.plan, msgs: [] };
   }
+  function battlePlan() { return RUN.battling ? RUN.plan : null; }
 
   // ---------- 전투 결과 반영 ----------
-  // result = { kills, breached }. 침입 주에만 의미가 있다 (연습 전투는 부르지 않는다).
-  function applyBattle(result) {
-    var msgs = [];
-    if (RUN.phase !== 'play' || !isInvasionWeek()) return { ok: false, msgs: ['반영할 침입이 없어요'] };
-    var kills = Math.max(0, result.kills | 0);
-    RUN.quest.prog.kills += kills;
-    var loot = kills * KILL_LOOT;
-    RUN.gold += loot;
-    msgs.push('처치 ' + kills + '명 · 돌파 ' + (result.breached | 0) + '명 · 전리품 +' + loot);
-    topMonsters(2).forEach(function (m) { addExp(m, 1, msgs); }); // 싸운 몬스터 경험치
-    passWeek(msgs);                                                // 침입을 치르면 그 주가 끝난다
-    RUN.nextInvasionWeek = RUN.week + 2 + rint(3);               // 다음 침입은 2~4주 뒤
+  // res = battle_sim.js 결과 { kills, porterKills, total, squads, gold, gems(소수), exp, reached, retreated, timeout, loot(약탈 요청), damage(몬스터가 잃은 체력) }
+  function applyBattle(res) {
+    if (RUN.phase !== 'play' || !RUN.battling) return null;
+    var msgs = [], p = RUN.plan;
+    var goldBefore = RUN.gold, gemsBefore = RUN.gems;
+    var gold = Math.max(0, Math.round(res.gold)), gems = Math.floor(res.gems), exp = Math.max(0, res.exp | 0);
+    RUN.gold += gold;
+    var loot = Math.min(Math.round(res.loot), Math.floor(RUN.gold * BD.LOOT_CAP));   // 금은 크게 잃지 않게
+    RUN.gold -= loot;
+    var repair = Math.min(Math.round(res.damage * BD.REPAIR_PER_HP), RUN.gold);
+    RUN.gold -= repair;
+    RUN.gems += gems;
+    // 경험치는 대기실에 든 몬스터에게 나눔 (아무도 없으면 부대 전체)
+    var ids = Object.keys(usedIds()).map(Number), team = ids.length ? ids.map(monById) : RUN.monsters.slice();
+    if (exp && team.length) {
+      var each = Math.floor(exp / team.length), rest = exp - each * team.length;
+      team.forEach(function (m, i) { addExp(m, each + (i < rest ? 1 : 0), msgs); });
+    }
+    var defended = res.reached === 0;  // 퇴각한 적은 보물방 침입으로 치지 않는다 (사용자 확인)
+    var q = RUN.quest;
+    q.prog.gold += gold; q.prog.gems += gems; q.prog.exp += exp; if (defended) q.prog.defends++;
+    var rep = {
+      week: RUN.week, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
+      gold: gold, gems: gems, exp: exp, reached: res.reached, squads: res.squads, retreated: res.retreated, timeout: !!res.timeout,
+      loot: loot, repair: repair, goldBefore: goldBefore, goldAfter: RUN.gold, gemsBefore: gemsBefore, gemsAfter: RUN.gems,
+      defended: defended, levelMsgs: msgs.slice(0, 4)
+    };
+    rep.hint = upgradeHint(gold - loot - repair, gems);
+    // 한 주가 끝난다. 예고된 대량 출현을 치렀으면 다음 예고 (광고로 늘린 주는 예고와 따로)
+    if (p.surge && RUN.week >= RUN.surgeWeek) RUN.surgeWeek = RUN.week + BD.SURGE_GAP[0] + rint(BD.SURGE_GAP[1] - BD.SURGE_GAP[0] + 1);
+    RUN.week++;
+    RUN.battling = false; RUN.plan = null; RUN.lastBattle = rep;
+    ensurePlan();
     save();
-    return { ok: true, msgs: msgs };
+    return rep;
+  }
+  // "이번 수입으로 할 수 있는 강화" 한 줄 (임시 문구)
+  function upgradeHint(net, gems) {
+    var parts = [];
+    if (net > 0) {
+      var c2 = ZONES.FAC.trap.perCell * 2, n = Math.floor(net / c2);
+      parts.push(n > 0 ? '금 +' + net + '으로 2칸 함정 복도 ' + n + '곳을 지을 수 있어요' : '금 +' + net + ': 조금 더 모으면 함정 복도 (금 ' + c2 + ')');
+    } else parts.push(net < 0 ? '금이 ' + (-net) + ' 줄었어요. 대기실 몬스터를 늘려 막아 보세요' : '이번엔 금 수입이 없어요. 함정이나 대기실을 지어 보세요');
+    if (gems > 0) parts.push('보석 ' + gems + '개: ' + BD.GEM_UPGRADE.name + ' (준비 중)');
+    return parts.join(' · ');
   }
 
   load();
@@ -357,8 +409,8 @@
   window.PROGRESS = {
     RUN: RUN, GOAL_TYPES: GOAL_TYPES, MAIN_GRADES: MAIN_GRADES,
     NORMAL_TO_MAIN: NORMAL_TO_MAIN, GUARD_MAX: GUARD_MAX,
-    goalNow: goalNow, goalText: goalText, monGrade: monGrade, isInvasionWeek: isInvasionWeek, invasionIn: invasionIn,
-    nextWeek: nextWeek, applyBattle: applyBattle, checkQuest: checkQuest, deliver: deliver,
+    goalNow: goalNow, goalText: goalText, monGrade: monGrade, isSurgeWeek: isSurgeWeek, surgeIn: surgeIn,
+    planInfo: planInfo, watchAd: watchAd, startBattle: startBattle, battlePlan: battlePlan, applyBattle: applyBattle, levelNeed: levelNeed, checkQuest: checkQuest, deliver: deliver,
     siteSummary: siteSummary, siteValue: siteValue, idleMonsters: idleMonsters, previewBuild: previewBuild, buildZone: buildZone,
     placeMonster: placeMonster, removeMonster: removeMonster, forecast: forecast, setBattle: setBattle, monById: monById,
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract,
