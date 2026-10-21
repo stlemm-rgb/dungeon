@@ -1,6 +1,6 @@
 /* C1 전투 화면: 매주 전투 6단계 (계산은 battle_sim.js, 숫자는 battle_data.js, 판은 zones.js·build.js의 boardHtml)
  *
- *  ① 들어오면 멈춘 상태. "전투 시작"은 홈 "다음 주"와 같은 자리(아래 줄 오른쪽)
+ *  ① 들어오면 멈춘 상태. "전투 시작"은 하단 탭의 가운데 "다음 주" 버튼과 같은 자리(api.bar = 탭 막대 자리에 배속 · 전투 시작 · 안내)
  *  ② 무리가 대기 장소(야외)에 등급 낮은 무리부터 차례로 등장, 아래 안내 줄 "D급 OO 10명 평균 레벨 N · 짐꾼 N명"
  *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (눌러서 닫기, 몇 초 뒤 저절로)
  *  ④ 10명 = 1분대가 작은 얼굴 도트로 실제 구역 판을 따라 이동. 함정·대기실 몬스터가 작동
@@ -56,10 +56,14 @@
         '<div class="bt-top"><span class="bt-time">1:00</span><div class="bt-prog"><i></i>' +
         BD.CARD_AT.map(function (a) { return '<b style="left:' + a + '%"></b>'; }).join('') + '</div><span class="bt-pct">0%</span></div>' +
         '<div class="zboard bt-board">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units }) + '</div>' +
-        '<div class="bt-low"><div class="bt-log"></div><div class="bt-slot"></div></div>' +
-        '<div class="homebar bt-bar"><button class="btn big bt-speed" type="button">배속 ×1</button>' +
-        '<button class="btn primary big bt-start" type="button">전투 시작 ▶</button></div>' +
-        '<div class="bt-score dim"></div>';
+        '<div class="bt-score dim"></div>' +
+        '<div class="bt-low"><div class="bt-log"></div><div class="bt-slot"></div></div>';
+
+      // 아래 막대: 하단 탭 막대 자리에 [배속] [전투 시작] [안내]. 전투 시작이 홈의 가운데 "다음 주" 탭과 같은 좌표·크기에 온다
+      var bar = api.bar();
+      bar.innerHTML = '<button class="bt-speed" type="button">배속 ×1</button>' +
+        '<button class="tab-main bt-start" type="button">전투 시작 ▶</button>' +
+        '<span class="bt-note">전투 중에는 다른 화면으로 못 가요</span>';
 
       var board = el.querySelector('.bt-board'), wrap = board.querySelector('.zwrap');
       var layer = div('bt-layer'); wrap.appendChild(layer);
@@ -67,7 +71,7 @@
       var logEl = el.querySelector('.bt-log'), slot = el.querySelector('.bt-slot');
       var timeEl = el.querySelector('.bt-time'), progEl = el.querySelector('.bt-prog i'), pctEl = el.querySelector('.bt-pct');
       var scoreEl = el.querySelector('.bt-score'), walletEl = el.querySelector('.bt-wallet');
-      var speedBtn = el.querySelector('.bt-speed'), startBtn = el.querySelector('.bt-start');
+      var speedBtn = bar.querySelector('.bt-speed'), startBtn = bar.querySelector('.bt-start');
       walletEl.textContent = '금 ' + money(RUN.gold) + ' · 보석 ' + RUN.gems;
 
       // ---------- 작은 도구 ----------
