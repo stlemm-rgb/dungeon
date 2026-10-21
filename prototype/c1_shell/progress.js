@@ -87,7 +87,7 @@
   //  value 던전 가치 N 이상 · thorn 야외에 덫 숲
   var DEMAND_DEFS = {
     trap:  { label: '함정 위주', need: function (s) { return 1 + s; }, text: function (d) { return '함정 복도를 ' + d.need + '곳 이상 지어 주세요'; } },
-    den:   { label: '몬스터 숙소', need: function (s) { return s >= 3 ? 2 : 1; }, need2: function (s) { return Math.min(6, 1 + s); },
+    den:   { label: '몬스터 대기실', need: function (s) { return s >= 3 ? 2 : 1; }, need2: function (s) { return Math.min(6, 1 + s); },
              text: function (d) { return '몬스터 대기실 ' + d.need + '곳 이상, 몬스터 ' + d.need2 + '마리 이상 배치해 주세요'; } },
     lure:  { label: '보물 냄새', need: function (s) { return s >= 3 ? 2 : 1; }, text: function (d) { return '미끼를 ' + d.need + '곳 이상 지어 주세요'; } },
     front: { label: '앞마당 비우기', text: function () { return '보스방 바로 앞 구역은 모두 빈 구역으로 두세요'; } },
