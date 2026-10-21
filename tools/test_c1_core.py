@@ -88,6 +88,33 @@ ok(R.monsters[1].lv === b1.lv && R.monsters[1].hp === b1.hp && R.monsters[1].exp
 ok(R.report === null && R.offers === null && R.phase === 'play' && R.quest.id === q2.id, '정리');
 ok(P.grantLeft() === P.SITE_GRANT && R.site.builds === 0, '새 부지 새 공사비 (전 부지 남은 ' + grantLeftBefore + ' 버림)');
 ok(R.plan.attr === q2.attr.id, '새 부지 계획 속성');
+// 같은 이름 의뢰 방지: 방금 끝낸 의뢰 이름이 후보에 없다 (여러 번 반복)
+for (let t = 0; t < 30; t++) {
+  const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset();
+  PP.pickQuest(PP.offerQuests()[0]);
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
+  const nm = RR.quest.name; PP.deliver();
+  ok(RR.offers.every(o => o.name !== nm), '후보에 방금 끝낸 의뢰 이름 없음: ' + nm + ' / ' + RR.offers.map(o => o.name).join(','));
+}
+// 배속·카드 수 기억: 전투가 끝나도 남고, v5 저장(prefs 없음)은 기본값으로 채움
+ok(R.prefs && R.prefs.speedIdx === 0 && R.prefs.cards === 1, '기본 설정 1배속·카드 1장: ' + JSON.stringify(R.prefs));
+P.buildZone('CB', 'trap'); P.buildZone('CC', 'trap'); P.buildZone('CD', 'trap'); P.buildZone('LB', 'den');
+R.gold = 99999; P.buildZone('CE', 'trap');
+ok(P.startBattle().ok, '전투 시작 2');
+P.setBattleSpeed(2, true); P.setCardCount(3);
+ok(R.prefs.speedIdx === 2 && R.prefs.cards === 3 && R.bsave.fastUsed === true, '배속·카드 수 저장');
+P.setCardCount(99); ok(R.prefs.cards === 4, '카드 수 상한 4');
+P.setCardCount(2);
+W = boot(); P = W.PROGRESS; ok(P.load() === true && P.RUN.prefs.speedIdx === 2 && P.RUN.prefs.cards === 2 && P.RUN.bsave.fastUsed === true, '새로고침 뒤에도 배속·카드 수·fastUsed');
+R = P.RUN;
+S = W.BSIM.create({ plan: R.plan, zones: R.site.zones, units: R.site.units, monById: P.monById });
+for (let i = 0; i < 3000 && !S.done; i++) W.BSIM.step(S, 0.1);
+P.applyBattle(W.BSIM.result(S));
+ok(R.battling === false && R.prefs.speedIdx === 2 && R.prefs.cards === 2, '전투가 끝나도 설정 유지');
+ok(P.startBattle().ok && R.bsave && R.bsave.fastUsed === false && R.prefs.speedIdx === 2, '다음 전투도 같은 배속에서 시작');
+// 저장에서 prefs만 지워도(v5) 불러와짐
+{ const sv = JSON.parse(store['dunguen_c1_run']); delete sv.prefs; store['dunguen_c1_run'] = JSON.stringify(sv); }
+W = boot(); ok(W.PROGRESS.load() === true && W.PROGRESS.RUN.prefs.speedIdx === 0 && W.PROGRESS.RUN.prefs.cards === 1, 'prefs 없는 v5 저장은 기본값');
 // 옛 저장(v4)은 버림
 store['dunguen_c1_run'] = JSON.stringify(Object.assign({}, JSON.parse(store['dunguen_c1_run']), { v: 4 }));
 W = boot(); ok(W.PROGRESS.load() === false, '옛 저장 버림');

@@ -96,9 +96,11 @@ a { color: inherit; }
 #tabs .tab-main { flex: 1.4; margin: 7px 6px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-size: 15px; line-height: 1.2; }
 #tabs .tab-main.danger { background: var(--danger); color: var(--text); }
 #tabs .tab-main:disabled { opacity: .5; cursor: default; }
-#tabs.inbattle .bt-speed { flex: 2; color: var(--text); font-size: 16px; } /* 막대 칸 폭을 가운데 버튼 위치와 맞추려고 바깥 여백 없이 글자 버튼으로 */
+#tabs.inbattle .bt-speed, #tabs.inbattle .bt-cards { flex: 1; color: var(--text); font-size: 15px; } /* 둘이 합쳐 flex 2 = 가운데 버튼 위치를 홈과 맞추려고 바깥 여백 없이 글자 버튼으로 */
 #tabs.inbattle .bt-speed.on { color: var(--accent); border-top-color: var(--accent); }
-#tabs.inbattle .bt-speed:disabled { opacity: .5; cursor: default; }
+#tabs.inbattle .bt-cards { font-size: 13px; }
+#tabs.inbattle .bt-cards.off { color: var(--dim); opacity: .6; font-weight: normal; } /* 1배속: 카드 제한 없음이라 흐리게 */
+#tabs.inbattle .bt-speed:disabled, #tabs.inbattle .bt-cards:disabled { opacity: .5; cursor: default; }
 #tabs.inbattle .bt-note { flex: 2; min-width: 0; align-self: center; padding: 0; color: var(--dim); font-size: 11px; line-height: 1.3; text-align: center; }
 
 /* 공통 조각 */
