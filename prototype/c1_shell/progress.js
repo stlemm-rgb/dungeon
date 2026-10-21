@@ -23,6 +23,10 @@
  *     공방(RUN.workshop = { build, lab, craft } 단계, 영구): 건설 공방 = 건설비 할인 · 연구실 = 함정 피해 증가(plan.trapBoost) · 제작 공방 = 준비 중.
  *     몬스터 부족 보석 강화(RUN.tribes = { 몬스터 이름: 단계 }, 영구): 그 부족 전원의 기본 능력치(base.hp·atk)에 더해져 부지가 바뀌어도 남는다.
  *     숫자(비용·효과)는 아래 WORKSHOP_DEFS·TRIBE_* 표 한곳 (임시, 균형 없음). 전투 중에는 강화 못 함.
+ *     일일·주간 퀘스트(RUN.chores = { daily: { key, tasks }, weekly: { key, tasks } }): 키(일 'YYYY-MM-DD' · 주 = 그 주 월요일 날짜, 기기 지역 시간)가
+ *     바뀌면 그 묶음을 새로 만든다. 보상 보석은 퀘스트 화면에서 받아 RUN.gems에만 더한다 (의뢰 목표 "전투로 얻은 보석"에는 안 셈). 표 = CHORE_DEFS
+ *     방치 보상(RUN.idle = { gold, minutes }, RUN.lastSeen = 마지막 저장 시각 ms): 불러올 때 꺼져 있던 시간(최대 8시간, 10분 이상만)만큼
+ *     공방 생산 금을 쌓아 두고 퀘스트 화면에서 받는다(claimIdle). 전투는 방치로 진행하지 않는다. 지금 시각은 now() 한곳 (시험용 setClock)
  *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 전투 안의 무작위는 계획에 저장한 시드(plan.seed)로 battle_sim.js가 굴린다.
  *     (연출용 무작위는 shell.js의 fxRandom)
@@ -84,6 +88,26 @@
   // 몬스터 부족 보석 강화 (영구, 상한 없음): 단계마다 처음 값(START_MONSTERS)의 체력·공격 × TRIBE_PER (반올림, 최소 1)을 기본 능력치에 더함
   // 비용 = TRIBE_COSTS[단계], 표를 넘으면 마지막 값 + TRIBE_COST_STEP × 넘은 단계 (임시)
   var TRIBE_PER = 0.10, TRIBE_COSTS = [3, 6, 10], TRIBE_COST_STEP = 5;
+  // 일일·주간 퀘스트 (임시 숫자). ev = 진행을 올리는 일: battle 전투 · build 금/공사비를 쓴 건설 · upgrade 공방/부족 강화 성공 · deliver 납품 · defend 보물방 방어
+  var CHORE_DEFS = {
+    daily: [
+      { id: 'd_battle',  ev: 'battle',  label: '전투 3번',          need: 3, gems: 2 },
+      { id: 'd_build',   ev: 'build',   label: '던전 건설 2번',      need: 2, gems: 2 },
+      { id: 'd_upgrade', ev: 'upgrade', label: '공방·부족 강화 1번', need: 1, gems: 3 }
+    ],
+    weekly: [
+      { id: 'w_battle',  ev: 'battle',  label: '전투 15번',         need: 15, gems: 10 },
+      { id: 'w_deliver', ev: 'deliver', label: '의뢰 납품 2번',      need: 2,  gems: 10 },
+      { id: 'w_defend',  ev: 'defend',  label: '보물방 방어 5번',    need: 5,  gems: 10 }
+    ]
+  };
+  // 방치 보상 (공방 생산, 임시): 시간당 금 = IDLE_BASE + 공방 단계 합 × IDLE_PER_LV. 상한 IDLE_MAX_HOURS, IDLE_MIN_MIN분 미만은 없음
+  var IDLE_BASE = 30, IDLE_PER_LV = 15, IDLE_MAX_HOURS = 8, IDLE_MIN_MIN = 10;
+
+  // ---------- 지금 시각 (한곳) ----------
+  var clockFn = null;
+  function now() { return clockFn ? clockFn() : Date.now(); }
+  function setClock(fn) { clockFn = typeof fn === 'function' ? fn : null; }
 
   // ---------- 상태: RUN 하나 (객체 자체는 바뀌지 않고 안의 값만 바뀐다) ----------
   var RUN = {};
@@ -105,9 +129,29 @@
       site: freshSite(),
       monsters: monsters, guards: [],
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
-      prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {}
+      prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {},
+      chores: freshChores(), idle: freshIdle(), lastSeen: now()
     };
   }
+  // ---------- 일일·주간 퀘스트 상태 ----------
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function dayKey(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function mondayOf(ms) { var d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (d.getDay() + 6) % 7); }
+  function weekKey(ms) { return dayKey(mondayOf(ms).getTime()); }
+  function choreKey(scope, ms) { return scope === 'daily' ? dayKey(ms) : weekKey(ms); }
+  // 다음 초기화까지 남은 ms (다음 날 0시 · 다음 주 월요일 0시, 지역 시간)
+  function choreResetIn(scope, ms) {
+    var d = new Date(ms), next;
+    if (scope === 'daily') next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    else { var m = mondayOf(ms); next = new Date(m.getFullYear(), m.getMonth(), m.getDate() + 7); }
+    return Math.max(0, next.getTime() - ms);
+  }
+  // 저장 칸: tasks = [{ id, prog, claimed }] (글·목표·보상은 CHORE_DEFS에서)
+  function freshChoreScope(scope, ms) {
+    return { key: choreKey(scope, ms), tasks: CHORE_DEFS[scope].map(function (t) { return { id: t.id, prog: 0, claimed: false }; }) };
+  }
+  function freshChores() { var t = now(); return { daily: freshChoreScope('daily', t), weekly: freshChoreScope('weekly', t) }; }
+  function freshIdle() { return { gold: 0, minutes: 0 }; }
   // 공방 단계 (영구). 정의 표(WORKSHOP_DEFS)의 id마다 0단계부터
   function freshWorkshop() { var w = {}; WORKSHOP_DEFS.forEach(function (d) { w[d.id] = 0; }); return w; }
   // 설정 칸 (전투가 끝나도 남음): 마지막으로 고른 배속(BD.SPEEDS 번호)과 배속 때 그 전투에 나올 카드 수(0~카드 지점 수). 처음 기본 = 1배속, 카드 1장
@@ -133,6 +177,21 @@
     });
     if (!RUN.tribes || typeof RUN.tribes !== 'object' || Array.isArray(RUN.tribes)) RUN.tribes = {};
     Object.keys(RUN.tribes).forEach(function (k) { var v = RUN.tribes[k]; RUN.tribes[k] = typeof v === 'number' && v > 0 ? v | 0 : 0; });
+    // 일일·주간 퀘스트·방치 보상: 없으면 기본값. 퀘스트 칸은 표(CHORE_DEFS) 순서로 다시 맞춘다 (진행·받음은 id로 옮김)
+    if (!RUN.chores || typeof RUN.chores !== 'object') RUN.chores = freshChores();
+    ['daily', 'weekly'].forEach(function (sc) {
+      var c = RUN.chores[sc];
+      if (!c || typeof c !== 'object' || typeof c.key !== 'string' || !Array.isArray(c.tasks)) { RUN.chores[sc] = freshChoreScope(sc, now()); return; }
+      var byId = {}; c.tasks.forEach(function (t) { if (t && typeof t.id === 'string') byId[t.id] = t; });
+      c.tasks = CHORE_DEFS[sc].map(function (d) {
+        var o = byId[d.id] || {};
+        return { id: d.id, prog: typeof o.prog === 'number' ? Math.max(0, Math.min(d.need, o.prog | 0)) : 0, claimed: o.claimed === true };
+      });
+    });
+    if (!RUN.idle || typeof RUN.idle !== 'object') RUN.idle = freshIdle();
+    RUN.idle.gold = typeof RUN.idle.gold === 'number' && RUN.idle.gold > 0 ? Math.floor(RUN.idle.gold) : 0;
+    RUN.idle.minutes = typeof RUN.idle.minutes === 'number' && RUN.idle.minutes > 0 ? Math.min(IDLE_MAX_HOURS * 60, Math.floor(RUN.idle.minutes)) : 0;
+    if (typeof RUN.lastSeen !== 'number') RUN.lastSeen = null;   // 없으면 이번에는 방치 보상 없음
     if (typeof RUN.site.grant !== 'number' || RUN.site.grant < 0) RUN.site.grant = 0;
     if (!Array.isArray(RUN.guards)) RUN.guards = [];
     RUN.monsters.forEach(function (m) { if (!m.base) m.base = { lv: m.lv, hp: m.hp, atk: m.atk }; });
@@ -145,6 +204,7 @@
   // ---------- 저장 (막혀도 동작) ----------
   function save() {
     if (RUN.site && RUN.site.zones) RUN.site.value = siteValue(); // 저장된 가치는 늘 지금 값
+    RUN.lastSeen = now();                                         // 방치 보상 기준 시각
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(RUN)); } catch (e) { /* 저장이 막힌 환경: 그냥 계속 */ }
   }
   function load() {
@@ -156,7 +216,7 @@
             typeof d.site.grant === 'number' && d.monsters.every(function (m) { return m && m.base; }) &&
             (d.phase !== 'settle' || (d.report && d.offers && d.offers.length)) &&
             (d.phase !== 'play' || (d.quest && d.quest.attr && d.quest.client && d.quest.reward && typeof d.quest.reward.gems === 'number'))) {
-          setRun(d); ensureStateReady(); ensurePlan(); return true;
+          setRun(d); ensureStateReady(); ensurePlan(); accrueIdle(); save(); return true;   // 저장하면 lastSeen이 지금으로 (두 번 받기 방지)
         }
       }
     } catch (e) { /* 깨진 저장은 무시하고 새로 시작 */ }
@@ -287,6 +347,7 @@
       nextMain: '', carry: [], lost: []
     };
     RUN.gold += total; RUN.gems += q.reward.gems; RUN.fame += q.reward.fame;
+    choreAdd('deliver');
     // 인계 표 (GAME_PLAN "총괄 제안 묶음" ①): 새 부지로 가져가는 것 · 사라지는 것 (화면 표시용 글)
     rep.carry = ['금 ' + comma(RUN.gold), '보석 ' + comma(RUN.gems), '명성 ' + RUN.fame, '부대장 전원',
       '친위대 몬스터의 레벨 (최대 ' + GUARD_MAX + ')'];
@@ -360,7 +421,7 @@
     RUN.gold -= p.fromGold;                // 쓴 금은 환불 없음
     RUN.site.zones[z] = k;
     RUN.site.units = p.units;
-    if (p.counts) RUN.site.builds++;       // 돈(공사비·금)을 쓴 건설만 횟수에 센다 (공짜로 바꾸는 건 횟수 아님)
+    if (p.counts) { RUN.site.builds++; choreAdd('build'); }  // 돈(공사비·금)을 쓴 건설만 횟수에 센다 (공짜로 바꾸는 건 횟수 아님)
     save();
     var dv = p.valueAfter - p.valueNow, paid = [];
     if (p.fromGrant) paid.push('공사비 -' + p.fromGrant);
@@ -533,6 +594,7 @@
     var defended = res.reached === 0;  // 퇴각한 적은 보물방 침입으로 치지 않는다 (사용자 확인)
     var q = RUN.quest;
     q.prog.gold += gold; q.prog.gems += gems; q.prog.exp += exp; if (defended) q.prog.defends++;
+    choreAdd('battle'); if (defended) choreAdd('defend');
     var rep = {
       week: RUN.week, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
       gold: gold, gems: gems, exp: exp, reached: res.reached, squads: res.squads, retreated: res.retreated, timeout: !!res.timeout,
@@ -597,6 +659,7 @@
     if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
     RUN.gems -= c;
     RUN.workshop[id] = lv + 1;
+    choreAdd('upgrade');
     ensurePlan();   // 연구실 효과를 이번 주 계획에 반영 (전투 중이 아니면)
     save();
     return { ok: true, msg: d.name + ' ' + (lv + 1) + '단계 (보석 -' + c + ', ' + workshopEffectText(d, lv + 1) + ')' };
@@ -630,6 +693,7 @@
     if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
     RUN.gems -= c;
     RUN.tribes[name] = lv + 1;
+    choreAdd('upgrade');
     RUN.monsters.forEach(function (m) {
       if (m.name !== name) return;
       m.base.hp += st.hp; m.base.atk += st.atk;
@@ -638,6 +702,91 @@
     ensurePlan();   // 대기실 몬스터 가치가 바뀔 수 있어 계획을 다시 맞춘다
     save();
     return { ok: true, msg: name + ' 부족 강화 +' + (lv + 1) + ' (보석 -' + c + ', 체력 +' + st.hp + ' · 공격 +' + st.atk + ')' };
+  }
+
+  // ---------- 일일·주간 퀘스트 ----------
+  // 키가 바뀐 묶음은 새로 만든다 (진행·받음 초기화). 바뀌었으면 true
+  function choreRoll() {
+    var t = now(), changed = false;
+    ['daily', 'weekly'].forEach(function (sc) {
+      if (RUN.chores[sc].key !== choreKey(sc, t)) { RUN.chores[sc] = freshChoreScope(sc, t); changed = true; }
+    });
+    return changed;
+  }
+  function choreDef(scope, id) { var l = CHORE_DEFS[scope] || []; for (var i = 0; i < l.length; i++) { if (l[i].id === id) return l[i]; } return null; }
+  // 진행 올리기 (저장은 부른 쪽이 한다)
+  function choreAdd(ev, n) {
+    choreRoll();
+    ['daily', 'weekly'].forEach(function (sc) {
+      RUN.chores[sc].tasks.forEach(function (t) {
+        var d = choreDef(sc, t.id);
+        if (d && d.ev === ev) t.prog = Math.min(d.need, t.prog + (n || 1));
+      });
+    });
+  }
+  function choreView(sc, t) {
+    var c = RUN.chores[sc];
+    return {
+      key: c.key, resetIn: choreResetIn(sc, t),
+      tasks: c.tasks.map(function (x) {
+        var d = choreDef(sc, x.id);
+        return { id: x.id, label: d.label, need: d.need, prog: x.prog, reward: { gems: d.gems }, done: x.prog >= d.need, claimed: x.claimed };
+      })
+    };
+  }
+  function chores() {
+    if (choreRoll()) save();
+    var t = now();
+    return { daily: choreView('daily', t), weekly: choreView('weekly', t) };
+  }
+  function claimChore(scope, id) {
+    if (scope !== 'daily' && scope !== 'weekly') return { ok: false, msg: '없는 퀘스트예요', gems: 0 };
+    if (choreRoll()) save();
+    var d = choreDef(scope, id), t = RUN.chores[scope].tasks.filter(function (x) { return x.id === id; })[0];
+    if (!d || !t) return { ok: false, msg: '없는 퀘스트예요', gems: 0 };
+    if (t.claimed) return { ok: false, msg: '이미 받았어요', gems: 0 };
+    if (t.prog < d.need) return { ok: false, msg: '아직 못 채웠어요 (' + t.prog + '/' + d.need + ')', gems: 0 };
+    t.claimed = true;
+    RUN.gems += d.gems;            // 의뢰 목표(quest.prog.gems)에는 안 셈
+    save();
+    return { ok: true, msg: d.label + ' 보상: 보석 +' + d.gems, gems: d.gems };
+  }
+  function choresClaimable() {
+    if (choreRoll()) save();
+    var n = 0;
+    ['daily', 'weekly'].forEach(function (sc) {
+      RUN.chores[sc].tasks.forEach(function (x) { var d = choreDef(sc, x.id); if (d && !x.claimed && x.prog >= d.need) n++; });
+    });
+    return n;
+  }
+
+  // ---------- 방치 보상 (공방 생산) ----------
+  function idleRate() {
+    var sum = 0; WORKSHOP_DEFS.forEach(function (d) { sum += RUN.workshop[d.id] || 0; });
+    return IDLE_BASE + sum * IDLE_PER_LV;
+  }
+  // 불러올 때: 꺼져 있던 시간(최대 8시간)이 10분 이상이면 그만큼 금을 쌓는다. 받을 것과 합쳐 8시간 몫을 넘지 않게. 전투는 진행 안 함
+  function accrueIdle() {
+    var t = now(), last = RUN.lastSeen;
+    if (typeof last !== 'number' || t <= last) return;
+    var maxMin = IDLE_MAX_HOURS * 60;
+    var mins = Math.floor(Math.min(t - last, maxMin * 60000) / 60000);
+    if (mins < IDLE_MIN_MIN) return;
+    var add = Math.min(mins, maxMin - RUN.idle.minutes);
+    if (add <= 0) return;
+    RUN.idle.minutes += add;
+    RUN.idle.gold += Math.round(idleRate() * add / 60);
+  }
+  function idleInfo() {
+    return { gold: RUN.idle.gold, minutes: RUN.idle.minutes, capped: RUN.idle.minutes >= IDLE_MAX_HOURS * 60, maxHours: IDLE_MAX_HOURS, rate: idleRate() };
+  }
+  function claimIdle() {
+    var g = RUN.idle.gold;
+    if (g <= 0) return { ok: false, msg: '받을 방치 보상이 없어요', gold: 0 };
+    RUN.gold += g;
+    RUN.idle = freshIdle();
+    save();
+    return { ok: true, msg: '공방 생산: 금 +' + g, gold: g };
   }
 
   load();
@@ -652,6 +801,7 @@
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
     WORKSHOPS: WORKSHOP_DEFS.map(function (d) { return { id: d.id, name: d.name, desc: d.desc, ready: d.ready, maxLv: d.maxLv }; }),
     workshopInfo: workshopInfo, upgradeWorkshop: upgradeWorkshop, tribeInfo: tribeInfo, upgradeTribe: upgradeTribe, buildCost: buildCost,
+    chores: chores, claimChore: claimChore, choresClaimable: choresClaimable, idleInfo: idleInfo, claimIdle: claimIdle, setClock: setClock,
     save: save, load: load, reset: reset
   };
 })();

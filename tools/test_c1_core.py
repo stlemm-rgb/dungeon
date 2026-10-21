@@ -1,5 +1,6 @@
 """C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
 공방 = 건설 할인·연구실 함정 피해·제작 공방 거부, 몬스터 부족 보석 강화 = 인계 뒤에도 남음.
+일일·주간 퀘스트 = 날·주 바뀜 초기화·진행 훅·받기, 방치 보상 = 10분 미만 없음·시간 비례·8시간 상한·공방 단계 반영 (시계는 가짜 Date.now·setClock).
 
 화면 없이 prototype/c1_shell의 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다.
 node가 없으면 건너뛴다(통과). 사용: python tools/test_c1_core.py
@@ -18,8 +19,10 @@ const DIR = process.argv[2];
 const store = {};
 const problems = [];
 function ok(c, msg) { if (!c) problems.push(msg); }
+let FAKE_NOW = null;   // 숫자면 progress.js가 부팅(load) 때 읽는 Date.now()를 이 값으로
+class FakeDate extends Date { static now() { return FAKE_NOW !== null ? FAKE_NOW : super.now(); } }
 function boot() {
-  const sb = { console, Math, JSON, Date, Object, Array, String, Number };
+  const sb = { console, Math, JSON, Date: FakeDate, Object, Array, String, Number };
   sb.window = sb;
   sb.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
   vm.createContext(sb);
@@ -210,7 +213,142 @@ let wsSample = null;
   ok(P3.load() === true && JSON.stringify(P3.RUN.workshop) === '{"build":0,"lab":0,"craft":0}' && JSON.stringify(P3.RUN.tribes) === '{}', 'workshop·tribes 없는 v5 저장은 기본값');
   ok(P3.RUN.plan && P3.RUN.plan.trapBoost === 0 && P3.workshopInfo('lab').lv === 0, '기본값이면 함정 증가 0');
 }
-console.log(JSON.stringify({ problems, sample: { carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample } }));
+// ---------- 일일·주간 퀘스트 ----------
+let choreSample = null, idleSample = null;
+{
+  const T0 = new Date(2026, 9, 21, 23, 50).getTime();   // 수요일 23:50 (지역 시간)
+  FAKE_NOW = T0;
+  const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset();
+  let T = T0; PP.setClock(() => T);
+  let c = PP.chores();
+  ok(c.daily.key === '2026-10-21' && c.weekly.key === '2026-10-19', '키: ' + c.daily.key + ' / ' + c.weekly.key);
+  ok(c.daily.resetIn === 10 * 60000, '일일 resetIn 10분: ' + c.daily.resetIn);
+  ok(c.weekly.resetIn === (4 * 24 * 60 + 10) * 60000, '주간 resetIn: ' + c.weekly.resetIn);
+  ok(c.daily.tasks.length === 3 && c.weekly.tasks.length === 3 && c.daily.tasks.concat(c.weekly.tasks).every(t =>
+    typeof t.id === 'string' && t.label && t.need > 0 && t.prog === 0 && t.reward && t.reward.gems > 0 && t.done === false && t.claimed === false), '퀘스트 모양');
+  ok(PP.choresClaimable() === 0, '처음엔 받을 것 0');
+  const prog = (sc, id) => PP.chores()[sc].tasks.filter(t => t.id === id)[0];
+  // 못 채운 것 받기 거부
+  let r = PP.claimChore('daily', 'd_build');
+  ok(!r.ok && r.gems === 0 && r.msg, '못 채움 거부');
+  ok(!PP.claimChore('monthly', 'd_build').ok && !PP.claimChore('daily', 'nope').ok, '없는 범위·id 거부');
+  // 건설 훅: 공사비만 쓴 건설도 셈, 같은 시설로 다시는 안 됨
+  PP.pickQuest(PP.offerQuests()[0]);
+  ok(PP.buildZone('CB', 'trap').ok && PP.buildZone('CC', 'trap').ok && PP.buildZone('CD', 'trap').ok, '건설 3번');
+  ok(prog('daily', 'd_build').prog === 2 && prog('daily', 'd_build').done, '건설 진행 2/2 (상한)');
+  ok(!PP.buildZone('CB', 'trap').ok && prog('daily', 'd_build').prog === 2, '실패한 건설은 안 셈');
+  // 강화 훅: 공방
+  RR.gems = 50;
+  ok(PP.upgradeWorkshop('build').ok && prog('daily', 'd_upgrade').prog === 1, '공방 강화 진행');
+  ok(!PP.upgradeWorkshop('craft').ok, '제작 공방 실패');
+  // 받기 + 두 번 받기 거부, 보석은 RUN.gems에만
+  const qg = RR.quest.prog.gems, g0 = RR.gems;
+  r = PP.claimChore('daily', 'd_build');
+  ok(r.ok && r.gems === 2 && RR.gems === g0 + 2, '받기: ' + JSON.stringify(r));
+  ok(RR.quest.prog.gems === qg, '퀘스트 보석은 의뢰 목표에 안 섞임');
+  ok(!PP.claimChore('daily', 'd_build').ok && RR.gems === g0 + 2, '두 번 받기 거부');
+  ok(prog('daily', 'd_build').claimed === true && PP.choresClaimable() === 1, '받을 것 1 (강화)');
+  // 전투 훅 (방어 여부 맞춰)
+  PP.buildZone('LB', 'den');
+  ok(PP.startBattle().ok, '퀘스트 전투 시작');
+  const fake = { kills: 0, porterKills: 0, total: 10, squads: 1, gold: 10, gems: 0, exp: 0, reached: 0, retreated: 0, loot: 0, damage: 0 };
+  PP.applyBattle(fake);
+  ok(prog('daily', 'd_battle').prog === 1 && prog('weekly', 'w_battle').prog === 1 && prog('weekly', 'w_defend').prog === 1, '전투·방어 진행');
+  PP.startBattle(); PP.applyBattle(Object.assign({}, fake, { reached: 2 }));
+  ok(prog('daily', 'd_battle').prog === 2 && prog('weekly', 'w_defend').prog === 1, '뚫리면 방어 안 셈');
+  // 납품 훅
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
+  PP.deliver();
+  ok(prog('weekly', 'w_deliver').prog === 1, '납품 진행');
+  // 부족 강화 훅 (settle에서도 강화 가능)
+  ok(PP.upgradeTribe('슬라임').ok, '부족 강화');
+  // 저장·불러오기에 남음
+  { const W2 = boot(), P2 = W2.PROGRESS; P2.setClock(() => T); P2.load();
+    const c2 = P2.chores(); ok(c2.daily.tasks.filter(t => t.id === 'd_build')[0].claimed === true && c2.weekly.tasks.filter(t => t.id === 'w_deliver')[0].prog === 1, '저장에 퀘스트 남음'); }
+  // 날짜 바뀜: 일일만 초기화 (수 -> 목)
+  T = T0 + 20 * 60000;
+  c = PP.chores();
+  ok(c.daily.key === '2026-10-22' && c.daily.tasks.every(t => t.prog === 0 && !t.claimed), '날 바뀌면 일일 초기화');
+  ok(c.weekly.key === '2026-10-19' && c.weekly.tasks.filter(t => t.id === 'w_battle')[0].prog === 2, '같은 주면 주간 유지');
+  // 주 바뀜: 다음 월요일 0시
+  T = new Date(2026, 9, 26, 0, 0).getTime();
+  c = PP.chores();
+  ok(c.weekly.key === '2026-10-26' && c.weekly.tasks.every(t => t.prog === 0 && !t.claimed) && c.daily.key === '2026-10-26', '주 바뀌면 주간 초기화: ' + c.weekly.key);
+  // 일요일 23:59는 아직 그 주
+  T = new Date(2026, 10, 1, 23, 59).getTime();
+  ok(PP.chores().weekly.key === '2026-10-26', '일요일은 같은 주');
+  // 진행 훅도 날 바뀐 뒤에는 새 묶음에 쌓임
+  T = new Date(2026, 10, 2, 9, 0).getTime();
+  RR.gems = 50; PP.upgradeWorkshop('lab');
+  c = PP.chores();
+  ok(c.daily.key === '2026-11-02' && c.daily.tasks.filter(t => t.id === 'd_upgrade')[0].prog === 1, '바뀐 날 진행');
+  choreSample = c.daily.tasks[2];
+  // chores 칸 없는 옛 저장 + 깨진 칸
+  const sv = JSON.parse(store['dunguen_c1_run']); delete sv.chores; delete sv.idle; delete sv.lastSeen; store['dunguen_c1_run'] = JSON.stringify(sv);
+  FAKE_NOW = T;
+  const W3 = boot(), P3 = W3.PROGRESS;
+  ok(P3.RUN.chores && P3.RUN.chores.daily.key === '2026-11-02' && P3.RUN.chores.daily.tasks.length === 3, 'chores 없는 옛 저장은 기본값');
+  ok(P3.idleInfo().gold === 0 && P3.RUN.idle.minutes === 0, 'lastSeen 없는 옛 저장은 방치 보상 없음');
+  ok(typeof P3.RUN.lastSeen === 'number', '불러오면 lastSeen 생김');
+  sv.chores = { daily: { key: '2026-11-02', tasks: [{ id: 'd_battle', prog: 99, claimed: true }, null] }, weekly: 5 };
+  store['dunguen_c1_run'] = JSON.stringify(sv);
+  const P4 = boot().PROGRESS, c4 = P4.chores();
+  ok(c4.daily.tasks.length === 3 && c4.daily.tasks[0].prog === 3 && c4.daily.tasks[0].claimed && c4.daily.tasks[1].prog === 0 && c4.weekly.tasks.length === 3, '깨진 퀘스트 칸 고침');
+}
+// ---------- 방치 보상 ----------
+{
+  const H = 3600000, T0 = new Date(2026, 9, 21, 12, 0).getTime();
+  FAKE_NOW = T0;
+  let WW = boot(), PP = WW.PROGRESS; PP.reset();
+  const rate0 = PP.idleInfo().rate;
+  ok(rate0 === 30, '기본 시간당 30: ' + rate0);
+  const reopen = ms => { FAKE_NOW = ms; WW = boot(); PP = WW.PROGRESS; return PP.idleInfo(); };
+  let inf = reopen(T0 + 9 * 60000);
+  ok(inf.gold === 0 && inf.minutes === 0, '9분은 없음: ' + JSON.stringify(inf));
+  inf = reopen(T0 + 9 * 60000 + 2 * H);
+  ok(inf.gold === 2 * rate0 && inf.minutes === 120 && !inf.capped && inf.maxHours === 8, '2시간 = 2×rate: ' + JSON.stringify(inf));
+  // 같은 시각에 다시 켜도 두 번 안 쌓임
+  inf = reopen(T0 + 9 * 60000 + 2 * H);
+  ok(inf.gold === 2 * rate0, '다시 켜도 그대로');
+  let gb = PP.RUN.gold, cl = PP.claimIdle();
+  ok(cl.ok && cl.gold === 2 * rate0 && PP.RUN.gold === gb + cl.gold && PP.idleInfo().gold === 0 && PP.idleInfo().minutes === 0, '받기 후 0');
+  ok(!PP.claimIdle().ok, '두 번 받기 거부');
+  // 20시간 -> 8시간 상한
+  let t = T0 + 9 * 60000 + 2 * H;
+  inf = reopen(t + 20 * H);
+  ok(inf.gold === 8 * rate0 && inf.minutes === 480 && inf.capped, '20시간 = 8시간 상한: ' + JSON.stringify(inf));
+  // 안 받고 또 꺼 둬도 합쳐서 8시간 몫을 안 넘음
+  t += 20 * H;
+  inf = reopen(t + 3 * H);
+  ok(inf.gold === 8 * rate0 && inf.minutes === 480, '쌓인 것과 합쳐도 상한');
+  PP.claimIdle();
+  // 일부 쌓인 뒤 더하기: 5시간 + 5시간 = 8시간
+  t += 3 * H;
+  reopen(t + 5 * H); t += 5 * H;
+  inf = reopen(t + 5 * H); t += 5 * H;
+  ok(inf.minutes === 480 && inf.gold === Math.round(rate0 * 5) + Math.round(rate0 * 3), '5+5시간 -> 8시간: ' + JSON.stringify(inf));
+  PP.claimIdle();
+  // 공방 단계 반영 (건설 3 + 연구실 2 = 5단계 -> 30 + 75)
+  PP.RUN.workshop.build = 3; PP.RUN.workshop.lab = 2; PP.save();
+  const rate5 = PP.idleInfo().rate;
+  ok(rate5 === 30 + 5 * 15, '공방 단계 반영 rate: ' + rate5);
+  inf = reopen(t + 2 * H); t += 2 * H;
+  ok(inf.gold === 2 * rate5, '공방 단계 반영 금: ' + JSON.stringify(inf));
+  PP.claimIdle();
+  // 전투 중에 꺼도 금만 쌓이고 전투는 그대로
+  PP.pickQuest(PP.offerQuests()[0]);
+  PP.buildZone('CB', 'trap'); ok(PP.startBattle().ok, '방치 전투 시작');
+  const wk = PP.RUN.week;
+  inf = reopen(t + 3 * H); t += 3 * H;
+  ok(PP.RUN.battling === true && PP.RUN.week === wk && inf.gold === 3 * rate5, '전투 중 방치: 금만 쌓임 ' + JSON.stringify(inf));
+  // 시계가 거꾸로 가도 없음
+  PP.claimIdle();
+  inf = reopen(t - 5 * H);
+  ok(inf.gold === 0, '시계 거꾸로면 없음');
+  idleSample = PP.idleInfo();
+  FAKE_NOW = null;
+}
+console.log(JSON.stringify({ problems, sample: { carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
 """
 
 
@@ -239,7 +377,7 @@ def main():
         for p in r["problems"]:
             print("  - " + p)
         return 1
-    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화")
+    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 
