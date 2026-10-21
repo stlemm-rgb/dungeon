@@ -63,6 +63,29 @@
   }
   function money(n) { return Number(n).toLocaleString('en-US'); }
 
+  // 제자리 갱신: target 의 자식들을 src 의 자식들과 맞춘다. 같은 종류 요소는 그대로 두고 속성·글자만 바꿔서,
+  // 시트가 다시 튀어나오거나 버튼이 새로 생기지 않게 한다 (애니메이션·스크롤·누름 상태 유지).
+  function syncKids(target, src) {
+    var i, a, b;
+    for (i = 0; i < src.childNodes.length; i++) {
+      b = src.childNodes[i]; a = target.childNodes[i];
+      if (!a) { target.appendChild(b.cloneNode(true)); continue; }
+      if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { target.replaceChild(b.cloneNode(true), a); continue; }
+      if (b.nodeType === 3) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; continue; }
+      if (b.nodeType !== 1) continue;
+      var n;
+      for (n = a.attributes.length - 1; n >= 0; n--) if (!b.hasAttribute(a.attributes[n].name)) a.removeAttribute(a.attributes[n].name);
+      for (n = 0; n < b.attributes.length; n++) if (a.getAttribute(b.attributes[n].name) !== b.attributes[n].value) a.setAttribute(b.attributes[n].name, b.attributes[n].value);
+      syncKids(a, b);
+    }
+    while (target.childNodes.length > src.childNodes.length) target.removeChild(target.lastChild);
+  }
+  function morphHtml(target, html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    syncKids(target, tmp);
+  }
+
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
     return function (el) {
@@ -87,12 +110,10 @@
 
       function drawSummary() {
         var s = P.siteSummary(), gl = grantLeft();
-        grantBox.innerHTML = '';
-        if (gl > 0) grantBox.appendChild(api.div('grantbar', '<b>첫 건설 공사비 ' + money(gl) + '</b><span>이 부지에서만 써요. 안 쓰면 사라져요</span>'));
-        sumBox.innerHTML = '<div>자금<b>' + money(RUN.gold) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>건설 횟수<b>' + RUN.site.builds + '회</b></div>';
-        questBox.innerHTML = '';
-        if (RUN.quest) questBox.appendChild(api.div('card quest' + (RUN.quest.kind === 'main' ? ' main' : ''),
-          '<div class="qhead"><span class="chip accent">' + api.questTag(RUN.quest) + '</span><b>' + RUN.quest.name + '</b></div>' + api.goalsHtml(RUN.quest, true)));
+        morphHtml(grantBox, gl > 0 ? '<div class="grantbar"><b>첫 건설 공사비 ' + money(gl) + '</b><span>이 부지에서만 써요. 안 쓰면 사라져요</span></div>' : '');
+        morphHtml(sumBox, '<div>자금<b>' + money(RUN.gold) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>건설 횟수<b>' + RUN.site.builds + '회</b></div>');
+        morphHtml(questBox, RUN.quest ? '<div class="card quest' + (RUN.quest.kind === 'main' ? ' main' : '') + '"><div class="qhead"><span class="chip accent">' + api.questTag(RUN.quest) +
+          '</span><b>' + RUN.quest.name + '</b></div>' + api.goalsHtml(RUN.quest, true) + '</div>' : '');
       }
 
       function preview() { return sel && pick ? P.previewBuild(sel, pick) : null; }
@@ -100,16 +121,14 @@
       function drawBoard() {
         var p = preview();
         var zones = p && p.zones ? p.zones : RUN.site.zones, units = p && p.units ? p.units : RUN.site.units;
-        boardBox.innerHTML = boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null });
+        morphHtml(boardBox, boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null }));
         api.tutZones().forEach(function (z) {
           boardBox.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('tut-hl'); });
         });
       }
 
       function drawSheet() {
-        var keep = sheetBox.firstChild && sheetBox.firstChild.firstChild ? sheetBox.firstChild.firstChild.scrollTop : 0;
-        sheetBox.innerHTML = '';
-        if (!sel) return;
+        if (!sel) { sheetBox.innerHTML = ''; return; }
         var z = sel, k = RUN.site.zones[z], f = Z.FAC[k], t = Z.zoneType(z);
         var now = P.forecast().at[z] || 0;
         var h = '<h3>' + Z.NAMES[z] + ' — ' + f.name + (t === 'room' ? ' (' + Z.sizeOf(z) + '칸)' : '') + '</h3>';
@@ -156,9 +175,12 @@
         }
         h += '<div class="zact"><button class="btn" data-close>닫기</button><button class="btn primary" data-build' + (p && p.ok ? '' : ' disabled') + '>' +
           (p ? (p.ok ? '짓기 (' + (p.fromGrant > 0 ? '공사비 ' + p.fromGrant + (p.fromGold > 0 ? ' + 금 ' + p.fromGold : '') : '금 ' + p.cost) + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
-        var bg = api.div('zsheetbg', '<div class="zsheet">' + h + '</div>');
-        sheetBox.appendChild(bg);
-        bg.firstChild.scrollTop = keep;
+        // 시트는 처음 열 때만 만든다 (등장 애니메이션도 그때만). 이미 열려 있으면 안의 바뀐 부분만 제자리에서 고친다.
+        var sheet = sheetBox.firstChild && sheetBox.firstChild.firstChild;
+        if (!sheet) {
+          sheetBox.innerHTML = '';
+          sheetBox.appendChild(api.div('zsheetbg', '<div class="zsheet">' + h + '</div>'));
+        } else morphHtml(sheet, h);
       }
 
       function redraw() { drawSummary(); drawBoard(); drawSheet(); }
