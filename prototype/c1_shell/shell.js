@@ -690,7 +690,7 @@
       var ms = gi.resetIn != null ? gi.resetIn : gi.resetMs;
       var h = '<div class="card gacha"><h3>몬스터 뽑기</h3><div class="dim small-text">광고를 보면 몬스터 부족과 새로 계약하거나 몬스터를 얻어요</div>' +
         '<button class="btn big primary gadbtn' + (left ? '' : ' poor') + '" data-gad' + (left ? '' : ' aria-disabled="true"') + '>' + esc(uiLine('adButton', '광고 보고 뽑기')) +
-        '<small>오늘 ' + used + '/' + max + '</small></button>';
+        '<small>오늘 남은 ' + left + '/' + max + '</small></button>';
       if (!left) h += '<div class="gawait">' + esc(uiLine('gachaSoldOut', '오늘 뽑기를 다 썼어요')) + ' · ' + (typeof ms === 'number' ? resetText(ms) : '내일 다시 뽑을 수 있어요') + '</div>';
       var rates = Array.isArray(gi.rates) ? gi.rates : [];
       if (rates.length) {
