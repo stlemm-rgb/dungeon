@@ -23,7 +23,8 @@
 
   function tf(x, y, r) { return 'translate(' + x + 'px,' + y + 'px) rotate(' + r + 'deg)'; }
   function money(n) { return Number(Math.round(n)).toLocaleString('en-US'); }
-  function pctX(x) { return (x / 5 * 100) + '%'; }
+  // 판 크기는 부지마다 다르다: 칸 수는 쓸 때마다 지금 판(Z.MAP)에서 읽는다
+  function pctX(x) { return (x / Z.MAP[0].length * 100) + '%'; }
   function pctY(y) { return (y / Z.MAP.length * 100) + '%'; }
 
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
@@ -34,6 +35,7 @@
     function tutActive(id) { return !!(api.tutActive && api.tutActive(id)); }
 
     return function (el) {
+      Z = window.ZONES || Z; // 판이 바뀌었을 수 있으니 화면을 만들 때마다 다시 잡는다
       var P = window.PROGRESS, RUN = P.RUN, plan = P.battlePlan();
       if (!plan) { el.appendChild(div('dim', '전투가 없어요')); return; }
       var run = { alive: true, raf: 0 };
@@ -323,6 +325,8 @@
       }
 
       // ---------- ⑥ 결과표 ----------
+      // 목표는 채웠는데 건설 요구가 안 맞아 납품이 막힐 때 이유 한 줄 (build.js 의 ZONEVIEW. 없으면 '')
+      function blockerLine() { return window.ZONEVIEW && window.ZONEVIEW.blockerHtml ? window.ZONEVIEW.blockerHtml() : ''; }
       function finish() {
         U.phase = 'result';
         if (U.card) { var cc = U.card; endCard(); if (cc.el.parentNode) cc.el.parentNode.removeChild(cc.el); }
@@ -346,7 +350,7 @@
           '<div class="dim small-text bt-ressub">' + rep.week + '주째 ' + (rep.surge ? '대량 출현' : '일반 침입') + (ok ? ' · 보물방 방어 +1회' : '') + '</div>' +
           rows.map(function (r) { return '<div class="stat"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('') +
           (rep.levelMsgs.length ? '<div class="small-text bt-lv">' + rep.levelMsgs.join('<br>') + '</div>' : '') +
-          '<div class="bt-hint">' + rep.hint + '</div>' +
+          '<div class="bt-hint">' + rep.hint + '</div>' + blockerLine() +
           '<button class="btn primary big" type="button" data-home>홈으로</button></div>');
         box.querySelector('[data-home]').addEventListener('click', function () { buzz('tap'); api.backHome(); });
         box.querySelector('.card').animate([{ transform: 'scale(.7)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });

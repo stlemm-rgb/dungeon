@@ -111,6 +111,12 @@
         '<div class="meter"><i style="width:' + pct(now, g.target) + '"></i></div></div>';
     }).join('');
   }
+  // 판 미리보기·건설 요구·막힘 안내 조각 (build.js 의 ZONEVIEW. 계약 필드가 없으면 빈 글)
+  function ZV() { return window.ZONEVIEW || {}; }
+  function siteHtml(q) { return q && q.board && ZV().siteHtml ? ZV().siteHtml(q.board) : ''; }
+  function demandCardHtml(q) { return q && q.demand && ZV().demandRowHtml ? ZV().demandRowHtml(q.demand, null) : ''; }
+  function demandNowHtml(q) { return ZV().demandNowHtml ? ZV().demandNowHtml(q) : ''; }
+  function blockerHtml() { return ZV().blockerHtml ? ZV().blockerHtml() : ''; }
   function showMsgs(msgs) { msgs.slice(0, MOTION.toast.max).forEach(function (m) { toast(m); }); }
   // 목표를 다 채운 순간 어느 화면에서든 자동으로 납품(정산)으로 간다
   function autoDeliver() {
@@ -172,6 +178,10 @@
     wanderActors(actors, stage);
     // 홈에 들어왔을 때 방치 보상이 있으면 작은 팝업 (받지 않고 닫았으면 다시 받을 때까지 자동으로는 안 띄움)
     if (justEnteredHome && !idleSeen && idleNow()) openIdlePop();
+
+    // 목표는 채웠는데 건설 요구가 안 맞아 납품이 막혔으면 이유 한 줄 (그때만 보임)
+    var blk = blockerHtml();
+    if (blk) el.appendChild(div('', blk));
 
     // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
     if (q) {
@@ -360,8 +370,8 @@
   function questTabHtml(q) {
     if (!q) return '<div class="dim">진행 중인 의뢰가 없어요</div>';
     return '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' +
-      '<div class="poplabel">목표 ' + questDone(q) + '/' + q.goals.length + '</div>' + goalsHtml(q, true) +
-      '<div class="stat"><span>보수</span><b>금 ' + money(q.reward.gold) + ' · 명성 +' + q.reward.fame + '</b></div>' +
+      '<div class="poplabel">목표 ' + questDone(q) + '/' + q.goals.length + '</div>' + goalsHtml(q, true) + demandNowHtml(q) + blockerHtml() +
+      siteHtml(q) + '<div class="stat"><span>보수</span><b>금 ' + money(q.reward.gold) + ' · 명성 +' + q.reward.fame + '</b></div>' +
       '<div class="dim small-text mainline">' + mainLineText(q) + '</div>';
   }
   function choreTabHtml(sc, scopeId) {
@@ -461,7 +471,7 @@
     el.appendChild(head('던전 관리'));
     el.appendChild(div('seg', '<button class="on">1층</button><button disabled>2층 잠김</button><button disabled>3층 잠김</button>'));
     var Z = window.ZONES, fc = P.forecast();
-    el.appendChild(div('card', '<h3>1층 판 (5×7)</h3><div class="zboard">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, flow: fc.flow }) +
+    el.appendChild(div('card', '<h3>1층 판 (' + Z.MAP[0].length + '×' + Z.MAP.length + ')</h3><div class="zboard">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, flow: fc.flow }) +
       '</div><p class="dim small-text" style="text-align:center;margin:6px 0 0">문 위 숫자 = 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 지나갈 인원</p>'));
     var count = {}, skip = ['empty', 'boss', 'forest', 'split'];
     Object.keys(RUN.site.zones).forEach(function (zk) { var k = RUN.site.zones[zk]; if (skip.indexOf(k) < 0) count[k] = (count[k] || 0) + 1; });
@@ -473,7 +483,7 @@
       '<div class="stat"><span>건설 횟수</span><b>' + RUN.site.builds + '회</b></div>' +
       '<div class="stat"><span>대기실 몬스터</span><b>' + sm.monsters + '마리</b></div>' +
       (rows || '<div class="dim small-text">아직 지은 시설이 없어요</div>')));
-    if (RUN.quest) el.appendChild(div('card', '<h3>의뢰 목표</h3>' + goalsHtml(RUN.quest, true)));
+    if (RUN.quest) el.appendChild(div('card', '<h3>의뢰 목표</h3>' + goalsHtml(RUN.quest, true) + demandNowHtml(RUN.quest) + blockerHtml()));
     el.appendChild(div('mt-auto', '<button class="btn primary" data-go="' + (RUN.quest ? 'build' : 'contract') + '">' + (RUN.quest ? '건설하기' : '의뢰 고르기') + '</button>'));
   };
 
@@ -702,6 +712,7 @@
   function questCard(q, pick) {
     var h = '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>' + q.name + '</h3></div>';
     if (q.client) h += '<div class="qclient">' + (q.client.kind ? '<span class="chip">' + q.client.kind + '</span> ' : '') + '<b>' + (q.client.name || '') + '</b></div>';
+    h += siteHtml(q) + demandCardHtml(q);
     if (q.attr) h += '<div class="qattr"><div class="qattr-h"><span class="chip">던전 속성</span> <b>' + (q.attr.label || '') + '</b></div>' +
       (q.attr.effect ? '<div class="small-text">' + q.attr.effect + '</div>' : '') +
       (q.attr.counter ? '<div class="small-text qcounter">내 대응: ' + q.attr.counter + '</div>' : '') + '</div>';
