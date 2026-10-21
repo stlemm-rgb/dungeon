@@ -28,6 +28,8 @@
  *     방치 보상(RUN.idle = { gold, minutes }, RUN.lastSeen = 마지막 저장 시각 ms): 불러올 때 꺼져 있던 시간(최대 8시간, 10분 이상만)만큼
  *     공방 생산 금을 쌓아 두고 퀘스트 화면에서 받는다(claimIdle). 전투는 방치로 진행하지 않는다. 지금 시각은 now() 한곳 (시험용 setClock)
  *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
+ *  8-1) 튜토리얼(RUN.tutorial = { on, seen }): 새 게임만 on. 첫 후보는 고정 의뢰 한 장(TUTORIAL_QUEST, 은발 마왕·물리·보물방 방어 2회),
+ *     그 부지(site.tutorial)는 입구가 '대기'로 고정돼 갈림길 없이 한 길(tutorialPath)로만 온다. 첫 납품이 끝나면 off. 옛 저장은 off로 채움
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 전투 안의 무작위는 계획에 저장한 시드(plan.seed)로 battle_sim.js가 굴린다.
  *     (연출용 무작위는 shell.js의 fxRandom)
  *
@@ -68,6 +70,9 @@
     { name: '붉은 비늘 드래곤', kind: '드래곤' }, { name: '서리 날개 드래곤', kind: '드래곤' },
     { name: '늪지 리자드맨 족장', kind: '마계 종족' }, { name: '흡혈귀 백작 가문', kind: '마계 종족' }, { name: '뼈 골짜기 리치', kind: '마계 종족' }
   ];
+  // 튜토리얼 첫 의뢰 (GAME_PLAN 보완 결정·토론 보강 C9·X5, 숫자 임시): 목표 하나(작게), 보상 보통 (일반 의뢰 보상 범위의 가운데)
+  var TUTORIAL_QUEST = { name: '첫 납품: 연습용 동굴', attr: 'phys', goals: [{ type: 'defends', target: 2 }], reward: { gold: 600, gems: 6, fame: 1 } };
+  var TUTORIAL_ENTRY = 'wait';    // 튜토리얼 부지 입구 시설 (고정): 전원 가운데 길로 -> 갈림길 없음 (zones.js tutorialZones)
   var SITE_GRANT = 60;            // 새 부지마다 첫 건설 전용 공사비 (임시. 함정 복도 2~4칸·대기실 하나를 지을 만큼)
   var START_MONSTERS = [
     { name: '슬라임',   lv: 4, hp: 120, atk: 8 },  { name: '고블린',   lv: 3, hp: 90,  atk: 14 },
@@ -114,7 +119,10 @@
 
   // 새 부지: 구역별 시설(zones), 대기실 몬스터(units: 구역 -> 몬스터 id 목록), 가치(value, 저장 때 맞춰 둠), 건설 횟수,
   // grant = 남은 첫 건설 전용 공사비 (이 부지에서만)
-  function freshSite() { return { value: 0, builds: 0, zones: ZONES.defaultZones(), units: {}, grant: SITE_GRANT }; }
+  // tutorial = 튜토리얼 의뢰의 부지 (입구 고정, 한 길)
+  function freshSite(tut) {
+    return { value: 0, builds: 0, zones: tut ? ZONES.tutorialZones(TUTORIAL_ENTRY) : ZONES.defaultZones(), units: {}, grant: SITE_GRANT, tutorial: !!tut };
+  }
 
   // 몬스터: base = 처음 값(레벨·체력·공격). 새 부지로 갈 때 친위대가 아니면 이 값으로 돌아간다 (레벨업분만 사라짐)
   function freshRun() {
@@ -130,7 +138,8 @@
       monsters: monsters, guards: [],
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
       prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {},
-      chores: freshChores(), idle: freshIdle(), lastSeen: now()
+      chores: freshChores(), idle: freshIdle(), lastSeen: now(),
+      tutorial: { on: true, seen: {} }
     };
   }
   // ---------- 일일·주간 퀘스트 상태 ----------
@@ -193,6 +202,12 @@
     RUN.idle.minutes = typeof RUN.idle.minutes === 'number' && RUN.idle.minutes > 0 ? Math.min(IDLE_MAX_HOURS * 60, Math.floor(RUN.idle.minutes)) : 0;
     if (typeof RUN.lastSeen !== 'number') RUN.lastSeen = null;   // 없으면 이번에는 방치 보상 없음
     if (typeof RUN.site.grant !== 'number' || RUN.site.grant < 0) RUN.site.grant = 0;
+    // 튜토리얼: 없으면(옛 저장) 이미 하던 사람이라 off
+    var tu = RUN.tutorial;
+    if (!tu || typeof tu !== 'object') tu = RUN.tutorial = { on: false, seen: {} };
+    tu.on = tu.on === true;
+    if (!tu.seen || typeof tu.seen !== 'object' || Array.isArray(tu.seen)) tu.seen = {};
+    RUN.site.tutorial = RUN.site.tutorial === true;
     if (!Array.isArray(RUN.guards)) RUN.guards = [];
     RUN.monsters.forEach(function (m) { if (!m.base) m.base = { lv: m.lv, hp: m.hp, atk: m.atk }; });
   }
@@ -292,6 +307,7 @@
   // 후보: 일반 2~3장, 메인이 열렸으면 메인 1장 더. 한 번 만들면 저장해 두어 새로고침해도 같다.
   function offerQuests() {
     if (RUN.offers && RUN.offers.length) return RUN.offers;
+    if (tutorialFirst()) { RUN.offers = [makeTutorialQuest()]; save(); return RUN.offers; }
     // 방금 끝낸 의뢰(history 마지막)와 같은 이름은 후보에 안 나오게 이름 목록에 미리 넣어 둔다
     var last = RUN.history.length ? RUN.history[RUN.history.length - 1].name : '';
     var used = last ? [last] : [], list = [];
@@ -302,6 +318,42 @@
     save();
     return list;
   }
+  // ---------- 튜토리얼 ----------
+  // 튜토리얼 첫 의뢰를 낼 때인가: 튜토리얼 on + 아직 의뢰를 하나도 안 받고 안 끝냄
+  function tutorialFirst() { return RUN.tutorial.on && RUN.phase === 'choose' && RUN.siteNo === 0 && !RUN.history.length; }
+  function makeTutorialQuest() {
+    var T = TUTORIAL_QUEST, a = BD.ATTRS.filter(function (x) { return x.id === T.attr; })[0];
+    return {
+      id: RUN.qid++, kind: 'normal', grade: '', tutorial: true,
+      name: T.name, goals: T.goals.map(function (g) { return { type: g.type, target: g.target }; }),
+      reward: { gold: T.reward.gold, gems: T.reward.gems, fame: T.reward.fame }, prog: { gold: 0, gems: 0, exp: 0, defends: 0 }, startWeek: 0,
+      client: { name: FIRST_CLIENT.name, kind: FIRST_CLIENT.kind },
+      attr: { id: a.id, label: a.label, effect: a.effect, counter: a.counter }
+    };
+  }
+  function tutorial() {
+    var seen = {}; Object.keys(RUN.tutorial.seen).forEach(function (k) { seen[k] = true; });
+    return { on: RUN.tutorial.on, seen: seen };
+  }
+  function tutorialSeen(id) {
+    if (typeof id !== 'string' || !id) return false;
+    RUN.tutorial.seen[id] = true;
+    save();
+    return true;
+  }
+  // 건너뛰기: 끈다. 아직 고르기 전이면 튜토리얼 한 장 후보를 버리고 일반 후보로 (이미 받은 튜토리얼 부지는 그대로 한 길)
+  function skipTutorial() {
+    RUN.tutorial.on = false;
+    if (RUN.phase === 'choose' && RUN.offers && RUN.offers.some(function (o) { return o.tutorial; })) RUN.offers = null;
+    save();
+    return true;
+  }
+  // 튜토리얼 부지에서 침입자가 지나갈 구역 id (입구 'E'부터 보물방 'B'까지). 튜토리얼이 아니면 null
+  function tutorialPath() {
+    if (!RUN.tutorial.on || RUN.phase !== 'play' || !RUN.site.tutorial) return null;
+    return ZONES.routeOf(RUN.site.zones, RUN.site.units, {});
+  }
+
   // 의뢰를 받는다: 새 부지에 새로 짓기 시작 (시설·배치·남은 공사비는 사라지고 새 공사비, 금·보석·명성 유지)
   // choose(첫 시작) · settle(납품 화면) 둘 다에서 받는다. settle이면 인계: guardIds(최대 3, 없으면 지금 RUN.guards)를 친위대로 정하고
   // 친위대가 아닌 몬스터는 레벨·경험치·능력치를 처음 값(base)으로 (레벨업분만 사라짐. 보석 강화는 base에 들어 있어 남는다)
@@ -322,7 +374,7 @@
     }
     found.startWeek = RUN.week;
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
-    RUN.site = freshSite();
+    RUN.site = freshSite(found.tutorial === true);
     RUN.siteNo++;
     ensurePlan();   // 계획의 레벨·힘·속성은 새 부지(가치 0)와 새 의뢰 속성으로 다시 맞춰진다 (fitPlan)
     save();
@@ -348,6 +400,7 @@
     };
     RUN.gold += total; RUN.gems += q.reward.gems; RUN.fame += q.reward.fame;
     choreAdd('deliver');
+    RUN.tutorial.on = false;       // 첫 납품이 끝나면 튜토리얼 끝
     // 인계 표 (GAME_PLAN "총괄 제안 묶음" ①): 새 부지로 가져가는 것 · 사라지는 것 (화면 표시용 글)
     rep.carry = ['금 ' + comma(RUN.gold), '보석 ' + comma(RUN.gems), '명성 ' + RUN.fame, '부대장 전원',
       '친위대 몬스터의 레벨 (최대 ' + GUARD_MAX + ')'];
@@ -405,6 +458,7 @@
     var after = ZONES.summary(zones2, units2, monById), now = siteSummary();
     var why = canEdit();
     if (!why && cur === k) why = '이미 이 시설이에요';
+    if (!why && z === 'E' && RUN.site.tutorial) why = '첫 부지에서는 입구를 바꿀 수 없어요';
     // 첫 건설 공사비를 먼저 쓰고 모자란 만큼 금
     var fromGrant = Math.min(grantLeft(), cost), fromGold = cost - fromGrant;
     if (!why && RUN.gold < fromGold) why = '금 ' + (fromGold - RUN.gold) + ' 모자람';
@@ -801,6 +855,7 @@
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
     WORKSHOPS: WORKSHOP_DEFS.map(function (d) { return { id: d.id, name: d.name, desc: d.desc, ready: d.ready, maxLv: d.maxLv }; }),
     workshopInfo: workshopInfo, upgradeWorkshop: upgradeWorkshop, tribeInfo: tribeInfo, upgradeTribe: upgradeTribe, buildCost: buildCost,
+    tutorial: tutorial, tutorialSeen: tutorialSeen, skipTutorial: skipTutorial, tutorialPath: tutorialPath,
     chores: chores, claimChore: claimChore, choresClaimable: choresClaimable, idleInfo: idleInfo, claimIdle: claimIdle, setClock: setClock,
     save: save, load: load, reset: reset
   };

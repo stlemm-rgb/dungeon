@@ -6,6 +6,7 @@
  *    forecast = 길만 계산해서 "침입자 n명이 각 문을 몇 명 지나가나" 미리 보기 (전투 없음).
  *  - 몬스터 가치는 A7이 종류 표를 썼지만 C1 몬스터는 하나씩 능력치가 달라서 임시 식으로 바꿈 (monValue).
  *  - 전투(battle_sim.js)는 routeOf(분대마다 길)·anchorOf·doorOf(칸 좌표)로 같은 판·같은 길 규칙을 따른다.
+ *  - 튜토리얼 첫 부지(tutorialZones): 입구를 '대기'로 시작 -> 전원 가운데 길(E-CB-CC-CD-B) 한 줄. 갈림길은 두 번째 부지부터 (입구 고정은 progress.js)
  *  - 상태는 갖지 않는다. 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
  */
 (function () {
@@ -65,6 +66,9 @@
     Object.keys(CELLS).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
     return L;
   }
+
+  // 튜토리얼 첫 부지: 처음 부지와 같고 입구만 entry 시설로 (무료로 깔아 둠, 건설 횟수 아님)
+  function tutorialZones(entry) { var L = defaultZones(); L.E = entry; return L; }
 
   // 요약: 던전 가치 (시설 + 대기실 몬스터), 함정·대기실 수. monById(id) -> 몬스터
   function summary(zones, units, monById) {
@@ -152,7 +156,7 @@
     MAP: MAP, NAMES: NAMES, EXITS: EXITS, CENTER: CENTER, FAC: FAC, CELLS: CELLS,
     PREVIEW_INVADERS: PREVIEW_INVADERS, ALL: Object.keys(CELLS).concat(['Y']),
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
-    monValue: monValue, defaultZones: defaultZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
+    monValue: monValue, defaultZones: defaultZones, tutorialZones: tutorialZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
     chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf
   };
 })();

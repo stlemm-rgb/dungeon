@@ -1,6 +1,7 @@
 """C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
 공방 = 건설 할인·연구실 함정 피해·제작 공방 거부, 몬스터 부족 보석 강화 = 인계 뒤에도 남음.
 일일·주간 퀘스트 = 날·주 바뀜 초기화·진행 훅·받기, 방치 보상 = 10분 미만 없음·시간 비례·8시간 상한·공방 단계 반영 (시계는 가짜 Date.now·setClock).
+튜토리얼 = 새 게임 on·후보 1장(방어 2)·첫 부지 입구 고정·한 길·함정 발동·seen 저장·skip·첫 납품 뒤 off·옛 저장 off.
 
 화면 없이 prototype/c1_shell의 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다.
 node가 없으면 건너뛴다(통과). 사용: python tools/test_c1_core.py
@@ -31,6 +32,7 @@ function boot() {
 }
 let W = boot(), P = W.PROGRESS, R = P.RUN;
 P.reset();
+P.skipTutorial();   // 아래는 일반 흐름 시험 (튜토리얼은 맨 뒤 따로)
 // 첫 시작: 후보 모양·첫 의뢰인
 let offers = P.offerQuests();
 ok(offers.length >= 2, '첫 후보가 2장 이상');
@@ -348,7 +350,69 @@ let choreSample = null, idleSample = null;
   idleSample = PP.idleInfo();
   FAKE_NOW = null;
 }
-console.log(JSON.stringify({ problems, sample: { carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
+// ---------- 튜토리얼 첫 부지 ----------
+let tutSample = null;
+{
+  let WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset();
+  const Z = WW.ZONES;
+  let tu = PP.tutorial();
+  ok(tu.on === true && JSON.stringify(tu.seen) === '{}' && RR.tutorial.on === true, '새 게임은 튜토리얼 on');
+  tu.seen.x = true; ok(!RR.tutorial.seen.x, 'tutorial()은 사본');
+  ok(PP.tutorialPath() === null, '의뢰 받기 전엔 길 null');
+  const of = PP.offerQuests();
+  ok(of.length === 1, '튜토리얼 후보 1장: ' + of.length);
+  const tq = of[0];
+  ok(tq.client.name === '은발 마왕' && tq.kind === 'normal' && tq.attr.id === 'phys' && tq.name === '첫 납품: 연습용 동굴', '튜토리얼 의뢰 모양: ' + JSON.stringify([tq.client, tq.kind, tq.attr.id, tq.name]));
+  ok(tq.goals.length === 1 && tq.goals[0].type === 'defends' && tq.goals[0].target === 2, '목표 = 보물방 방어 2회');
+  ok(tq.reward.gold > 0 && tq.reward.gems > 0 && tq.reward.fame > 0, '보상');
+  ok(PP.pickQuest(tq) === true && RR.site.tutorial === true && RR.site.zones.E === 'wait', '튜토리얼 부지: 입구 대기');
+  const pe = PP.previewBuild('E', 'split');
+  ok(!pe.ok && !PP.buildZone('E', 'left').ok && RR.site.zones.E === 'wait', '첫 부지 입구 고정: ' + pe.why);
+  // 길 하나: 미끼·몬스터 대기실을 옆에 지어도 전원 같은 길
+  const path = PP.tutorialPath();
+  ok(JSON.stringify(path) === '["E","CB","CC","CD","B"]', '튜토리얼 길: ' + JSON.stringify(path));
+  ok(PP.buildZone('CB', 'trap').ok, '길 위 함정 하나');
+  RR.gold = 99999; PP.buildZone('LB', 'lure'); PP.buildZone('TL', 'lure');
+  const fc = PP.forecast();
+  ok(fc.at.CB === Z.PREVIEW_INVADERS && fc.at.B === Z.PREVIEW_INVADERS && !fc.at.TL && !fc.at.TR && !fc.at.LB, '미리보기: 전원 가운데 ' + JSON.stringify(fc.at));
+  RR.site.zones.LB = 'empty'; RR.site.zones.TL = 'empty';
+  // seen 저장
+  ok(PP.tutorialSeen('build_trap') === true && PP.tutorialSeen('') === false, 'tutorialSeen');
+  // 전투: 함정이 실제로 발동, 모든 분대가 CB를 지남
+  ok(PP.startBattle().ok, '튜토리얼 전투 시작');
+  const o = { plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById };
+  let SS = WW.BSIM.create(o), traps = 0;
+  for (let i = 0; i < 3000 && !SS.done; i++) WW.BSIM.step(SS, 0.1).forEach(e => { if (e.type === 'trap' && e.z === 'CB') traps++; });
+  ok(traps > 0, '함정 하나로 발동: ' + traps);
+  const ro = WW.ZONES.routeOf(RR.site.zones, RR.site.units, {}), ro2 = WW.ZONES.routeOf(RR.site.zones, RR.site.units, { E: 1, CB: 1 });
+  ok(ro.join() === ro2.join() && ro.indexOf('CB') >= 0, '분대 차례가 달라도 같은 길');
+  PP.applyBattle(WW.BSIM.result(SS));
+  // 새로고침해도 유지
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN;
+  ok(PP.load() === true && PP.tutorial().seen.build_trap === true && PP.tutorial().on === true && RR.site.tutorial === true, 'seen·on 저장');
+  ok(JSON.stringify(PP.tutorialPath()) === '["E","CB","CC","CD","B"]', '불러와도 길');
+  // 첫 납품 -> off, 두 번째 부지는 원래 판·후보 여러 장
+  RR.quest.prog.defends = 2;
+  const dd = PP.deliver();
+  ok(dd && PP.tutorial().on === false && PP.tutorialPath() === null, '첫 납품 뒤 off');
+  ok(RR.offers.length >= 2 && RR.offers.every(q => !q.tutorial), '두 번째 후보 여러 장: ' + RR.offers.length);
+  ok(PP.pickQuest(RR.offers[0], []) === true && RR.site.tutorial === false && RR.site.zones.E === 'split', '두 번째 부지는 원래 판');
+  RR.gold = 99999;
+  ok(PP.buildZone('E', 'left').ok && PP.tutorialPath() === null, '두 번째 부지 입구 바꿀 수 있음');
+  ok(PP.forecast(Object.assign({}, RR.site.zones, { E: 'split' })).at.TL > 0, '두 번째 부지는 갈림길');
+  tutSample = { quest: { name: tq.name, goals: tq.goals, reward: tq.reward }, path: path };
+  // skip: 고르기 전 끄면 일반 후보
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN; PP.reset();
+  ok(PP.offerQuests().length === 1, 'skip 전 1장');
+  PP.skipTutorial();
+  ok(PP.tutorial().on === false && PP.offerQuests().length >= 2 && RR.offers.every(q => !q.tutorial), 'skip 뒤 일반 후보');
+  WW = boot(); ok(WW.PROGRESS.load() === true && WW.PROGRESS.tutorial().on === false, 'skip 저장');
+  // 옛 저장(tutorial 칸 없음)은 off, 부지도 보통
+  { const sv = JSON.parse(store['dunguen_c1_run']); delete sv.tutorial; delete sv.site.tutorial; store['dunguen_c1_run'] = JSON.stringify(sv); }
+  WW = boot(); PP = WW.PROGRESS;
+  ok(PP.load() === true && PP.tutorial().on === false && JSON.stringify(PP.RUN.tutorial.seen) === '{}' && PP.RUN.site.tutorial === false, '옛 저장은 튜토리얼 off');
+}
+console.log(JSON.stringify({ problems, sample: { tutorial: tutSample, carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
 """
 
 
@@ -377,7 +441,7 @@ def main():
         for p in r["problems"]:
             print("  - " + p)
         return 1
-    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상")
+    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상 -> 튜토리얼 첫 부지")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 
