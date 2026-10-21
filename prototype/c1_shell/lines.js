@@ -74,6 +74,14 @@ window.LINES = {
   // 이름(왼쪽)은 바꾸지 마세요. 백틱(`) 사이의 글만 고치세요. (demandBadge = 요구 배지 글자, blockerHead = 납품이 막혔을 때 앞머리)
   ui: {
     demandBadge: `요구`,
-    blockerHead: `요구가 남았어요:`
+    blockerHead: `요구가 남았어요:`,
+    // 몬스터 모집(부대 탭)과 광고 뽑기(상점 탭)
+    recruitHead: `몬스터 모집`,
+    recruitLocked: `상점의 광고 뽑기로 계약`,
+    adButton: `광고 보고 뽑기`,
+    adWatching: `광고 시청 중…`,
+    adFake: `가짜 광고예요. 출시 때 진짜 광고가 연결돼요.`,
+    newContract: `새 계약!`,
+    gachaSoldOut: `오늘 뽑기를 다 썼어요`
   }
 };
