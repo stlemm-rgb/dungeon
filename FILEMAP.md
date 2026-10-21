@@ -37,7 +37,7 @@
 
 - `tools/autoplay.py` — 자동 진행 측정: 많은 턴을 돌려 오류 수, 걸린 시간, 세이브 크기를 출력한다.
   - `arg`, `main`
-- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, 화면 비교.
+- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, 화면 비교.
   - `main`
 - `tools/filemap.py` — 파일 지도 만들기: FILEMAP.md에 파일마다 한 줄 설명과 그 안의 함수 목록을 적는다.
   - `describe`, `functions`, `main`
@@ -49,6 +49,8 @@
 - `tools/name_rules.json` — 이름 앞글자 표 (원본은 여기 한 곳). JS 파일을 새로 만들면 여기에 한 줄 추가한다. tools/test_names.py와 tools/filemap.py가 읽는다.
 - `tools/shots.py` — 화면 검사: 390px·1280px 스크린샷을 tools/shots/ 기준 이미지와 비교하고, 가로 넘침을 잰다.
   - `read_png`, `compare`, `main`
+- `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장.
+  - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`
 - `tools/test_names.py` — 이름 검사: 전역 이름 겹침, 파일 앞글자 규칙, 불러오기 목록 빠짐.

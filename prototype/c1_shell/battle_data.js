@@ -37,7 +37,7 @@ window.BATTLE_DATA = {
   PORTER: { hpMul: 0.6, goldMul: 2 },
   PORTER_MIN: 1, PORTER_MAX: 6,          // 분대 10명 중 짐꾼 수 범위 (무리마다 하나)
   LOOT_BASE: 40, LOOT_PER_PORTER: 25,    // 보물방에 닿은 분대 하나가 약탈하는 금 = 기본 + 살아 있는 짐꾼 수 × 이것
-  LOOT_CAP: 0.3,                         // 한 전투 약탈은 가진 금의 30%까지 (금은 크게 잃지 않게)
+                                         // 약탈 한도 = 이번 전투에서 번 금 (사용자 10-21. 보물방은 미끼라 원래 가진 금은 안 잃음. progress.js applyBattle)
   REPAIR_PER_HP: 0.5,                    // 몬스터가 잃은 체력 1당 수리 금
 
   // 전투 크기: 무리 등급 목록과 무리 하나의 분대 수 [최소, 최대]
@@ -75,6 +75,18 @@ window.BATTLE_DATA = {
     { id: 'armor', tag: '두꺼운 갑옷', text: '침입자 방어 +30% · 이동 -10%', fx: { def: 0.30, speed: -0.10 } }
   ],
   SECRETARY: '비서',
+
+  // 던전 속성 (의뢰마다 1개, 첫 버전은 "주된 피해 종류"만. GAME_PLAN "새 의뢰를 받는 주", 토론 C6). 모두 임시
+  // fx는 침입자 카드 fx와 같은 모양: 그 부지의 모든 전투에서 침입자 카드 효과에 더해진다 (battle_sim.js)
+  // counter = 내 대응 수단. 우리 함정·몬스터에는 아직 피해 종류가 없어서 정직하게 "아직 없음"
+  ATTRS: [
+    { id: 'phys', label: '물리', effect: '침입자가 두꺼운 갑옷을 입고 옴: 받는 피해 -10%', fx: { def: 0.10 },
+      counter: '아직 없음 (연구실에서 해금 예정)' },
+    { id: 'magic', label: '마법', effect: '침입자 중 마법사가 함정을 감지: 함정 발동 확률 -20%', fx: { trap: 0.20 },
+      counter: '아직 없음 (연구실에서 해금 예정)' },
+    { id: 'ether', label: '에테르', effect: '침입자가 에테르로 몸이 가벼움: 이동 +15%', fx: { speed: 0.15 },
+      counter: '아직 없음 (연구실에서 해금 예정)' }
+  ],
 
   // 이벤트 카드: 4방향마다 효과가 다르다. 대부분 전투 끝까지 지속, 일회성(once)은 극단적인 것만
   // kind: trapDmg(함정 피해 +v) · trapRate(함정 발동 확률 +v) · monAtk(몬스터 공격 +v) · slow(침입자 이동 -v) · weak(침입자 받는 피해 +v)
