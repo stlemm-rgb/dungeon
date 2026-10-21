@@ -1,4 +1,5 @@
-"""C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장.
+"""C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
+공방 = 건설 할인·연구실 함정 피해·제작 공방 거부, 몬스터 부족 보석 강화 = 인계 뒤에도 남음.
 
 화면 없이 prototype/c1_shell의 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다.
 node가 없으면 건너뛴다(통과). 사용: python tools/test_c1_core.py
@@ -118,7 +119,98 @@ W = boot(); ok(W.PROGRESS.load() === true && W.PROGRESS.RUN.prefs.speedIdx === 0
 // 옛 저장(v4)은 버림
 store['dunguen_c1_run'] = JSON.stringify(Object.assign({}, JSON.parse(store['dunguen_c1_run']), { v: 4 }));
 W = boot(); ok(W.PROGRESS.load() === false, '옛 저장 버림');
-console.log(JSON.stringify({ problems, sample: { carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr } }));
+// ---------- 공방·몬스터 부족 보석 강화 ----------
+let wsSample = null;
+{
+  const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN, Z = WW.ZONES; PP.reset();
+  ok(JSON.stringify(RR.workshop) === '{"build":0,"lab":0,"craft":0}' && RR.tribes && !Object.keys(RR.tribes).length, '공방·부족 기본값');
+  ok(PP.WORKSHOPS.length === 3 && PP.WORKSHOPS.every(w => w.id && w.name && w.desc && typeof w.ready === 'boolean' && w.maxLv > 0), 'WORKSHOPS 모양');
+  ok(PP.WORKSHOPS.filter(w => w.id === 'craft')[0].ready === false, '제작 공방 준비 중');
+  PP.pickQuest(PP.offerQuests()[0]);
+  const pv0 = PP.previewBuild('CB', 'trap');
+  ok(pv0.discount === 0 && pv0.baseCost === pv0.cost, '공방 0단계면 할인 없음');
+  // 보석 부족·제작 공방 거부
+  RR.gems = 2;
+  ok(!PP.upgradeWorkshop('build').ok && RR.gems === 2 && RR.workshop.build === 0, '보석 모자라면 거부');
+  ok(PP.workshopInfo('build').canAfford === false, 'canAfford false');
+  RR.gems = 100;
+  let r = PP.upgradeWorkshop('craft');
+  ok(!r.ok && r.msg && RR.gems === 100 && RR.workshop.craft === 0, '제작 공방 거부');
+  const ci = PP.workshopInfo('craft');
+  ok(ci.ready === false && ci.cost === null && ci.next === null && ci.canAfford === false && ci.effect, '제작 공방 정보');
+  const wi = PP.workshopInfo('build');
+  ok(wi.lv === 0 && wi.maxLv === 3 && wi.cost.gems === 3 && wi.canAfford && wi.effect && wi.next, '건설 공방 정보: ' + JSON.stringify(wi));
+  let spent = 0;
+  for (let i = 0; i < 3; i++) { const c = PP.workshopInfo('build').cost.gems; spent += c; ok(PP.upgradeWorkshop('build').ok, '건설 공방 강화 ' + (i + 1)); }
+  ok(RR.workshop.build === 3 && RR.gems === 100 - spent, '보석 차감 ' + spent);
+  r = PP.upgradeWorkshop('build');
+  ok(!r.ok && RR.gems === 100 - spent && RR.workshop.build === 3, '최대 단계 거부');
+  ok(PP.workshopInfo('build').cost === null && PP.workshopInfo('build').next === null, '최대면 cost·next null');
+  // 할인이 실제 건설비에 (공사비만으로)
+  const pvA = PP.previewBuild('CB', 'trap'), disc = Math.round(pv0.baseCost * 0.3);
+  ok(pvA.baseCost === pv0.baseCost && pvA.discount === disc && pvA.cost === pv0.baseCost - disc && pvA.fromGrant === pvA.cost, '할인 미리보기: ' + JSON.stringify([pvA.baseCost, pvA.discount, pvA.cost]));
+  ok(PP.buildCost('trap', 'CB') === pvA.cost, 'buildCost = 할인된 비용');
+  let gr = PP.grantLeft(), gd = RR.gold;
+  ok(PP.buildZone('CB', 'trap').ok && PP.grantLeft() === gr - pvA.cost && RR.gold === gd, '할인된 비용을 공사비에서');
+  // 공사비 + 금 나눠 내기
+  RR.site.grant = 5;
+  const pvB = PP.previewBuild('CC', 'trap');
+  ok(pvB.fromGrant === 5 && pvB.fromGold === pvB.cost - 5 && pvB.cost < pvB.baseCost, '할인 비용을 공사비·금으로 나눔');
+  gd = RR.gold;
+  ok(PP.buildZone('CC', 'trap').ok && RR.gold === gd - pvB.fromGold && PP.grantLeft() === 0, '금도 할인된 만큼만');
+  // 연구실: 함정 피해
+  const g0 = RR.gems;
+  ok(PP.upgradeWorkshop('lab').ok && PP.upgradeWorkshop('lab').ok && RR.workshop.lab === 2, '연구실 2단계');
+  ok(RR.gems === g0 - 3 - 6, '연구실 보석 차감');
+  ok(RR.plan.trapBoost === 0.3, '계획에 함정 피해 +30%: ' + RR.plan.trapBoost);
+  // 부족 강화
+  const slimes = RR.monsters.filter(m => m.name === '슬라임'), sl = slimes[0];
+  const ti = PP.tribeInfo('슬라임');
+  ok(ti && ti.lv === 0 && ti.cost.gems === 3 && ti.canAfford && ti.effect && ti.next, '부족 정보: ' + JSON.stringify(ti));
+  ok(PP.tribeInfo('없는몬스터') === null && !PP.upgradeTribe('없는몬스터').ok, '없는 부족');
+  const hp0 = sl.hp, atk0 = sl.atk, bhp0 = sl.base.hp, batk0 = sl.base.atk, gT = RR.gems;
+  ok(PP.upgradeTribe('슬라임').ok && PP.upgradeTribe('슬라임').ok, '부족 강화 2번');
+  ok(RR.tribes['슬라임'] === 2 && RR.gems === gT - 3 - 6, '부족 강화 보석 차감');
+  ok(sl.base.hp === bhp0 + 24 && sl.base.atk === batk0 + 2 && sl.hp === hp0 + 24 && sl.atk === atk0 + 2, '부족 강화 능력치: ' + JSON.stringify([sl.base, sl.hp, sl.atk]));
+  ok(RR.monsters.filter(m => m.name === '고블린').every(m => m.base.hp === 90), '다른 부족은 그대로');
+  // 전투: 함정 피해에 반영, 전투 중 강화 막힘
+  PP.buildZone('LB', 'den'); PP.placeMonster('LB', sl.id);
+  ok(PP.startBattle().ok, '공방 전투 시작');
+  ok(!PP.upgradeTribe('슬라임').ok && !PP.upgradeWorkshop('lab').ok && RR.tribes['슬라임'] === 2, '전투 중 강화 막힘');
+  const o = { plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById };
+  let SS = WW.BSIM.create(o), trapEv = null, restoredOk = true;
+  ok(SS.dens.LB && SS.dens.LB[0].hp === sl.hp && SS.dens.LB[0].atk === sl.atk, '전투에 강화된 능력치');
+  for (let i = 0; i < 2000 && !SS.done; i++) {
+    const ev = WW.BSIM.step(SS, 0.1);
+    ev.forEach(e => { if (e.type === 'trap' && !trapEv) trapEv = e; });
+    if (i === 30) { const S2 = WW.BSIM.restore(o, WW.BSIM.snapshot(SS)); restoredOk = S2 && S2.plan.trapBoost === 0.3; }
+  }
+  ok(trapEv && trapEv.dmg === Math.round(Z.trapDmgOf(trapEv.z) * 1.3), '함정 피해 ×1.3: ' + JSON.stringify(trapEv));
+  ok(restoredOk, '복원해도 함정 피해 증가 같음');
+  PP.applyBattle(WW.BSIM.result(SS));
+  // 레벨업분 넣고 납품 -> 친위대 없이 인계: 강화는 남고 레벨업분만 사라짐
+  sl.lv = 9; sl.hp += 500; sl.atk += 7; sl.exp = 4;
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
+  const dd = PP.deliver();
+  ok(dd.carry.some(s => s.indexOf('공방 단계') >= 0 && s.indexOf('건설 공방 3단계') >= 0 && s.indexOf('연구실 2단계') >= 0), 'carry 공방: ' + JSON.stringify(dd.carry));
+  ok(dd.carry.some(s => s.indexOf('몬스터 보석 강화') >= 0 && s.indexOf('슬라임 +2') >= 0), 'carry 부족 강화');
+  wsSample = dd.carry;
+  // 저장에서 불러와 인계
+  const W2 = boot(), P2 = W2.PROGRESS; ok(P2.load() === true, '공방 저장 불러오기');
+  const R2 = P2.RUN;
+  ok(R2.workshop.build === 3 && R2.workshop.lab === 2 && R2.tribes['슬라임'] === 2, '저장에 공방·부족');
+  ok(P2.pickQuest(P2.offerQuests()[0], []) === true, '인계 pickQuest');
+  const s2 = R2.monsters.filter(m => m.name === '슬라임')[0];
+  ok(s2.lv === 4 && s2.exp === 0 && s2.hp === 120 + 24 && s2.atk === 8 + 2 && s2.base.hp === 144, '인계 뒤 레벨업분만 사라지고 강화 남음: ' + JSON.stringify([s2.lv, s2.hp, s2.atk]));
+  ok(R2.workshop.build === 3 && R2.tribes['슬라임'] === 2 && R2.plan.trapBoost === 0.3, '새 부지에서도 공방·부족 강화 남음');
+  ok(P2.previewBuild('CB', 'trap').discount > 0, '새 부지에서도 할인');
+  // workshop·tribes 없는 v5 저장 복원
+  const sv = JSON.parse(store['dunguen_c1_run']); delete sv.workshop; delete sv.tribes; store['dunguen_c1_run'] = JSON.stringify(sv);
+  const W3 = boot(), P3 = W3.PROGRESS;
+  ok(P3.load() === true && JSON.stringify(P3.RUN.workshop) === '{"build":0,"lab":0,"craft":0}' && JSON.stringify(P3.RUN.tribes) === '{}', 'workshop·tribes 없는 v5 저장은 기본값');
+  ok(P3.RUN.plan && P3.RUN.plan.trapBoost === 0 && P3.workshopInfo('lab').lv === 0, '기본값이면 함정 증가 0');
+}
+console.log(JSON.stringify({ problems, sample: { carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample } }));
 """
 
 
@@ -147,7 +239,7 @@ def main():
         for p in r["problems"]:
             print("  - " + p)
         return 1
-    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장")
+    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 

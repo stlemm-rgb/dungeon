@@ -13,6 +13,7 @@
  *  - snapshot(S): 저장용 순수 데이터 (plan·zones·units·icard·fx 참조는 뺌). restore(o, snap): create와 같은 o로 S를 되살림.
  *    카드를 고른 순간이 저장 지점 (battle.js가 progress.js saveBattle로 RUN에 넣음)
  *  - 침입자 강함: 레벨(plan.groups[].lv) × 던전 가치 배율(plan.power). 둘 다 progress.js가 전투 시작 때 확정
+ *  - 연구실 함정 피해(plan.trapBoost, progress.js 공방): 함정 피해 × (1 + 카드 trapDmg + trapBoost). 계획에 들어 있어 복원해도 같다
  *  - 던전 속성(plan.attr = battle_data.js ATTRS id): 그 fx를 침입자 카드 fx에 더해 S.fx로 쓴다 (저장하지 않고 늘 다시 계산)
  */
 (function () {
@@ -116,7 +117,7 @@
   function trapRoll(S, q, ev) {
     var chance = (BD.TRAP_CHANCE + S.mod.trapRate) * (1 - (S.fx.trap || 0));
     if (rand(S) >= chance) { ev.push({ type: 'trapMiss', z: q.zone, x: q.x, y: q.y }); return; }
-    var dmg = Z.trapDmgOf(q.zone) * (1 + S.mod.trapDmg);
+    var dmg = Z.trapDmgOf(q.zone) * (1 + S.mod.trapDmg + (S.plan.trapBoost || 0));
     ev.push({ type: 'trap', z: q.zone, x: q.x, y: q.y, dmg: Math.round(dmg) });
     hurtAll(S, q, dmg, ev);
   }

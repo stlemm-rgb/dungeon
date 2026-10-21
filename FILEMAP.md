@@ -49,7 +49,7 @@
 - `tools/name_rules.json` — 이름 앞글자 표 (원본은 여기 한 곳). JS 파일을 새로 만들면 여기에 한 줄 추가한다. tools/test_names.py와 tools/filemap.py가 읽는다.
 - `tools/shots.py` — 화면 검사: 390px·1280px 스크린샷을 tools/shots/ 기준 이미지와 비교하고, 가로 넘침을 잰다.
   - `read_png`, `compare`, `main`
-- `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장.
+- `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
   - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`

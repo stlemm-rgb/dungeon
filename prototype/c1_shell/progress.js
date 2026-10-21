@@ -19,7 +19,10 @@
  *  6) 납품(deliver) = 정산(금·보석·명성) + 새 의뢰 후보를 한 번에 만든다 (phase settle, 한 화면).
  *     그 화면에서 친위대(최대 3)와 새 의뢰를 고르면(pickQuest) 인계: 친위대가 아닌 몬스터의 레벨·경험치는 처음 값으로,
  *     친위대는 레벨 유지, 남은 공사비·시설·배치는 사라짐, 금·보석·명성은 남음 -> 새 부지에 새로 짓기.
- *  7) 재화: 금(gold) = 건설·수리, 보석(gems) = 1종, 지금은 쌓이기만. 약탈은 이번 전투에서 번 금 안에서만 (보물방은 미끼).
+ *  7) 재화: 금(gold) = 건설·수리, 보석(gems) = 1종 (공방·몬스터 부족 강화에 씀). 약탈은 이번 전투에서 번 금 안에서만 (보물방은 미끼).
+ *     공방(RUN.workshop = { build, lab, craft } 단계, 영구): 건설 공방 = 건설비 할인 · 연구실 = 함정 피해 증가(plan.trapBoost) · 제작 공방 = 준비 중.
+ *     몬스터 부족 보석 강화(RUN.tribes = { 몬스터 이름: 단계 }, 영구): 그 부족 전원의 기본 능력치(base.hp·atk)에 더해져 부지가 바뀌어도 남는다.
+ *     숫자(비용·효과)는 아래 WORKSHOP_DEFS·TRIBE_* 표 한곳 (임시, 균형 없음). 전투 중에는 강화 못 함.
  *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 전투 안의 무작위는 계획에 저장한 시드(plan.seed)로 battle_sim.js가 굴린다.
  *     (연출용 무작위는 shell.js의 fxRandom)
@@ -69,6 +72,19 @@
   ];
   function levelNeed(lv) { return 4 + lv * 2; } // 경험치 몇이면 레벨업 (임시)
 
+  // 공방 (플레이어 시설, 영구). costs[i] = i단계 -> i+1단계 보석 (임시). per = 단계마다 효과 (임시)
+  //  build: 건설비 할인 per×단계 (할인 금액 = 반올림(원래 비용 × 할인율), 실제 비용 = 원래 - 할인)
+  //  lab: 함정 피해 +per×단계 (전투 계획 plan.trapBoost로 들어감, 전투 시작 때 확정)
+  //  craft: 준비 중 (장비·인챈트 제작 자리)
+  var WORKSHOP_DEFS = [
+    { id: 'build', name: '건설 공방', desc: '건설비 할인', ready: true, maxLv: 3, per: 0.10, costs: [3, 6, 10] },
+    { id: 'lab',   name: '연구실',   desc: '함정 연구: 함정 피해 증가', ready: true, maxLv: 3, per: 0.15, costs: [3, 6, 10] },
+    { id: 'craft', name: '제작 공방', desc: '장비·인챈트 제작 (준비 중)', ready: false, maxLv: 3, per: 0, costs: [] }
+  ];
+  // 몬스터 부족 보석 강화 (영구, 상한 없음): 단계마다 처음 값(START_MONSTERS)의 체력·공격 × TRIBE_PER (반올림, 최소 1)을 기본 능력치에 더함
+  // 비용 = TRIBE_COSTS[단계], 표를 넘으면 마지막 값 + TRIBE_COST_STEP × 넘은 단계 (임시)
+  var TRIBE_PER = 0.10, TRIBE_COSTS = [3, 6, 10], TRIBE_COST_STEP = 5;
+
   // ---------- 상태: RUN 하나 (객체 자체는 바뀌지 않고 안의 값만 바뀐다) ----------
   var RUN = {};
 
@@ -89,9 +105,11 @@
       site: freshSite(),
       monsters: monsters, guards: [],
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
-      prefs: freshPrefs()
+      prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {}
     };
   }
+  // 공방 단계 (영구). 정의 표(WORKSHOP_DEFS)의 id마다 0단계부터
+  function freshWorkshop() { var w = {}; WORKSHOP_DEFS.forEach(function (d) { w[d.id] = 0; }); return w; }
   // 설정 칸 (전투가 끝나도 남음): 마지막으로 고른 배속(BD.SPEEDS 번호)과 배속 때 그 전투에 나올 카드 수(0~카드 지점 수). 처음 기본 = 1배속, 카드 1장
   function freshPrefs() { return { speedIdx: 0, cards: 1 }; }
   // 전투 저장 지점: snap = battle_sim.js snapshot (null이면 전투 시작 지점), ui = 화면 진행(카드 몇 장째 등),
@@ -107,6 +125,14 @@
     pf.speedIdx = Math.max(0, Math.min(BD.SPEEDS.length - 1, pf.speedIdx | 0));
     if (typeof pf.cards !== 'number') pf.cards = 1;
     pf.cards = Math.max(0, Math.min(BD.CARD_AT.length, pf.cards | 0));
+    // 공방·부족 강화: v5 저장에는 없을 수 있으니 기본값으로 채운다 (prefs와 같은 방식)
+    if (!RUN.workshop || typeof RUN.workshop !== 'object') RUN.workshop = freshWorkshop();
+    WORKSHOP_DEFS.forEach(function (d) {
+      var v = RUN.workshop[d.id];
+      RUN.workshop[d.id] = typeof v === 'number' ? Math.max(0, Math.min(d.maxLv, v | 0)) : 0;
+    });
+    if (!RUN.tribes || typeof RUN.tribes !== 'object' || Array.isArray(RUN.tribes)) RUN.tribes = {};
+    Object.keys(RUN.tribes).forEach(function (k) { var v = RUN.tribes[k]; RUN.tribes[k] = typeof v === 'number' && v > 0 ? v | 0 : 0; });
     if (typeof RUN.site.grant !== 'number' || RUN.site.grant < 0) RUN.site.grant = 0;
     if (!Array.isArray(RUN.guards)) RUN.guards = [];
     RUN.monsters.forEach(function (m) { if (!m.base) m.base = { lv: m.lv, hp: m.hp, atk: m.atk }; });
@@ -218,7 +244,7 @@
   }
   // 의뢰를 받는다: 새 부지에 새로 짓기 시작 (시설·배치·남은 공사비는 사라지고 새 공사비, 금·보석·명성 유지)
   // choose(첫 시작) · settle(납품 화면) 둘 다에서 받는다. settle이면 인계: guardIds(최대 3, 없으면 지금 RUN.guards)를 친위대로 정하고
-  // 친위대가 아닌 몬스터는 레벨·경험치·능력치를 처음 값(base)으로 (레벨업분만 사라짐. 보석 강화가 생기면 base에 들어가 남는다)
+  // 친위대가 아닌 몬스터는 레벨·경험치·능력치를 처음 값(base)으로 (레벨업분만 사라짐. 보석 강화는 base에 들어 있어 남는다)
   function pickQuest(q, guardIds) {
     if ((RUN.phase !== 'choose' && RUN.phase !== 'settle') || !q || RUN.battling) return false;
     var found = (RUN.offers || []).filter(function (o) { return o.id === q.id; })[0];
@@ -264,6 +290,10 @@
     // 인계 표 (GAME_PLAN "총괄 제안 묶음" ①): 새 부지로 가져가는 것 · 사라지는 것 (화면 표시용 글)
     rep.carry = ['금 ' + comma(RUN.gold), '보석 ' + comma(RUN.gems), '명성 ' + RUN.fame, '부대장 전원',
       '친위대 몬스터의 레벨 (최대 ' + GUARD_MAX + ')'];
+    var ws = WORKSHOP_DEFS.filter(function (w) { return RUN.workshop[w.id] > 0; }).map(function (w) { return w.name + ' ' + RUN.workshop[w.id] + '단계'; });
+    if (ws.length) rep.carry.push('공방 단계: ' + ws.join(' · '));
+    var tb = Object.keys(RUN.tribes).filter(function (n) { return RUN.tribes[n] > 0; }).map(function (n) { return n + ' +' + RUN.tribes[n]; });
+    if (tb.length) rep.carry.push('몬스터 보석 강화: ' + tb.join(' · '));
     rep.lost = ['이번 던전 시설·배치', '친위대가 아닌 몬스터의 레벨 (처음 값으로)'];
     if (grantLeft() > 0) rep.lost.push('남은 첫 건설 공사비 ' + comma(grantLeft()));
     if (wasMain) { RUN.questsDone = 0; RUN.mainGrade = Math.min(MAIN_GRADES.length - 1, RUN.mainGrade + 1); }
@@ -305,7 +335,7 @@
   function previewBuild(z, k) {
     var f = ZONES.FAC[k];
     if (!f || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) return { ok: false, why: '지을 수 없는 시설' };
-    var cur = RUN.site.zones[z], cost = ZONES.costOf(k, z);
+    var cur = RUN.site.zones[z], bc = buildCostInfo(k, z), cost = bc.cost;
     var zones2 = {}; Object.keys(RUN.site.zones).forEach(function (q) { zones2[q] = RUN.site.zones[q]; });
     zones2[z] = k;
     var units2 = {}; Object.keys(RUN.site.units).forEach(function (q) { units2[q] = RUN.site.units[q].slice(); });
@@ -318,7 +348,7 @@
     var fromGrant = Math.min(grantLeft(), cost), fromGold = cost - fromGrant;
     if (!why && RUN.gold < fromGold) why = '금 ' + (fromGold - RUN.gold) + ' 모자람';
     return {
-      ok: !why, why: why, cost: cost, fromGrant: fromGrant, fromGold: fromGold, counts: cost > 0, goldAfter: RUN.gold - fromGold,
+      ok: !why, why: why, cost: cost, baseCost: bc.base, discount: bc.discount, fromGrant: fromGrant, fromGold: fromGold, counts: cost > 0, goldAfter: RUN.gold - fromGold,
       grantAfter: grantLeft() - fromGrant, valueNow: now.value, valueAfter: after.value,
       back: back, zones: zones2, units: units2, from: cur
     };
@@ -337,6 +367,14 @@
     if (p.fromGold || !p.fromGrant) paid.push('금 -' + p.fromGold);
     return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (' + paid.join(', ') + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' };
   }
+  // 시설 k를 구역 z에 지을 때 실제 비용: base = 원래 비용, discount = 건설 공방 할인 금액(반올림), cost = base - discount
+  // 공사비·금 나눠 내기는 할인된 cost로 한다 (공사비 먼저)
+  function buildCostInfo(k, z) {
+    var base = ZONES.costOf(k, z), rate = workshopEffect('build');
+    var discount = Math.min(base, Math.round(base * rate));
+    return { base: base, discount: discount, cost: base - discount };
+  }
+  function buildCost(k, z) { return buildCostInfo(k, z).cost; }
   // 이 부지에 남은 첫 건설 전용 공사비
   function grantLeft() { return RUN.site && RUN.site.grant > 0 ? RUN.site.grant : 0; }
   // 몬스터 대기실에 몬스터 한 마리 넣기·빼기 (공짜)
@@ -390,6 +428,7 @@
     var v = siteValue(), dlv = dungeonLv(v), base = BD.BASE_LV + dlv + Math.floor(RUN.fame / BD.FAME_PER_LV);
     p.value = v; p.dlv = dlv; p.power = Math.round(enemyPower(v) * 100) / 100;
     p.attr = RUN.quest && RUN.quest.attr ? RUN.quest.attr.id : '';   // 던전 속성 (battle_sim.js가 fx를 더함)
+    p.trapBoost = Math.round(workshopEffect('lab') * 100) / 100;     // 연구실 함정 피해 증가 (battle_sim.js trapRoll)
     p.groups.forEach(function (g) { g.lv = base + BD.GRADE_STAT[g.grade].lvAdd + g.roll; });
     return p;
   }
@@ -516,8 +555,89 @@
       var c2 = ZONES.FAC.trap.perCell * 2, n = Math.floor(net / c2);
       parts.push(n > 0 ? '금 +' + net + '으로 2칸 함정 복도 ' + n + '곳을 지을 수 있어요' : '금 +' + net + ': 조금 더 모으면 함정 복도 (금 ' + c2 + ')');
     } else parts.push(net < 0 ? '금이 ' + (-net) + ' 줄었어요. 대기실 몬스터를 늘려 막아 보세요' : '이번엔 금 수입이 없어요. 함정이나 대기실을 지어 보세요');
-    if (gems > 0) parts.push('보석 ' + gems + '개: ' + BD.GEM_UPGRADE.name + ' (준비 중)');
+    if (gems > 0) parts.push('보석 +' + gems + ' (지금 ' + RUN.gems + '개): 공방이나 몬스터 부족 강화에 쓸 수 있어요');
     return parts.join(' · ');
+  }
+
+  // ---------- 공방 (플레이어 시설, 영구) ----------
+  function workshopDef(id) { for (var i = 0; i < WORKSHOP_DEFS.length; i++) { if (WORKSHOP_DEFS[i].id === id) return WORKSHOP_DEFS[i]; } return null; }
+  // 지금 단계의 효과 수치 (build = 할인율, lab = 함정 피해 증가율). 준비 중이면 0
+  function workshopEffect(id) {
+    var d = workshopDef(id);
+    if (!d || !d.ready || !RUN.workshop) return 0;
+    return d.per * (RUN.workshop[id] || 0);
+  }
+  function pct(x) { return Math.round(x * 100) + '%'; }
+  function workshopEffectText(d, lv) {
+    if (!d.ready) return d.desc;
+    if (d.id === 'build') return lv ? '건설비 -' + pct(d.per * lv) : '건설비 할인 없음';
+    if (d.id === 'lab') return lv ? '함정 피해 +' + pct(d.per * lv) : '함정 피해 증가 없음';
+    return d.desc;
+  }
+  // 강화를 막는 이유 ('' = 가능)
+  function upgradeBlock() { return RUN.battling || battling ? '전투 중에는 강화할 수 없어요' : ''; }
+  function workshopInfo(id) {
+    var d = workshopDef(id);
+    if (!d) return null;
+    var lv = RUN.workshop[id] || 0, top = !d.ready || lv >= d.maxLv;
+    var cost = top ? null : { gems: d.costs[lv] };
+    return {
+      lv: lv, maxLv: d.maxLv, ready: d.ready, effect: workshopEffectText(d, lv),
+      next: top ? null : workshopEffectText(d, lv + 1), cost: cost, canAfford: !!cost && RUN.gems >= cost.gems && !upgradeBlock()
+    };
+  }
+  function upgradeWorkshop(id) {
+    var d = workshopDef(id);
+    if (!d) return { ok: false, msg: '없는 공방이에요' };
+    if (!d.ready) return { ok: false, msg: d.name + '은(는) 아직 준비 중이에요' };
+    var lv = RUN.workshop[id] || 0;
+    if (lv >= d.maxLv) return { ok: false, msg: d.name + '은(는) 최대 단계예요' };
+    var why = upgradeBlock(); if (why) return { ok: false, msg: why };
+    var c = d.costs[lv];
+    if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
+    RUN.gems -= c;
+    RUN.workshop[id] = lv + 1;
+    ensurePlan();   // 연구실 효과를 이번 주 계획에 반영 (전투 중이 아니면)
+    save();
+    return { ok: true, msg: d.name + ' ' + (lv + 1) + '단계 (보석 -' + c + ', ' + workshopEffectText(d, lv + 1) + ')' };
+  }
+
+  // ---------- 몬스터 부족 보석 강화 (영구) ----------
+  function tribeStart(name) { for (var i = 0; i < START_MONSTERS.length; i++) { if (START_MONSTERS[i].name === name) return START_MONSTERS[i]; } return null; }
+  // 한 단계마다 더하는 체력·공격 (처음 값 기준, 반올림, 최소 1)
+  function tribeStep(name) {
+    var s = tribeStart(name);
+    return s ? { hp: Math.max(1, Math.round(s.hp * TRIBE_PER)), atk: Math.max(1, Math.round(s.atk * TRIBE_PER)) } : null;
+  }
+  function tribeCost(lv) { return lv < TRIBE_COSTS.length ? TRIBE_COSTS[lv] : TRIBE_COSTS[TRIBE_COSTS.length - 1] + TRIBE_COST_STEP * (lv - TRIBE_COSTS.length + 1); }
+  function tribeInfo(name) {
+    var st = tribeStep(name);
+    if (!st) return null;
+    var lv = RUN.tribes[name] || 0, c = tribeCost(lv);
+    return {
+      lv: lv,
+      effect: lv ? '기본 체력 +' + st.hp * lv + ' · 공격 +' + st.atk * lv : '보석 강화 없음',
+      next: '기본 체력 +' + st.hp * (lv + 1) + ' · 공격 +' + st.atk * (lv + 1),
+      cost: { gems: c }, canAfford: RUN.gems >= c && !upgradeBlock()
+    };
+  }
+  // 그 부족 몬스터 전원의 기본 능력치(base)와 지금 능력치에 같은 만큼 더한다 -> 친위대가 아니어서 base로 돌아가도 남음
+  function upgradeTribe(name) {
+    var st = tribeStep(name);
+    if (!st) return { ok: false, msg: '없는 몬스터 부족이에요' };
+    var why = upgradeBlock(); if (why) return { ok: false, msg: why };
+    var lv = RUN.tribes[name] || 0, c = tribeCost(lv);
+    if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
+    RUN.gems -= c;
+    RUN.tribes[name] = lv + 1;
+    RUN.monsters.forEach(function (m) {
+      if (m.name !== name) return;
+      m.base.hp += st.hp; m.base.atk += st.atk;
+      m.hp += st.hp; m.atk += st.atk;
+    });
+    ensurePlan();   // 대기실 몬스터 가치가 바뀔 수 있어 계획을 다시 맞춘다
+    save();
+    return { ok: true, msg: name + ' 부족 강화 +' + (lv + 1) + ' (보석 -' + c + ', 체력 +' + st.hp + ' · 공격 +' + st.atk + ')' };
   }
 
   load();
@@ -530,6 +650,8 @@
     siteSummary: siteSummary, siteValue: siteValue, idleMonsters: idleMonsters, previewBuild: previewBuild, buildZone: buildZone,
     placeMonster: placeMonster, removeMonster: removeMonster, forecast: forecast, setBattle: setBattle, monById: monById,
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
+    WORKSHOPS: WORKSHOP_DEFS.map(function (d) { return { id: d.id, name: d.name, desc: d.desc, ready: d.ready, maxLv: d.maxLv }; }),
+    workshopInfo: workshopInfo, upgradeWorkshop: upgradeWorkshop, tribeInfo: tribeInfo, upgradeTribe: upgradeTribe, buildCost: buildCost,
     save: save, load: load, reset: reset
   };
 })();
