@@ -27,6 +27,10 @@
  *     바뀌면 그 묶음을 새로 만든다. 보상 보석은 퀘스트 화면에서 받아 RUN.gems에만 더한다 (의뢰 목표 "전투로 얻은 보석"에는 안 셈). 표 = CHORE_DEFS
  *     방치 보상(RUN.idle = { gold, minutes }, RUN.lastSeen = 마지막 저장 시각 ms): 불러올 때 꺼져 있던 시간(최대 8시간, 10분 이상만)만큼
  *     공방 생산 금을 쌓아 두고 퀘스트 화면에서 받는다(claimIdle). 전투는 방치로 진행하지 않는다. 지금 시각은 now() 한곳 (시험용 setClock)
+ *  7-1) 몬스터 부족(TRIBES: 이름·등급 F~SSR·처음 값). 계약(RUN.contracts = 계약한 부족 이름, 처음 6부족)한 부족만 금으로 모집(recruit, 부족당 RECRUIT_MAX,
+ *     마리 수가 늘수록 비쌈). 새 몬스터는 처음 값 + 그 부족 보석 강화분. 부족 보석 강화도 계약한 부족만. 전투 중에는 모집·뽑기 못 함
+ *  7-2) 광고 보고 뽑기(가짜 광고, RUN.gacha = { key: 날짜 키, used }): 하루 GACHA_PER_DAY회. 등급 확률(GACHA_PCT) -> 그 등급 부족 하나 (rnd).
+ *     계약 안 한 부족이면 계약 + 1마리, 계약한 부족이면 1마리 (상한이면 대신 금). 옛 저장은 contracts = 처음 6부족, gacha = 오늘 0회
  *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
  *  4-1) 부지 모양(RUN.site.board = zones.js 판 id: fork3 세 갈래 · line 외길 · fork2x 이중 갈림길). 의뢰마다 q.board, 받으면 그 판으로 새 부지.
  *     일반 = 판 3종 중 무작위, 메인 = 어려운 판(BOARDS_MAIN) 중. 부지가 바뀌거나 불러올 때 ZONES.useBoard를 부른다(setSite·ensureStateReady). 옛 저장은 fork3
@@ -97,11 +101,32 @@
   // 의뢰인 종류별 요구 후보 (이름 표가 있으면 이름 표가 먼저)
   var DEMAND_BY_KIND = { '마왕': ['trap', 'front', 'value'], '드래곤': ['value', 'den', 'front'], '마계 종족': ['den', 'lure', 'thorn'] };
   var DEMAND_BY_NAME = { '뼈 골짜기 리치': ['trap', 'lure'], '늪지 리자드맨 족장': ['thorn', 'den'], '흡혈귀 백작 가문': ['lure', 'den'] };
-  var START_MONSTERS = [
-    { name: '슬라임',   lv: 4, hp: 120, atk: 8 },  { name: '고블린',   lv: 3, hp: 90,  atk: 14 },
-    { name: '스켈레톤', lv: 5, hp: 140, atk: 16 }, { name: '박쥐 떼',  lv: 2, hp: 60,  atk: 10 },
-    { name: '늑대 사냥개', lv: 3, hp: 110, atk: 18 }, { name: '돌 골렘', lv: 6, hp: 300, atk: 12 }
+  // 몬스터 부족 표 (임시 숫자). grade = 부족 등급(뽑기 확률 단위, TRIBE_GRADES 중). lv·hp·atk = 그 부족 몬스터의 처음 값
+  // 앞 6부족 = 처음 계약(START_CONTRACTS)이고 처음 한 마리씩 갖고 시작. 뒤 3부족 = 뽑기로만 계약 (조금 더 높은 등급)
+  var TRIBE_GRADES = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSR'];
+  var TRIBES = [
+    { name: '슬라임',     grade: 'F', lv: 4, hp: 120, atk: 8,  desc: '말랑하고 질긴 기본 몬스터' },
+    { name: '고블린',     grade: 'E', lv: 3, hp: 90,  atk: 14, desc: '재빠르고 손버릇 나쁜 졸개' },
+    { name: '스켈레톤',   grade: 'D', lv: 5, hp: 140, atk: 16, desc: '쓰러져도 겁먹지 않는 뼈 병사' },
+    { name: '박쥐 떼',    grade: 'F', lv: 2, hp: 60,  atk: 10, desc: '약하지만 시끄럽게 몰려다닌다' },
+    { name: '늑대 사냥개', grade: 'E', lv: 3, hp: 110, atk: 18, desc: '냄새로 침입자를 쫓는 사냥개' },
+    { name: '돌 골렘',    grade: 'D', lv: 6, hp: 300, atk: 12, desc: '느리고 단단한 문지기' },
+    { name: '임프',       grade: 'C', lv: 5, hp: 110, atk: 24, desc: '불장난을 좋아하는 작은 악마' },
+    { name: '가고일',     grade: 'C', lv: 6, hp: 240, atk: 18, desc: '석상인 척 기다리다 덮친다' },
+    { name: '미믹',       grade: 'B', lv: 7, hp: 260, atk: 28, desc: '보물 상자인 척하는 함정 몬스터' }
   ];
+  var START_CONTRACTS = ['슬라임', '고블린', '스켈레톤', '박쥐 떼', '늑대 사냥개', '돌 골렘'];
+  // 금 모집 (임시): 비용 = 반올림(등급 기본값 × (1 + RECRUIT_STEP × 지금 그 부족 마리 수)). 부족당 RECRUIT_MAX마리까지
+  var RECRUIT_BASE = { F: 100, E: 150, D: 200, C: 300, B: 400, A: 600, S: 900, SS: 1300, SSR: 2000 };
+  var RECRUIT_STEP = 0.5, RECRUIT_MAX = 6;
+  // 광고 보고 뽑기 (가짜 광고, 임시): 하루 GACHA_PER_DAY회 (일일 퀘스트와 같은 날짜 키). 등급별 확률 % (합 100).
+  // 부족이 하나도 없는 등급은 빼고 남은 등급끼리 비율대로 다시 나눈다 (gachaRates: 0.1% 단위, 합 정확히 100)
+  // 이미 계약한 부족이 상한이면 대신 금 = RECRUIT_BASE[등급] × GACHA_REFUND_MUL
+  var GACHA_PER_DAY = 3;
+  var GACHA_PCT = { F: 40, E: 28, D: 16, C: 9, B: 4, A: 1.5, S: 1, SS: 0.4, SSR: 0.1 };
+  var GACHA_REFUND_MUL = 1;
+  var START_MONSTERS = START_CONTRACTS.map(function (n) { return tribeDef(n); });
+  function tribeDef(name) { for (var i = 0; i < TRIBES.length; i++) { if (TRIBES[i].name === name) return TRIBES[i]; } return null; }
   function levelNeed(lv) { return 4 + lv * 2; } // 경험치 몇이면 레벨업 (임시)
 
   // 공방 (플레이어 시설, 영구). costs[i] = i단계 -> i+1단계 보석 (임시). per = 단계마다 효과 (임시)
@@ -113,7 +138,7 @@
     { id: 'lab',   name: '연구실',   desc: '함정 연구: 함정 피해 증가', ready: true, maxLv: 3, per: 0.15, costs: [3, 6, 10] },
     { id: 'craft', name: '제작 공방', desc: '장비·인챈트 제작 (준비 중)', ready: false, maxLv: 3, per: 0, costs: [] }
   ];
-  // 몬스터 부족 보석 강화 (영구, 상한 없음): 단계마다 처음 값(START_MONSTERS)의 체력·공격 × TRIBE_PER (반올림, 최소 1)을 기본 능력치에 더함
+  // 몬스터 부족 보석 강화 (영구, 상한 없음, 계약한 부족만): 단계마다 처음 값(TRIBES)의 체력·공격 × TRIBE_PER (반올림, 최소 1)을 기본 능력치에 더함
   // 비용 = TRIBE_COSTS[단계], 표를 넘으면 마지막 값 + TRIBE_COST_STEP × 넘은 단계 (임시)
   var TRIBE_PER = 0.10, TRIBE_COSTS = [3, 6, 10], TRIBE_COST_STEP = 5;
   // 일일·주간 퀘스트 (임시 숫자). ev = 진행을 올리는 일: battle 전투 · build 금/공사비를 쓴 건설 · upgrade 공방/부족 강화 성공 · deliver 납품 · defend 보물방 방어
@@ -162,7 +187,7 @@
       site: freshSite(),
       monsters: monsters, guards: [],
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
-      prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {},
+      prefs: freshPrefs(), workshop: freshWorkshop(), tribes: {}, contracts: START_CONTRACTS.slice(), gacha: freshGacha(),
       chores: freshChores(), idle: freshIdle(), lastSeen: now(),
       tutorial: { on: true, seen: {} }
     };
@@ -186,6 +211,8 @@
   }
   function freshChores() { var t = now(); return { daily: freshChoreScope('daily', t), weekly: freshChoreScope('weekly', t) }; }
   function freshIdle() { return { gold: 0, minutes: 0 }; }
+  // 광고 뽑기 칸: key = 날짜 키(일일 퀘스트와 같은 dayKey), used = 그날 뽑은 횟수
+  function freshGacha() { return { key: dayKey(now()), used: 0 }; }
   // 공방 단계 (영구). 정의 표(WORKSHOP_DEFS)의 id마다 0단계부터
   function freshWorkshop() { var w = {}; WORKSHOP_DEFS.forEach(function (d) { w[d.id] = 0; }); return w; }
   // 설정 칸 (전투가 끝나도 남음): 마지막으로 고른 배속(BD.SPEEDS 번호)과 배속 때 그 전투에 나올 카드 수(0~카드 지점 수). 처음 기본 = 1배속, 카드 1장
@@ -211,6 +238,13 @@
     });
     if (!RUN.tribes || typeof RUN.tribes !== 'object' || Array.isArray(RUN.tribes)) RUN.tribes = {};
     Object.keys(RUN.tribes).forEach(function (k) { var v = RUN.tribes[k]; RUN.tribes[k] = typeof v === 'number' && v > 0 ? v | 0 : 0; });
+    // 계약·광고 뽑기: 없으면(옛 저장) 처음 6부족·오늘 0회. 표에 없는 이름·중복은 빼고, 가진 몬스터의 부족은 계약으로 넣는다
+    var ct = Array.isArray(RUN.contracts) ? RUN.contracts : START_CONTRACTS.slice(), cs = [];
+    ct.concat((RUN.monsters || []).map(function (m) { return m && m.name; })).forEach(function (n) { if (tribeDef(n) && cs.indexOf(n) < 0) cs.push(n); });
+    RUN.contracts = cs;
+    var ga = RUN.gacha;
+    if (!ga || typeof ga !== 'object' || typeof ga.key !== 'string') RUN.gacha = freshGacha();
+    else ga.used = typeof ga.used === 'number' ? Math.max(0, Math.min(GACHA_PER_DAY, ga.used | 0)) : 0;
     // 일일·주간 퀘스트·방치 보상: 없으면 기본값. 퀘스트 칸은 표(CHORE_DEFS) 순서로 다시 맞춘다 (진행·받음은 id로 옮김)
     if (!RUN.chores || typeof RUN.chores !== 'object') RUN.chores = freshChores();
     ['daily', 'weekly'].forEach(function (sc) {
@@ -487,6 +521,7 @@
     if (ws.length) rep.carry.push('공방 단계: ' + ws.join(' · '));
     var tb = Object.keys(RUN.tribes).filter(function (n) { return RUN.tribes[n] > 0; }).map(function (n) { return n + ' +' + RUN.tribes[n]; });
     if (tb.length) rep.carry.push('몬스터 보석 강화: ' + tb.join(' · '));
+    if (RUN.contracts.length > START_CONTRACTS.length) rep.carry.push('계약한 몬스터 부족 ' + RUN.contracts.length + '종 (처음 ' + START_CONTRACTS.length + '종)');
     rep.lost = ['이번 던전 시설·배치', '친위대가 아닌 몬스터의 레벨 (처음 값으로)'];
     if (grantLeft() > 0) rep.lost.push('남은 첫 건설 공사비 ' + comma(grantLeft()));
     if (wasMain) { RUN.questsDone = 0; RUN.mainGrade = Math.min(MAIN_GRADES.length - 1, RUN.mainGrade + 1); }
@@ -799,10 +834,10 @@
   }
 
   // ---------- 몬스터 부족 보석 강화 (영구) ----------
-  function tribeStart(name) { for (var i = 0; i < START_MONSTERS.length; i++) { if (START_MONSTERS[i].name === name) return START_MONSTERS[i]; } return null; }
+  function isContracted(name) { return RUN.contracts.indexOf(name) >= 0; }
   // 한 단계마다 더하는 체력·공격 (처음 값 기준, 반올림, 최소 1)
   function tribeStep(name) {
-    var s = tribeStart(name);
+    var s = tribeDef(name);
     return s ? { hp: Math.max(1, Math.round(s.hp * TRIBE_PER)), atk: Math.max(1, Math.round(s.atk * TRIBE_PER)) } : null;
   }
   function tribeCost(lv) { return lv < TRIBE_COSTS.length ? TRIBE_COSTS[lv] : TRIBE_COSTS[TRIBE_COSTS.length - 1] + TRIBE_COST_STEP * (lv - TRIBE_COSTS.length + 1); }
@@ -814,13 +849,14 @@
       lv: lv,
       effect: lv ? '기본 체력 +' + st.hp * lv + ' · 공격 +' + st.atk * lv : '보석 강화 없음',
       next: '기본 체력 +' + st.hp * (lv + 1) + ' · 공격 +' + st.atk * (lv + 1),
-      cost: { gems: c }, canAfford: RUN.gems >= c && !upgradeBlock()
+      cost: { gems: c }, canAfford: RUN.gems >= c && !upgradeBlock() && isContracted(name), contracted: isContracted(name)
     };
   }
   // 그 부족 몬스터 전원의 기본 능력치(base)와 지금 능력치에 같은 만큼 더한다 -> 친위대가 아니어서 base로 돌아가도 남음
   function upgradeTribe(name) {
     var st = tribeStep(name);
     if (!st) return { ok: false, msg: '없는 몬스터 부족이에요' };
+    if (!isContracted(name)) return { ok: false, msg: name + ' 부족과 아직 계약하지 않았어요' };
     var why = upgradeBlock(); if (why) return { ok: false, msg: why };
     var lv = RUN.tribes[name] || 0, c = tribeCost(lv);
     if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
@@ -835,6 +871,87 @@
     ensurePlan();   // 대기실 몬스터 가치가 바뀔 수 있어 계획을 다시 맞춘다
     save();
     return { ok: true, msg: name + ' 부족 강화 +' + (lv + 1) + ' (보석 -' + c + ', 체력 +' + st.hp + ' · 공격 +' + st.atk + ')' };
+  }
+
+  // ---------- 몬스터 모집 (금) · 광고 보고 뽑기 (가짜 광고) ----------
+  function tribeCount(name) { return RUN.monsters.filter(function (m) { return m.name === name; }).length; }
+  // 새 몬스터 한 마리: 고유 id(지금 최대 + 1), 그 부족 처음 값 + 부족 보석 강화 단계만큼 (base에도 넣어 인계 뒤에도 남음). 대기 중으로 들어온다
+  function addMonster(name) {
+    var t = tribeDef(name), st = tribeStep(name), up = RUN.tribes[name] || 0, id = -1;
+    RUN.monsters.forEach(function (m) { if (m.id > id) id = m.id; });
+    var hp = t.hp + st.hp * up, atk = t.atk + st.atk * up;
+    var m = { id: id + 1, name: name, lv: t.lv, exp: 0, hp: hp, atk: atk, base: { lv: t.lv, hp: hp, atk: atk } };
+    RUN.monsters.push(m);
+    return m;
+  }
+  function recruitCost(name) { var t = tribeDef(name); return Math.round(RECRUIT_BASE[t.grade] * (1 + RECRUIT_STEP * tribeCount(name))); }
+  function recruitInfo(name) {
+    var t = tribeDef(name);
+    if (!t) return null;
+    var count = tribeCount(name), cost = { gold: recruitCost(name) }, why = upgradeBlock() ? '전투 중에는 모집할 수 없어요' : '';
+    if (!why && !isContracted(name)) why = name + ' 부족과 아직 계약하지 않았어요';
+    if (!why && count >= RECRUIT_MAX) why = '이 부족은 ' + RECRUIT_MAX + '마리까지예요';
+    if (!why && RUN.gold < cost.gold) why = '금 ' + comma(cost.gold - RUN.gold) + ' 모자람';
+    return { contracted: isContracted(name), count: count, max: RECRUIT_MAX, cost: cost, canAfford: !why, why: why };
+  }
+  function recruit(name) {
+    var inf = recruitInfo(name);
+    if (!inf) return { ok: false, msg: '없는 몬스터 부족이에요', monster: null };
+    if (!inf.canAfford) return { ok: false, msg: inf.why, monster: null };
+    RUN.gold -= inf.cost.gold;      // 쓴 금은 환불 없음
+    var m = addMonster(name);
+    save();
+    return { ok: true, msg: name + ' 모집 (금 -' + comma(inf.cost.gold) + ', ' + (inf.count + 1) + '/' + RECRUIT_MAX + '마리)', monster: m };
+  }
+  // 오늘 날짜 키가 바뀌었으면 횟수 초기화. 바뀌었으면 true
+  function gachaRoll() {
+    var k = dayKey(now());
+    if (RUN.gacha.key === k) return false;
+    RUN.gacha = { key: k, used: 0 };
+    return true;
+  }
+  // 뽑기 확률: 부족이 있는 등급만, GACHA_PCT 비율로 다시 나눠 0.1% 단위(정수 tenths)로. 반올림 남는 몫은 큰 나머지부터 -> 합 1000
+  function gachaRates() {
+    var gs = TRIBE_GRADES.filter(function (g) { return TRIBES.some(function (t) { return t.grade === g; }); });
+    var sum = 0; gs.forEach(function (g) { sum += GACHA_PCT[g]; });
+    var rows = gs.map(function (g) { var x = GACHA_PCT[g] * 1000 / sum; return { grade: g, t: Math.floor(x), r: x - Math.floor(x) }; });
+    var left = 1000; rows.forEach(function (o) { left -= o.t; });
+    rows.slice().sort(function (a, b) { return b.r - a.r; }).slice(0, left).forEach(function (o) { o.t++; });
+    return rows.map(function (o) { return { grade: o.grade, tenths: o.t }; });
+  }
+  function gachaInfo() {
+    if (gachaRoll()) save();
+    return {
+      left: Math.max(0, GACHA_PER_DAY - RUN.gacha.used), perDay: GACHA_PER_DAY, resetIn: choreResetIn('daily', now()),
+      rates: gachaRates().map(function (o) { return { grade: o.grade, pct: o.tenths / 10 }; }),
+      pool: TRIBES.map(function (t) { return { name: t.name, grade: t.grade, contracted: isContracted(t.name) }; })
+    };
+  }
+  // 한 번 뽑기 (광고는 가짜: 누르면 바로 본 것으로). 등급 -> 그 등급 부족 중 하나 (모두 시드 무작위 rnd)
+  function gachaPull() {
+    if (gachaRoll()) save();
+    if (upgradeBlock()) return { ok: false, msg: '전투 중에는 뽑을 수 없어요', result: null };
+    if (RUN.gacha.used >= GACHA_PER_DAY) return { ok: false, msg: '오늘 광고 뽑기를 다 했어요 (하루 ' + GACHA_PER_DAY + '번)', result: null };
+    var rates = gachaRates(), x = rint(1000), grade = rates[rates.length - 1].grade;
+    for (var i = 0; i < rates.length; i++) { if (x < rates[i].tenths) { grade = rates[i].grade; break; } x -= rates[i].tenths; }
+    var pool = TRIBES.filter(function (t) { return t.grade === grade; }), t = pool[rint(pool.length)];
+    var res = { name: t.name, grade: grade, isNewContract: false, monster: null, refund: null }, msg;
+    RUN.gacha.used++;
+    if (!isContracted(t.name)) {
+      RUN.contracts.push(t.name);
+      res.isNewContract = true;
+      res.monster = addMonster(t.name);
+      msg = '새 계약! ' + grade + '급 ' + t.name + ' 부족과 계약하고 1마리가 들어왔어요';
+    } else if (tribeCount(t.name) < RECRUIT_MAX) {
+      res.monster = addMonster(t.name);
+      msg = grade + '급 ' + t.name + ' 1마리가 들어왔어요';
+    } else {
+      res.refund = { gold: Math.round(RECRUIT_BASE[grade] * GACHA_REFUND_MUL) };
+      RUN.gold += res.refund.gold;
+      msg = grade + '급 ' + t.name + ': 이미 ' + RECRUIT_MAX + '마리라 대신 금 +' + comma(res.refund.gold);
+    }
+    save();
+    return { ok: true, msg: msg, result: res };
   }
 
   // ---------- 일일·주간 퀘스트 ----------
@@ -934,6 +1051,8 @@
     offerQuests: offerQuests, pickQuest: pickQuest, demandStatus: demandStatus, questBlockers: questBlockers, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
     WORKSHOPS: WORKSHOP_DEFS.map(function (d) { return { id: d.id, name: d.name, desc: d.desc, ready: d.ready, maxLv: d.maxLv }; }),
     workshopInfo: workshopInfo, upgradeWorkshop: upgradeWorkshop, tribeInfo: tribeInfo, upgradeTribe: upgradeTribe, buildCost: buildCost,
+    TRIBES: TRIBES.map(function (t) { return { name: t.name, grade: t.grade, lv: t.lv, hp: t.hp, atk: t.atk, desc: t.desc }; }), TRIBE_GRADES: TRIBE_GRADES.slice(),
+    recruitInfo: recruitInfo, recruit: recruit, gachaInfo: gachaInfo, gachaPull: gachaPull,
     tutorial: tutorial, tutorialSeen: tutorialSeen, skipTutorial: skipTutorial, tutorialPath: tutorialPath,
     chores: chores, claimChore: claimChore, choresClaimable: choresClaimable, idleInfo: idleInfo, claimIdle: claimIdle, setClock: setClock,
     save: save, load: load, reset: reset

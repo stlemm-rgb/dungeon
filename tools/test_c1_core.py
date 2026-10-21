@@ -4,6 +4,7 @@
 튜토리얼 = 새 게임 on·후보 1장(방어 2)·첫 부지 입구 고정·한 길·함정 발동·seen 저장·skip·첫 납품 뒤 off·옛 저장 off.
 부지 모양 3종 = 판마다 입구->보스 길 이어짐·문 맞닿음·forecast 합·useBoard로 Z.MAP 바뀜·부지 바뀔 때·불러올 때 판 유지·옛 저장 fork3.
 건설 요구 = 종류마다 ok/미달·목표 다 채워도 요구 미달이면 납품 안 됨(questBlockers)·맞추면 납품·튜토리얼 요구 없음·옛 저장 null.
+몬스터 모집·광고 뽑기 = 계약 부족만 모집·비용 차감·증가·상한·부족 강화가 새 몬스터에·전투 중 거부·하루 3회·날 바뀌면 초기화·새 부족 계약·상한이면 금·확률 합 100·같은 시드 같은 결과·대기실·전투·인계·옛 저장.
 (앞쪽 흐름 시험은 pin()으로 의뢰를 fork3 판·요구 없음으로 고정해 예전 구역 id를 그대로 쓴다)
 
 화면 없이 prototype/c1_shell의 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다.
@@ -577,7 +578,143 @@ let boardSample = null, demandSample = null;
   PP.pickQuest(tq);
   ok(RR.site.board === 'fork3' && WW.ZONES.boardId() === 'fork3' && RR.site.zones.E === 'wait' && PP.demandStatus() === null, '튜토리얼 부지 fork3 입구 대기');
 }
-console.log(JSON.stringify({ problems, sample: { boards: boardSample, demand: demandSample, tutorial: tutSample, carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
+// ---------- 몬스터 모집(금) · 광고 보고 뽑기 ----------
+let recruitSample = null, gachaSample = null;
+{
+  const T0 = new Date(2026, 9, 21, 12, 0).getTime();
+  FAKE_NOW = T0;
+  let WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset(); PP.skipTutorial();
+  let T = T0; PP.setClock(() => T);
+  const G = PP.TRIBE_GRADES, gi = g => G.indexOf(g);
+  ok(G.join() === 'F,E,D,C,B,A,S,SS,SSR', '등급 목록');
+  ok(PP.TRIBES.length === 9 && PP.TRIBES.every(t => t.name && G.includes(t.grade) && t.lv > 0 && t.hp > 0 && t.atk > 0 && t.desc), 'TRIBES 모양');
+  const start = PP.TRIBES.slice(0, 6), extra = PP.TRIBES.slice(6);
+  ok(JSON.stringify(RR.contracts) === JSON.stringify(start.map(t => t.name)), '처음 계약 6부족: ' + JSON.stringify(RR.contracts));
+  ok(extra.map(t => t.name).sort().join() === ['가고일', '미믹', '임프'].sort().join(), '새 부족 3');
+  ok(Math.min(...extra.map(t => gi(t.grade))) > Math.max(...start.map(t => gi(t.grade))), '새 부족이 더 높은 등급');
+  ok(RR.monsters.length === 6 && RR.monsters.every((m, i) => m.name === start[i].name && m.hp === start[i].hp), '처음 몬스터 = 처음 6부족');
+  PP.pickQuest(pin(PP.offerQuests()[0]));
+  // 계약 안 한 부족은 모집 불가
+  RR.gold = 100000;
+  let ri = PP.recruitInfo('미믹');
+  ok(ri && ri.contracted === false && ri.canAfford === false && ri.why && ri.count === 0 && ri.max === 6, '미계약 정보: ' + JSON.stringify(ri));
+  let r = PP.recruit('미믹');
+  ok(!r.ok && r.monster === null && RR.gold === 100000 && RR.monsters.length === 6, '미계약 모집 거부');
+  ok(PP.recruitInfo('없는몬스터') === null && !PP.recruit('없는몬스터').ok, '없는 부족');
+  ok(!PP.upgradeTribe('미믹').ok && !RR.tribes['미믹'] && PP.tribeInfo('미믹').canAfford === false, '미계약 부족 강화 거부');
+  // 비용 차감·증가, id, 상한
+  ri = PP.recruitInfo('슬라임');
+  ok(ri.contracted && ri.count === 1 && ri.canAfford && ri.why === '' && ri.cost.gold > 0, '슬라임 정보: ' + JSON.stringify(ri));
+  const costs = [];
+  for (let i = 0; i < 5; i++) {
+    const c = PP.recruitInfo('슬라임').cost.gold, g0 = RR.gold; costs.push(c);
+    r = PP.recruit('슬라임');
+    ok(r.ok && RR.gold === g0 - c && r.monster && r.monster.id === 6 + i && r.monster.name === '슬라임', '모집 ' + (i + 1) + ': ' + JSON.stringify(r));
+  }
+  ok(costs.every((c, i) => i === 0 || c > costs[i - 1]), '비용 증가: ' + costs);
+  ri = PP.recruitInfo('슬라임');
+  ok(ri.count === 6 && !ri.canAfford && ri.why, '상한 정보');
+  let g1 = RR.gold; r = PP.recruit('슬라임');
+  ok(!r.ok && RR.gold === g1 && RR.monsters.filter(m => m.name === '슬라임').length === 6, '상한 거부');
+  RR.gold = 10; ri = PP.recruitInfo('고블린');
+  ok(!ri.canAfford && ri.why.indexOf('모자람') >= 0 && !PP.recruit('고블린').ok, '금 모자람');
+  RR.gold = 100000;
+  // 부족 보석 강화가 새 몬스터에도
+  RR.gems = 100;
+  PP.upgradeTribe('고블린'); PP.upgradeTribe('고블린');
+  const gob = PP.recruit('고블린').monster;
+  ok(gob.base.hp === 90 + 9 * 2 && gob.hp === gob.base.hp && gob.atk === 14 + 1 * 2 && gob.base.atk === gob.atk && gob.lv === 3 && gob.exp === 0, '강화가 새 몬스터에: ' + JSON.stringify(gob));
+  recruitSample = { info: PP.recruitInfo('고블린'), slimeCosts: costs };
+  // 새 몬스터를 대기실에 배치 -> 전투 -> 전투 중 모집·뽑기 거부
+  PP.buildZone('CB', 'trap'); PP.buildZone('LB', 'den');
+  ok(PP.idleMonsters().some(m => m.id === gob.id), '새 몬스터는 대기 중');
+  ok(PP.placeMonster('LB', gob.id).ok && RR.site.units.LB.includes(gob.id), '새 몬스터 배치');
+  ok(PP.startBattle().ok, '모집 전투 시작');
+  const n0 = RR.monsters.length, gu = RR.gacha.used;
+  ok(!PP.recruit('고블린').ok && !PP.recruitInfo('고블린').canAfford && RR.monsters.length === n0, '전투 중 모집 거부');
+  ok(!PP.gachaPull().ok && RR.gacha.used === gu, '전투 중 뽑기 거부');
+  const o = { plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById };
+  let SS = WW.BSIM.create(o);
+  ok(SS.dens.LB && SS.dens.LB.some(u => u.hp === gob.hp && u.atk === gob.atk), '전투에 새 몬스터');
+  for (let i = 0; i < 3000 && !SS.done; i++) WW.BSIM.step(SS, 0.1);
+  PP.applyBattle(WW.BSIM.result(SS));
+  ok(RR.battling === false, '전투 끝');
+  // 인계: 레벨업분만 사라지고 강화분 남음
+  gob.lv = 9; gob.hp += 300; gob.atk += 5; gob.exp = 2;
+  // 뽑기: 하루 3회
+  let gin = PP.gachaInfo();
+  ok(gin.left === 3 && gin.perDay === 3 && gin.pool.length === 9 && gin.pool.filter(p => p.contracted).length === 6, '뽑기 정보: ' + JSON.stringify([gin.left, gin.pool.length]));
+  const sumPct = gin.rates.reduce((a, x) => a + Math.round(x.pct * 10), 0);
+  ok(sumPct === 1000, '확률 합 100: ' + JSON.stringify(gin.rates));
+  ok(gin.rates.every(x => x.pct > 0 && PP.TRIBES.some(t => t.grade === x.grade)), '부족 있는 등급만');
+  ok(gin.rates.map(x => gi(x.grade)).every((v, i, a) => i === 0 || v > a[i - 1]), '확률 표 등급 순');
+  for (let i = 0; i < 3; i++) {
+    const n1 = RR.monsters.length; r = PP.gachaPull();
+    ok(r.ok && r.result && PP.TRIBES.some(t => t.name === r.result.name && t.grade === r.result.grade), '뽑기 ' + (i + 1) + ': ' + JSON.stringify(r));
+    ok(r.result.monster ? RR.monsters.length === n1 + 1 && r.result.monster.name === r.result.name : r.result.refund && r.result.refund.gold > 0, '뽑기 결과 반영');
+  }
+  ok(PP.gachaInfo().left === 0 && !PP.gachaPull().ok, '4번째 거부');
+  T += 12 * 3600000;   // 다음 날 0시
+  ok(PP.gachaInfo().left === 3 && RR.gacha.key === '2026-10-22', '날 바뀌면 초기화');
+  // 같은 시드 = 같은 결과 (저장 뒤 두 번 불러와 같은 뽑기)
+  PP.save();
+  const snap = store['dunguen_c1_run'], outs = [];
+  for (let k = 0; k < 2; k++) {
+    store['dunguen_c1_run'] = snap; FAKE_NOW = T;
+    const W2 = boot(), P2 = W2.PROGRESS; P2.setClock(() => T);
+    outs.push(JSON.stringify([P2.gachaPull().result, P2.gachaPull().result, P2.RUN.seed]));
+  }
+  ok(outs[0] === outs[1], '같은 시드 같은 결과: ' + outs.join(' | '));
+  store['dunguen_c1_run'] = snap;
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN; PP.setClock(() => T);
+  // 새 부족 계약: 날마다 뽑아 새 부족이 나올 때까지
+  let newRes = null, refundRes = null, grades = {};
+  for (let k = 0; k < 400 && !newRes; k++) {
+    RR.gacha.used = 0;
+    const before = RR.contracts.slice(), n1 = RR.monsters.length;
+    r = PP.gachaPull(); grades[r.result.grade] = (grades[r.result.grade] || 0) + 1;
+    if (r.result.isNewContract) {
+      newRes = r.result;
+      ok(before.indexOf(r.result.name) < 0 && RR.contracts.includes(r.result.name) && RR.contracts.length === before.length + 1, '새 부족 계약');
+      ok(r.result.monster && RR.monsters.length === n1 + 1 && r.result.monster.name === r.result.name && r.result.monster.id === Math.max(...RR.monsters.map(m => m.id)), '계약 + 1마리');
+      ok(PP.recruitInfo(r.result.name).contracted && PP.recruitInfo(r.result.name).count === 1, '계약 뒤 모집 가능');
+    } else ok(!r.result.isNewContract && before.includes(r.result.name), '이미 계약한 부족');
+  }
+  ok(newRes, '새 부족 계약이 나옴: ' + JSON.stringify(grades));
+  // 상한이면 대체 보상: 모든 부족 계약 + 6마리
+  RR.contracts = PP.TRIBES.map(t => t.name); RR.gold = 1e9;
+  PP.TRIBES.forEach(t => { while (PP.recruit(t.name).ok); });
+  ok(PP.TRIBES.every(t => PP.recruitInfo(t.name).count === 6), '전 부족 6마리');
+  for (let k = 0; k < 5; k++) {
+    RR.gacha.used = 0; const g0 = RR.gold, n1 = RR.monsters.length;
+    r = PP.gachaPull();
+    ok(r.ok && r.result.monster === null && r.result.refund && r.result.refund.gold > 0 && RR.gold === g0 + r.result.refund.gold && RR.monsters.length === n1 && !r.result.isNewContract, '상한이면 금: ' + JSON.stringify(r.result));
+    refundRes = r;
+  }
+  gachaSample = { rates: gin.rates, newContract: newRes && { name: newRes.name, grade: newRes.grade }, refund: refundRes.msg, counts: grades };
+  // 납품 -> 인계: 새 몬스터(친위대 아님) 레벨 초기화, 강화분 남음, carry에 계약 수
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; }); RR.quest.demand = null;
+  const dd = PP.deliver();
+  ok(dd && dd.carry.some(s => s.indexOf('계약한 몬스터 부족 9') >= 0), 'carry 계약 수: ' + JSON.stringify(dd.carry));
+  ok(PP.pickQuest(pin(RR.offers[0]), []) === true, '인계');
+  const g2 = PP.monById(gob.id);
+  ok(g2.lv === 3 && g2.exp === 0 && g2.hp === 108 && g2.atk === 16, '새 몬스터 인계 초기화(강화분 남음): ' + JSON.stringify(g2));
+  ok(RR.contracts.length === 9, '계약은 인계 뒤에도');
+  // 옛 저장: contracts·gacha 없음 -> 처음 6부족(+ 가진 몬스터의 부족)·오늘 0회. 깨진 값도
+  const sv = JSON.parse(store['dunguen_c1_run']); delete sv.contracts; delete sv.gacha;
+  sv.monsters = sv.monsters.filter(m => !['임프', '가고일', '미믹'].includes(m.name));
+  store['dunguen_c1_run'] = JSON.stringify(sv);
+  WW = boot(); PP = WW.PROGRESS;
+  ok(PP.load() === true && JSON.stringify(PP.RUN.contracts) === JSON.stringify(start.map(t => t.name)) && PP.RUN.gacha.used === 0 && typeof PP.RUN.gacha.key === 'string' && PP.gachaInfo().left === 3, '옛 저장 contracts·gacha 기본값');
+  ok(!PP.recruitInfo('미믹').contracted, '옛 저장 미믹 미계약');
+  const sv2 = JSON.parse(store['dunguen_c1_run']); sv2.contracts = ['슬라임', '없는것', '슬라임']; sv2.gacha = { key: sv2.gacha.key, used: 99 };
+  sv2.monsters.push({ id: 999, name: '임프', lv: 5, exp: 0, hp: 110, atk: 24, base: { lv: 5, hp: 110, atk: 24 } });
+  store['dunguen_c1_run'] = JSON.stringify(sv2);
+  WW = boot(); PP = WW.PROGRESS;
+  ok(PP.load() === true && PP.RUN.contracts.filter(n => n === '슬라임').length === 1 && !PP.RUN.contracts.includes('없는것') && PP.RUN.contracts.includes('임프') && PP.RUN.gacha.used === 3, '깨진 contracts·gacha 고침: ' + JSON.stringify([PP.RUN.contracts, PP.RUN.gacha]));
+  FAKE_NOW = null;
+}
+console.log(JSON.stringify({ problems, sample: { recruit: recruitSample, gacha: gachaSample, boards: boardSample, demand: demandSample, tutorial: tutSample, carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
 """
 
 
@@ -606,7 +743,7 @@ def main():
         for p in r["problems"]:
             print("  - " + p)
         return 1
-    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상 -> 튜토리얼 첫 부지 -> 부지 모양 3종 -> 건설 요구")
+    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상 -> 튜토리얼 첫 부지 -> 부지 모양 3종 -> 건설 요구 -> 몬스터 모집·광고 뽑기")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 
