@@ -709,3 +709,27 @@ body.reduce .gflip { animation: none; transform: rotateY(0); }
 body.reduce .gsheen, body.reduce .gp { display: none; }
 body.reduce .gwrap .gfront, body.reduce .gnew { animation: none; }
 .popbg.gres .btn { max-width: 280px; }
+
+/* ---- 부대 탭 몬스터 묶음(부족별) · 건설 시트 대기 몬스터 묶음 ---- */
+.tgbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tgbar .btn.small { flex: none; padding: 6px 10px; font-size: 12px; }
+.tgroup { padding: 0; overflow: hidden; }
+.tghead { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 10px 12px; border: 0; background: none; text-align: left; }
+.tghead .tgname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.tghead .tgn { flex: none; color: var(--accent); font-weight: bold; }
+.tghead .chip { flex: none; }
+.tgarrow { flex: none; font-style: normal; color: var(--dim); transition: transform var(--dur-tap); }
+.tgroup.open .tgarrow { transform: rotate(180deg); }
+.tgroup.open { border-color: var(--line-strong); }
+.tgroup .tribe { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--line); }
+.tgbody { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; border-top: 1px solid var(--line); background: var(--bg); }
+.mcard { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); min-width: 0; }
+.mcard .portrait { width: 40px; height: 40px; }
+.mcard .info { flex: 1; min-width: 0; }
+.mcard .mtop { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.mcard .nums { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--dim); }
+.zsheet .lblrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.zsheet .lblrow span { min-width: 0; }
+.zsheet .linkbtn { flex: none; padding: 3px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: none; color: var(--dim); font-size: 11px; }
+.zsheet .zsub { font-size: 11px; color: var(--dim); margin: 6px 0 3px; }
+.zslots button.grp small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

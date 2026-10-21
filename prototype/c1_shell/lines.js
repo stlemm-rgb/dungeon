@@ -82,6 +82,13 @@ window.LINES = {
     adWatching: `광고 시청 중…`,
     adFake: `가짜 광고예요. 출시 때 진짜 광고가 연결돼요.`,
     newContract: `새 계약!`,
-    gachaSoldOut: `오늘 뽑기를 다 썼어요`
+    gachaSoldOut: `오늘 뽑기를 다 썼어요`,
+    // 부대 탭 몬스터 묶음 / 건설 시트 대기 몬스터 고르기
+    unitsOpenAll: `모두 펼치기`,
+    unitsCloseAll: `모두 접기`,
+    idleLabelGroup: `대기 몬스터 — 가장 높은 레벨부터 들어가요`,
+    idleLabelEach: `대기 몬스터 — 하나씩 골라요`,
+    idleModeEach: `하나씩 보기`,
+    idleModeGroup: `묶어서 보기`
   }
 };

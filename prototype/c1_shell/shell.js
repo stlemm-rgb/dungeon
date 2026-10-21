@@ -585,6 +585,18 @@
     buzz('warn'); return null;
   }
 
+  // 부대 탭 몬스터 묶음: 부족마다 한 묶음 (처음엔 접힘, 펼친 상태는 화면을 떠났다 와도 기억)
+  var unitsOpen = {};
+  function tribeOrder(name) { var T = P.TRIBES || []; for (var i = 0; i < T.length; i++) if (T[i].name === name) return i; return 999; }
+  function tribeGradeOf(name) { var T = P.TRIBES || []; for (var i = 0; i < T.length; i++) if (T[i].name === name) return T[i].grade; return ''; }
+  // 몬스터를 부족별로 묶어 돌려줌: [{ name, list(id 순) }] (부족 표 순서, 표에 없는 이름은 뒤에)
+  function tribeGroups(mons) {
+    var by = {}, names = [];
+    mons.forEach(function (m) { if (!by[m.name]) { by[m.name] = []; names.push(m.name); } by[m.name].push(m); });
+    names.sort(function (a, b) { return tribeOrder(a) - tribeOrder(b); });
+    return names.map(function (n) { return { name: n, list: by[n] }; });
+  }
+
   SCREENS.units = function (el) {
     el.appendChild(head('부대'));
     var tab = 'mon';
@@ -592,15 +604,31 @@
     var listEl = div('', '');
     listEl.style.cssText = 'display:flex;flex-direction:column;gap:8px';
     var hasTribe = !!(P.tribeInfo && P.upgradeTribe);
-    // 몬스터 부족 보석 강화 줄 (같은 이름의 몬스터는 한 부족이라 강화가 같이 오른다. 같은 부족이 여러 마리여도 첫 카드에만 한 번 보임)
-    function tribeHtml(m) {
+    // 몬스터 부족 보석 강화 줄 (부족당 한 번, 묶음 머리 아래). 효과 글은 펼쳤을 때만
+    function tribeHtml(name, open) {
       if (!hasTribe) return '';
-      var t = P.tribeInfo(m.name);
+      var t = P.tribeInfo(name);
       if (!t) return '';
-      var btn = t.contracted === false ? '<button class="btn small upbtn" disabled>계약 필요</button>' : upBtn(t, 'uptribe', m.name);
+      var btn = t.contracted === false ? '<button class="btn small upbtn" disabled>계약 필요</button>' : upBtn(t, 'uptribe', name);
       return '<div class="tribe"><div class="tribehead"><b>보석 강화 Lv ' + (t.lv || 0) + '</b>' + btn + '</div>' +
-        '<div class="small-text">지금 ' + (t.effect || '없음') + '</div>' +
-        '<div class="small-text dim">다음 ' + (t.next != null ? t.next : '최대 단계예요') + '</div></div>';
+        (open ? '<div class="small-text">지금 ' + (t.effect || '없음') + '</div><div class="small-text dim">다음 ' + (t.next != null ? t.next : '최대 단계예요') + '</div>' : '') + '</div>';
+    }
+    function groupHtml(g) {
+      var n = esc(g.name), open = !!unitsOpen[g.name];
+      var guards = g.list.filter(function (m) { return RUN.guards.indexOf(m.id) >= 0; }).length;
+      var h = '<div class="card tgroup' + (open ? ' open' : '') + '" data-tg="' + n + '">' +
+        '<button class="tghead" data-tgtoggle="' + n + '" aria-expanded="' + open + '">' + (tribeGradeOf(g.name) ? gradeBadge(tribeGradeOf(g.name)) : '') +
+        '<b class="tgname">' + n + '</b><span class="tgn">×' + g.list.length + '</span>' +
+        (guards ? '<span class="chip accent">친위대 ' + guards + '</span>' : '') + '<i class="tgarrow">▾</i></button>' + tribeHtml(g.name, open);
+      if (open) {
+        h += '<div class="tgbody">' + g.list.map(function (m) {
+          var guard = RUN.guards.indexOf(m.id) >= 0;
+          return '<div class="mcard" data-mid="' + m.id + '"><div class="portrait">도트</div><div class="info"><div class="mtop"><span class="chip">Lv ' + m.lv + '</span>' +
+            '<span class="chip">등급 ' + P.monGrade(m.lv) + '</span>' + (guard ? '<span class="chip accent">친위대</span>' : '') + '</div>' +
+            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div></div></div>';
+        }).join('') + '</div>';
+      }
+      return h + '</div>';
     }
     function draw() {
       segEl.innerHTML = '<button data-t="mon" class="' + (tab === 'mon' ? 'on' : '') + '">몬스터</button>' +
@@ -609,14 +637,12 @@
       if (tab === 'mon') {
         if (hasRecruit()) s += recruitHtml();
         if (hasTribe) s += '<div class="gemnote"><span class="chip accent">보석 ' + RUN.gems + '</span><span class="small-text dim">보석 강화는 몬스터 부족에 붙어 새 부지로 가도 남아요. 레벨은 친위대만 남아요.</span></div>';
-        var seen = {};
-        RUN.monsters.forEach(function (m) {
-          var guard = RUN.guards.indexOf(m.id) >= 0, first = !seen[m.name];
-          seen[m.name] = true;
-          s += '<div class="card unit mon" data-mid="' + m.id + '" data-tribe="' + esc(m.name) + '"><div class="portrait">도트<br>48×48</div><div class="info"><b>' + m.name + '</b> <span class="chip">Lv ' + m.lv + '</span> ' +
-            '<span class="chip">등급 ' + P.monGrade(m.lv) + '</span>' + (guard ? ' <span class="chip accent">친위대</span>' : '') +
-            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div>' + (first ? tribeHtml(m) : '') + '</div></div>';
-        });
+        var groups = tribeGroups(RUN.monsters), allOpen = groups.length > 0 && groups.every(function (g) { return unitsOpen[g.name]; });
+        if (groups.length) {
+          s += '<div class="tgbar"><span class="small-text dim">' + groups.length + '부족 · 몬스터 ' + RUN.monsters.length + '마리</span>' +
+            '<button class="btn small" data-tgall>' + esc(allOpen ? uiLine('unitsCloseAll', '모두 접기') : uiLine('unitsOpenAll', '모두 펼치기')) + '</button></div>';
+        }
+        s += groups.map(groupHtml).join('');
       } else {
         s += '<p class="dim small-text" style="margin:0">친위대는 납품(정산) 때 고릅니다. 보스·보물방을 지키는 몬스터입니다 (가짜).</p>';
         for (var i = 0; i < P.GUARD_MAX; i++) {
@@ -635,19 +661,27 @@
       var rb = e.target.closest ? e.target.closest('[data-recruit]') : null;
       if (rb) {
         var rname = rb.getAttribute('data-recruit'), r = tryRecruit(rname);
+        if (r && r.monster) unitsOpen[r.monster.name || rname] = true; // 새 몬스터가 든 묶음을 펼친다
         draw();
-        if (r) { // 성공: 새 카드와 그 부족 줄을 짧게 반짝
+        if (r) { // 성공: 새 카드(와 모집 줄)만 짧게 반짝
           if (r.monster && r.monster.id != null) flashUp(listEl.querySelector('[data-mid="' + r.monster.id + '"]'));
           flashUp(listEl.querySelector('[data-rt="' + rname + '"]'));
         }
         return;
+      }
+      var tg = e.target.closest ? e.target.closest('[data-tgtoggle]') : null;
+      if (tg) { var tn = tg.getAttribute('data-tgtoggle'); unitsOpen[tn] = !unitsOpen[tn]; buzz('tap'); draw(); return; }
+      if (e.target.closest && e.target.closest('[data-tgall]')) {
+        var gs = tribeGroups(RUN.monsters), open = !gs.every(function (g) { return unitsOpen[g.name]; });
+        gs.forEach(function (g) { unitsOpen[g.name] = open; });
+        buzz('tap'); draw(); return;
       }
       var b = e.target.closest ? e.target.closest('[data-uptribe]') : null;
       if (!b) return;
       var name = b.getAttribute('data-uptribe');
       var ok = tryUpgrade(P.tribeInfo(name) || {}, P.upgradeTribe, name);
       draw();
-      if (ok) listEl.querySelectorAll('.mon').forEach(function (c) { if (c.getAttribute('data-tribe') === name) flashUp(c); });
+      if (ok) listEl.querySelectorAll('.tgroup').forEach(function (c) { if (c.getAttribute('data-tg') === name) flashUp(c); });
     });
     el.appendChild(segEl); el.appendChild(listEl); draw();
   };

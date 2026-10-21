@@ -170,6 +170,16 @@
     syncKids(target, tmp);
   }
 
+  // 대기 몬스터를 부족별로 묶음: [{ name, list(레벨 높은 순, 같으면 id 순) }] (부족 표 순서, 표에 없으면 뒤에)
+  var idleEach = false; // 대기 몬스터 보기: false = 부족별로 묶어서(누르면 그 부족의 가장 높은 레벨이 들어감), true = 하나씩. 화면을 떠났다 와도 기억
+  function groupIdle(idle) {
+    var by = {}, names = [], T = P.TRIBES || [];
+    idle.forEach(function (m) { if (!by[m.name]) { by[m.name] = []; names.push(m.name); } by[m.name].push(m); });
+    function ord(n) { for (var i = 0; i < T.length; i++) if (T[i].name === n) return i; return 999; }
+    names.sort(function (a, b) { return ord(a) - ord(b); });
+    return names.map(function (n) { return { name: n, list: by[n].sort(function (a, b) { return b.lv - a.lv || a.id - b.id; }) }; });
+  }
+
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
     return function (el) {
@@ -215,6 +225,27 @@
         });
       }
 
+      // 대기 중인 몬스터 고르기 칸. open = 아직 자리가 있나. 묶음 보기: 부족마다 한 칸 "슬라임 ×3 / Lv 5·5·4" (누르면 가장 높은 레벨을 넣음), 하나씩 보기: 개별 칸
+      function idleHtml(open) {
+        var idle = P.idleMonsters(), groups = groupIdle(idle), each = idleEach;
+        var h = '<div class="lbl lblrow"><span>' + esc(each ? ui('idleLabelEach', '대기 몬스터 — 하나씩 골라요') : ui('idleLabelGroup', '대기 몬스터 — 가장 높은 레벨부터 들어가요')) + '</span>' +
+          (idle.length > 1 ? '<button class="linkbtn" data-idlemode>' + esc(each ? ui('idleModeGroup', '묶어서 보기') : ui('idleModeEach', '하나씩 보기')) + '</button>' : '') + '</div>';
+        if (!each) {
+          h += '<div class="zslots">' + groups.map(function (g) {
+            var top = g.list[0];
+            return '<button class="grp" data-intribe="' + esc(g.name) + '"' + (open ? '' : ' disabled') + '><b>' + esc(g.name) + ' ×' + g.list.length + '</b><small>Lv ' +
+              g.list.map(function (m) { return m.lv; }).join('·') + '</small><small>가치 ' + Z.monValue(top) + '</small></button>';
+          }).join('') + '</div>';
+        } else {
+          h += groups.map(function (g) {
+            return '<div class="zsub">' + esc(g.name) + ' ×' + g.list.length + '</div><div class="zslots">' + g.list.map(function (m) {
+              return '<button data-in="' + m.id + '"' + (open ? '' : ' disabled') + '><b>' + esc(m.name) + '</b><small>Lv ' + m.lv + ' · 체' + m.hp + ' 공' + m.atk + '</small><small>가치 ' + Z.monValue(m) + '</small></button>';
+            }).join('') + '</div>';
+          }).join('');
+        }
+        return h;
+      }
+
       function drawSheet() {
         if (!sel) { sheetBox.innerHTML = ''; return; }
         var z = sel, k = RUN.site.zones[z], f = Z.FAC[k], t = Z.zoneType(z);
@@ -229,12 +260,8 @@
             var m = us[i] !== undefined ? P.monById(us[i]) : null;
             h += m ? '<button data-out="' + i + '"><b>' + m.name + '</b><small>Lv ' + m.lv + ' · 빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
           }
-          h += '</div><div class="lbl">대기 중인 몬스터 — 누르면 넣어요</div><div class="zslots">';
           var idle = P.idleMonsters();
-          idle.forEach(function (m) {
-            h += '<button data-in="' + m.id + '"' + (us.length < sl ? '' : ' disabled') + '><b>' + m.name + '</b><small>Lv ' + m.lv + ' · 체' + m.hp + ' 공' + m.atk + '</small><small>가치 ' + Z.monValue(m) + '</small></button>';
-          });
-          h += '</div>';
+          h += '</div>' + idleHtml(us.length < sl);
           if (!idle.length) h += '<div class="why">대기 중인 몬스터가 없어요</div>';
         }
         h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="zopts">';
@@ -289,8 +316,13 @@
         var r;
         if (b.hasAttribute('data-close')) { sel = null; pick = null; api.buzz('tap'); redraw(); return; }
         if (b.hasAttribute('data-pick')) { var fk = b.getAttribute('data-pick'); pick = pick === fk ? null : fk; api.buzz('tap'); redraw(); return; }
-        if (b.hasAttribute('data-in') || b.hasAttribute('data-out')) {
-          r = b.hasAttribute('data-in') ? P.placeMonster(sel, +b.getAttribute('data-in')) : P.removeMonster(sel, +b.getAttribute('data-out'));
+        if (b.hasAttribute('data-idlemode')) { idleEach = !idleEach; api.buzz('tap'); redraw(); return; }
+        if (b.hasAttribute('data-in') || b.hasAttribute('data-out') || b.hasAttribute('data-intribe')) {
+          if (b.hasAttribute('data-intribe')) { // 묶음: 그 부족의 대기 몬스터 중 가장 레벨 높은 한 마리
+            var tn = b.getAttribute('data-intribe'), cand = groupIdle(P.idleMonsters()).filter(function (g) { return g.name === tn; })[0];
+            if (!cand) { redraw(); return; }
+            r = P.placeMonster(sel, cand.list[0].id);
+          } else r = b.hasAttribute('data-in') ? P.placeMonster(sel, +b.getAttribute('data-in')) : P.removeMonster(sel, +b.getAttribute('data-out'));
           if (!r.ok) { api.toast(r.msg); api.buzz('warn'); return; }
           api.buzz('tap');
           if (!api.autoDeliver()) redraw();
