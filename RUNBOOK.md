@@ -43,6 +43,7 @@ git push                      # 원격 연결 후
   - Git Bash에서 `python`이 Microsoft Store 바로가기로 잡혀 아무것도 안 나오면 `py tools/check_all.py`
 - 정답지·기준 이미지 갱신 (일부러 바꿨을 때만): `python tools/golden.py --update`, `python tools/shots.py --update`
 - 코드 규칙: `docs/CODE_RULES.md`, 파일 지도: `FILEMAP.md` (자동 생성)
+- **화면 직접 확인은 ego 브라우저, 자동 검사는 Chrome 헤드리스** (2026-10-21 결정). ego는 집 PC에만 설치(`C:\Users\JUNG\.local\share\ego\active_version_dir`, 설치 전에 연 터미널·VS Code는 PATH에 없으니 경로를 붙이거나 재시작). 회사 PC·Codex에는 없으므로 `check_all`은 계속 Chrome. Codex는 기본 샌드박스에서 ego에 연결 못 함(전체 권한 필요) → Codex는 읽기 전용 검수만
 
 ## 배포
 (GitHub Pages/Actions 설정 후 적기)
