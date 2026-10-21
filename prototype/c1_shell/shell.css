@@ -516,3 +516,27 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .zfoot .zpreview { margin-top: 0; }
 .zact { display: flex; gap: 8px; margin-top: 8px; }
 .zact .btn { flex: 1; min-width: 0; }
+
+/* ---- 공방 · 몬스터 보석 강화 · 카드 수 미리 고르기 ---- */
+.gembar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.gembar b { font-size: 18px; color: var(--accent); }
+.wslist { display: flex; flex-direction: column; gap: 10px; }
+.ws { display: flex; flex-direction: column; gap: 6px; }
+.ws.off { opacity: .5; }
+.wshead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wshead h3 { margin: 0; }
+.ws .stat { gap: 10px; font-size: 13px; }
+.ws .stat b { text-align: right; min-width: 0; }
+.btn.upbtn { width: 100%; padding: 10px; margin-top: 2px; }
+.btn.upbtn.poor { opacity: .45; }
+.btn.upbtn:disabled { opacity: .5; }
+.gemnote { display: flex; align-items: center; gap: 8px; }
+.gemnote .small-text { flex: 1; min-width: 0; line-height: 1.35; }
+.unit.mon { align-items: flex-start; }
+.tribe { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; }
+.tribehead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.tribehead .btn.upbtn { width: auto; flex: none; margin: 0; padding: 6px 8px; font-size: 12px; }
+.zpreview .discount { color: var(--ready); font-weight: bold; }
+.upflash { animation: ws-up var(--dur-fx) var(--ease-pop-s); }
+@keyframes ws-up { 0% { transform: scale(1); } 40% { transform: scale(1.03); background: var(--accent-soft); border-color: var(--accent); } 100% { transform: scale(1); } }
+#tabs.inbattle .bt-cards small { display: block; font-size: 10px; font-weight: normal; line-height: 1.2; }

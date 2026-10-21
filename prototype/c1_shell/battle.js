@@ -9,6 +9,7 @@
  *  - 배속 1·2·3·5와 배속 때 카드 수(0~4장)는 RUN.prefs에 저장해 다음 전투도 그대로 (P.setBattleSpeed·P.setCardCount).
  *    1배속이면 카드 4지점 모두. 배속을 한 번이라도 켜면(전투 시작 전 포함) 꺼도 그 전투 카드는 고른 N장까지, 먼저 닿는 지점부터
  *    (이미 나온 카드도 포함). 전투 중에는 이미 나온 카드 수보다 작게 못 줄인다
+ *  - 카드 버튼은 1배속에서도 눌러 카드 수(0~4 순환)를 미리 고른다. 1배속 전투는 그대로 4장 전부 뜨고, 버튼에는 "카드 전부 (배속 시 N장)"
  *  - 결과는 전투가 끝나는 순간 api.finishBattle로 한 번만 반영 (새로고침해도 두 번 반영 안 됨)
  *  - 저장 지점 = 전투 시작 + 이벤트 카드를 고른 순간 (P.saveBattle에 전투 계산 상태를 통째로). 새로고침하면 마지막 저장 지점부터
  *    일시정지 상태로 이어지고, 고른 카드는 바꿀 수 없다. 배속·카드 수는 바꿀 때마다 저장
@@ -374,7 +375,6 @@
       // 이번 전투에 나올 카드 수 (배속을 켠 적이 있으면 고른 수, 이미 나온 카드가 더 많으면 그 수)
       function cardsNow() { return Math.max(RUN.prefs.cards, U.granted); }
       cardsBtn.addEventListener('click', function () {
-        if (!U.fastUsed) { api.toast('배속(×2 이상)을 켜면 카드 수를 고를 수 있어요 (지금 ' + RUN.prefs.cards + '장)'); buzz('tap'); return; }
         var lo = U.granted, hi = BD.CARD_AT.length, n = cardsNow() + 1;
         if (n > hi) {
           n = lo;
@@ -387,7 +387,8 @@
       function drawSpeed() {
         var sp = BD.SPEEDS[U.speedIdx];
         speedBtn.textContent = '배속 ×' + sp; speedBtn.classList.toggle('on', sp > 1);
-        cardsBtn.textContent = U.fastUsed ? '카드 ' + cardsNow() + '장' : '카드 전부';
+        // 1배속: 카드는 4장 전부 뜨고, 버튼은 미리 고른 값을 보여 준다. 배속을 켜면 그 값이 적용된다
+        cardsBtn.innerHTML = U.fastUsed ? '카드 ' + cardsNow() + '장' : '카드 전부<small>(배속 시 ' + cardsNow() + '장)</small>';
         cardsBtn.classList.toggle('off', !U.fastUsed);
         cardsBtn.disabled = U.phase === 'result';
       }
