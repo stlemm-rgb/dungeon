@@ -87,12 +87,19 @@ a { color: inherit; }
 .screen.enter { animation: screen-in var(--dur-sheet) var(--ease-out); }
 @keyframes screen-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 
-/* 하단 탭 */
-#tabs { display: flex; border-top: 1px solid var(--line); background: var(--panel); flex: none; }
+/* 하단 탭: 홈 · 던전 · [다음 주] · 부대 · 상점 (가운데가 큰 동작 버튼). 전투 화면에서는 같은 막대에 [배속] [전투 시작] [안내]가 들어가 전투 시작이 가운데 버튼과 같은 자리에 온다 */
+#tabs { display: flex; align-items: stretch; height: 64px; border-top: 1px solid var(--line); background: var(--panel); flex: none; }
 #tabs[hidden] { display: none; }
-#tabs button { flex: 1; min-width: 0; padding: 14px 0 15px; border: 0; background: none; color: var(--dim); font-weight: bold; font-size: 15px;
+#tabs button { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--dim); font-weight: bold; font-size: 15px;
   border-top: 3px solid transparent; }
 #tabs button.on { color: var(--accent); border-top-color: var(--accent); }
+#tabs .tab-main { flex: 1.4; margin: 7px 6px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-size: 15px; line-height: 1.2; }
+#tabs .tab-main.danger { background: var(--danger); color: var(--text); }
+#tabs .tab-main:disabled { opacity: .5; cursor: default; }
+#tabs.inbattle .bt-speed { flex: 2; color: var(--text); font-size: 16px; } /* 막대 칸 폭을 가운데 버튼 위치와 맞추려고 바깥 여백 없이 글자 버튼으로 */
+#tabs.inbattle .bt-speed.on { color: var(--accent); border-top-color: var(--accent); }
+#tabs.inbattle .bt-speed:disabled { opacity: .5; cursor: default; }
+#tabs.inbattle .bt-note { flex: 2; min-width: 0; align-self: center; padding: 0; color: var(--dim); font-size: 11px; line-height: 1.3; text-align: center; }
 
 /* 공통 조각 */
 .head { display: flex; align-items: center; gap: 8px; min-height: 36px; }
@@ -228,8 +235,16 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 
 /* 의뢰 */
 .contract h3 { font-size: 16px; }
+.pickable { cursor: pointer; flex: none; }
+.pickable:active, .pickable:focus-visible { border-color: var(--accent); outline: none; }
+.qclient { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; }
+.qattr { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.qcounter { color: var(--ready); font-weight: bold; }
+.qgoals { margin-top: 6px; font-size: 13px; }
+.qpick { margin-top: 6px; padding: 8px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: bold; text-align: center; }
+.qtitle h3 { margin: 4px 0 0; font-size: 16px; }
 .contract .money { display: flex; gap: 8px; margin: 6px 0; }
-.contract .money div { flex: 1; background: var(--panel-2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--dim); }
+.contract .money div { flex: 1; min-width: 0; background: var(--panel-2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--dim); }
 .contract .money b { display: block; color: var(--text); font-size: 15px; }
 
 /* 전투 */
@@ -261,7 +276,7 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 @keyframes stamp-in { from { opacity: 0; transform: scale(2.4) rotate(-22deg); } to { opacity: 1; transform: scale(1) rotate(-8deg); } }
 
 /* 토스트 */
-#toasts { position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 366px; display: flex; flex-direction: column;
+#toasts { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 366px; display: flex; flex-direction: column;
   gap: 6px; pointer-events: none; z-index: 40; }
 #app:has(#tabs[hidden]) + #toasts { bottom: auto; top: 56px; } /* 탭 없는 화면(전투 등)에서는 카드·버튼을 가리지 않게 위로 */
 .toast { background: var(--text); color: var(--bg); padding: 9px 12px; border-radius: 8px; font-weight: bold; font-size: 13px; text-align: center; animation: toast-in var(--dur-fade) var(--ease-out); }
@@ -280,7 +295,7 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .bt-prog i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--danger); }
 .bt-prog b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--accent); }
 .bt-pct { flex: none; width: 36px; text-align: right; font-size: 12px; font-weight: bold; }
-.bt-score { font-size: 11.5px; flex: none; height: 61px; margin-top: -6px; padding: 4px 2px 0; } /* 홈의 탭 막대 자리: 전투 시작 버튼이 홈 다음 주 버튼과 같은 높이에 오게 */
+.bt-score { font-size: 11.5px; flex: none; text-align: center; }
 .bt-score b { color: var(--text); }
 
 .bt-board { position: relative; }
@@ -370,8 +385,7 @@ body.reduce .bt-sq.fight { animation: none; }
   { border-color: var(--ready); background: var(--ready-soft); color: var(--ready); }
 .bt-screen[data-armed] .bt-card { border-color: var(--ready); }
 
-/* 아래 버튼 줄: 홈 .homebar와 같은 자리 (오른쪽 = 다음 주 / 전투 시작) */
-.bt-bar .bt-speed.on { border-color: var(--accent); color: var(--accent); }
+/* 아래 막대(배속 · 전투 시작 · 안내)는 파일 맨 위쪽 "하단 탭" 규칙(#tabs.inbattle)에 있다 */
 
 /* 결과표 */
 .bt-result { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--scrim); }
@@ -389,8 +403,8 @@ body.reduce .bt-sq.fight { animation: none; }
 .adbtn { flex: none; padding: 4px 8px; font-size: 12px; }
 
 /* ---- 진행 구조 (progress.js 연결 화면) ---- */
-body[data-screen="home"] #toasts { bottom: auto; top: 56px; } /* 홈은 아래 버튼 줄을 가리지 않게 토스트를 위로 */
-body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="contract"] #app:has(#tabs[hidden]) + #toasts { top: auto; bottom: 100px; }
+body[data-screen="home"] #toasts, body[data-screen="battle"] #toasts { bottom: auto; top: 56px; } /* 홈·전투는 아래 버튼 줄을 가리지 않게 토스트를 위로 */
+body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="contract"] #app:has(#tabs[hidden]) + #toasts { top: auto; bottom: 16px; }
 .stage .quick { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 1000; }
 /* 퀘스트 버튼 (무대 오른쪽 위) + 팝업 */
 .questbtn { position: absolute; right: 8px; top: 8px; z-index: 1000; display: flex; align-items: center; gap: 6px; padding: 5px 8px 5px 6px;
@@ -431,6 +445,10 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .gbtn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border: 2px solid var(--line); border-radius: 8px; background: var(--panel-2); font-size: 12px; }
 .gbtn b { font-size: 13px; }
 .gbtn span { color: var(--dim); font-size: 11px; }
+.cl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; flex: none; }
+.cl .card { font-size: 12px; }
+.cl .carry h3 { color: var(--ready); } .cl .lost h3 { color: var(--danger); }
+.cl ul.plain li { padding-left: 10px; text-indent: -10px; } .cl ul.plain li::before { content: "· "; }
 .gbtn.on { border-color: var(--ready); background: var(--ready-soft); }
 .head h2 small { font-size: 11px; font-weight: normal; }
 
@@ -438,6 +456,8 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .bsum { display: flex; gap: 8px; flex: none; }
 .bsum div { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12px; color: var(--dim); }
 .bsum b { display: block; color: var(--text); font-size: 15px; }
+.grantbar { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent-soft); font-size: 12px; color: var(--dim); }
+.grantbar b { color: var(--accent); font-size: 14px; }
 .zboard { flex: none; }
 .zyard { height: 34px; display: flex; align-items: center; justify-content: center; gap: 4px; background: var(--zone-yard); color: var(--dim); font-size: 13px;
   border: 2px solid var(--zone-edge); border-bottom: 0; border-radius: 8px 8px 0 0; cursor: pointer; }

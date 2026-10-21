@@ -3,13 +3,15 @@
  * 화면 목록과 이동 규칙
  *  - 한 페이지 안에서 주소 끝의 해시(#home 등)로 화면을 바꾼다. 브라우저 뒤로 가기 = 이전 화면
  *    (나중에 안드로이드 뒤로 버튼과 연결).
- *  - 하단 탭 5개 화면: home · dungeon · units · shop · settings  (탭 막대가 보임)
- *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · build(건설) · battle(다음 주 = 매주 전투) · settings(톱니)
- *  - 진행 화면 (탭 막대 숨김): contract(의뢰 고르기) -> home -> build / battle -> (목표 달성 즉시) result(납품·정산) -> contract
- *  - 홈 "다음 주"를 누르면 이번 주 전투가 시작되고(PROGRESS.startBattle) 결과를 반영할 때까지 전투 화면에서 못 나간다.
+ *  - 하단 탭: 홈 · 던전 · [다음 주 ▶] · 부대 · 상점. 가운데 "다음 주"는 어느 탭 화면에서든 누를 수 있다 (화면 이동이 아니라 동작 버튼).
+ *    탭 막대가 보이는 화면: home · dungeon · units · shop. 전투 화면은 같은 막대 자리에 배속 · 전투 시작 · 안내가 들어간다 (battle.js).
+ *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · build(건설) · settings(오른쪽 위 톱니, 뒤로 가기) · battle(다음 주 = 매주 전투)
+ *  - 진행 화면 (탭 막대 숨김): contract(첫 의뢰) -> home -> build / battle -> (목표 달성 즉시) result(납품·정산·친위대·새 의뢰 후보 한 화면) -> home
+ *    contract와 result는 같은 함수(deliverScreen). 첫 시작(report 없음)에는 정산·친위대 없이 후보만 보인다.
+ *  - "다음 주"를 누르면 이번 주 전투가 시작되고(PROGRESS.startBattle) 결과를 반영할 때까지 전투 화면에서 못 나간다.
  *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고,
  *    값을 바꾸는 것은 PROGRESS의 정해진 함수(buildZone·startBattle·watchAd·applyBattle·deliver·pickQuest …)로만 한다.
- *  - 화면 지킴이(render 안): 정산 중이면 어느 화면이든 result로, 의뢰가 없으면 contract로, 의뢰가 있으면 contract 못 들어감.
+ *  - 화면 지킴이(render 안): 정산 중이면 어느 화면이든 result로(납품·새 의뢰 한 화면), 의뢰가 없으면 contract로, 의뢰가 있으면 contract 못 들어감.
  *  - 건설 화면(구역 판)은 build.js, 전투 화면은 battle.js (SCREEN_PLUGINS). 판 규칙은 zones.js.
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
@@ -25,9 +27,9 @@
   var P = window.PROGRESS, RUN = P.RUN;
 
   // ---------- 가짜 데이터 ----------
+  // 가운데(세 번째) 자리는 "다음 주" 동작 버튼이라 TABS 목록에는 없다 (drawTabs가 끼워 넣음). 설정은 홈 톱니로만.
   var TABS = [
-    { id: 'home', label: '홈' }, { id: 'dungeon', label: '던전' }, { id: 'units', label: '부대' },
-    { id: 'shop', label: '상점' }, { id: 'settings', label: '설정' }
+    { id: 'home', label: '홈' }, { id: 'dungeon', label: '던전' }, { id: 'units', label: '부대' }, { id: 'shop', label: '상점' }
   ];
   var TAB_IDS = TABS.map(function (t) { return t.id; });
 
@@ -121,6 +123,14 @@
     return true;
   }
 
+  // 다음 주: 어느 탭에서든 누르면 이번 주 전투를 시작한다 (안 되면 이유를 토스트로)
+  function startWeek() {
+    var r = P.startBattle();
+    if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
+    buzz('tap');
+    go('battle', true);
+  }
+
   // ---------- 화면들 (함수 하나씩) ----------
   var SCREENS = {};
 
@@ -171,20 +181,10 @@
       el.appendChild(inv);
     }
 
-    // 아래 버튼 줄은 화면 아래에 붙여 둔다 (스크롤해도 보임)
+    // 아래 버튼 줄은 화면 아래에 붙여 둔다 (스크롤해도 보임). 의뢰가 있으면 넓은 "건설" 버튼 하나 (다음 주는 하단 탭 가운데)
     var bar = div('homebar');
-    if (!q) {
-      bar.innerHTML = '<button class="btn primary big" data-go="contract">의뢰 고르기</button>';
-    } else {
-      bar.innerHTML = '<button class="btn big" data-go="build">건설</button>' +
-        '<button class="btn primary big' + (P.planInfo().surge ? ' danger' : '') + '" data-week>다음 주 ▶</button>';
-      bar.querySelector('[data-week]').addEventListener('click', function () {
-        var r = P.startBattle();
-        if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
-        buzz('tap');
-        go('battle', true);
-      });
-    }
+    bar.innerHTML = q ? '<button class="btn big" data-go="build">건설</button>'
+      : '<button class="btn primary big" data-go="contract">의뢰 고르기</button>';
     el.appendChild(bar);
   };
 
@@ -401,7 +401,7 @@
   };
 
   SCREENS.settings = function (el) {
-    el.appendChild(head('설정'));
+    el.appendChild(head('설정', 'home'));
     var box = div('card');
     var defs = [['sound', '소리'], ['vibe', '진동'], ['reduce', '움직임 줄이기']];
     function drawToggles() {
@@ -457,75 +457,105 @@
     el.appendChild(div('card', '<h3>침입자 도감</h3><div class="dim small-text" style="margin-bottom:8px">만난 침입자가 여기에 모입니다 (0 / 6)</div><div class="dex">' + dex + '</div>'));
   };
 
-  // 의뢰 고르기: 후보는 progress.js가 만들어 저장해 둔다 (새로고침해도 같은 후보)
-  SCREENS.contract = function (el) {
-    var first = RUN.history.length === 0 && RUN.siteNo === 0;
-    el.appendChild(head(first ? '첫 의뢰를 고르세요' : '다음 의뢰를 고르세요'));
-    var list = P.offerQuests();
-    var hasMain = list.some(function (q) { return q.kind === 'main'; });
-    el.appendChild(div('dim small-text', hasMain ? '메인 의뢰가 열렸어요! 한 장만 고릅니다. 목표를 다 채우면 바로 납품돼요. 기한은 없어요.'
-      : '한 장만 고릅니다. 목표를 다 채우면 바로 납품돼요. 기한은 없어요. (' + RUN.questsDone + '/' + P.NORMAL_TO_MAIN + ' 일반 의뢰 완료)'));
-    list.forEach(function (q) {
-      var c = div('card contract' + (q.kind === 'main' ? ' main' : ''),
-        '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>' + q.name + '</h3></div>' +
-        '<ul class="plain" style="margin-top:6px">' + goalsHtml(q, false) + '</ul>' +
-        '<div class="money"><div>보수<b>' + money(q.reward.gold) + '</b></div><div>명성<b>+' + q.reward.fame + '</b></div></div>' +
-        '<button class="btn primary" data-pick="' + q.id + '">이걸로</button>');
-      c.querySelector('[data-pick]').addEventListener('click', function () {
-        if (P.pickQuest(q)) { buzz('good'); toast('새 부지에서 시작: ' + q.name); go('home', true); }
-      });
-      el.appendChild(c);
-    });
-  };
-
   // 건설 화면은 build.js (구역 판). SCREEN_PLUGINS.build 가 아래에서 SCREENS.build 로 등록된다.
 
-  // 납품·정산: 목표를 다 채운 순간 자동으로 여기로 온다
-  SCREENS.result = function (el) {
-    var r = RUN.report;
-    var main = r.wasMain;
-    el.appendChild(head('납품·정산'));
-    el.appendChild(div('stamp' + (main ? ' main' : ''), main ? '메인 의뢰 완료!' : '납품 완료'));
-    el.appendChild(div('dim small-text', r.quest.name + ' · ' + r.weeks + '주 걸림 · 던전 가치 ' + r.value + ' · 건설 ' + r.builds + '회'));
-    el.appendChild(div('card payout' + (main ? ' main' : ''),
-      '<h3>보상</h3>' +
-      '<div class="stat"><span>의뢰 보수</span><b>+' + money(r.base) + '</b></div>' +
-      '<div class="stat"><span>판매 대금 (가치의 절반)</span><b>+' + money(r.sale) + '</b></div>' +
-      '<div class="stat total"><span>자금 합계</span><b>+' + money(r.gold) + '</b></div>' +
-      '<div class="stat"><span>자금</span><b>' + money(r.goldBefore) + ' → ' + money(RUN.gold) + '</b></div>' +
-      '<div class="stat"><span>명성</span><b>' + r.fameBefore + ' → ' + RUN.fame + '</b></div>'));
-    el.appendChild(div('dim small-text mainline', r.nextMain));
+  // 납품·정산 + 새 의뢰 고르기: 한 화면 (contract와 result가 같은 함수)
+  // 위에서 아래로: 정산(보상·판매 대금·걸린 주) -> 가져가는 것/사라지는 것 -> 친위대 고르기 -> 새 의뢰 후보 카드.
+  // 납품은 자동(목표 달성 시 autoDeliver)이라 "납품하기" 버튼은 없다. 후보 카드를 누르면 P.pickQuest(q, 친위대 id들) -> 홈.
+  // 첫 시작(phase 'choose', report 없음)에는 정산·친위대 없이 후보만.
+  // 새 필드(rep.gems · rep.carry · rep.lost · q.client · q.attr · q.reward.gems)가 없으면 그 줄을 숨긴다.
+  function listHtml(arr) {
+    return arr.length ? '<ul class="plain">' + arr.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' : '<div class="dim small-text">없음</div>';
+  }
+  function rewardHtml(rw) {
+    var h = '<div><span>금</span><b>' + money(rw.gold || 0) + '</b></div>';
+    if (rw.gems) h += '<div><span>보석</span><b>' + rw.gems + '</b></div>';
+    return h + '<div><span>명성</span><b>+' + (rw.fame || 0) + '</b></div>';
+  }
+  function questCard(q, pick) {
+    var h = '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>' + q.name + '</h3></div>';
+    if (q.client) h += '<div class="qclient">' + (q.client.kind ? '<span class="chip">' + q.client.kind + '</span> ' : '') + '<b>' + (q.client.name || '') + '</b></div>';
+    if (q.attr) h += '<div class="qattr"><div class="qattr-h"><span class="chip">던전 속성</span> <b>' + (q.attr.label || '') + '</b></div>' +
+      (q.attr.effect ? '<div class="small-text">' + q.attr.effect + '</div>' : '') +
+      (q.attr.counter ? '<div class="small-text qcounter">내 대응: ' + q.attr.counter + '</div>' : '') + '</div>';
+    h += '<ul class="plain qgoals">' + goalsHtml(q, false) + '</ul>' +
+      '<div class="money">' + rewardHtml(q.reward) + '</div>' +
+      '<div class="qpick">이 의뢰 받기 ▶</div>';
+    var c = div('card contract pickable' + (q.kind === 'main' ? ' main' : ''), h);
+    c.setAttribute('role', 'button'); c.setAttribute('tabindex', '0');
+    function act() { pick(q); }
+    c.addEventListener('click', act);
+    c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+    return c;
+  }
+  function deliverScreen(el) {
+    var r = RUN.phase === 'settle' ? RUN.report : null;
+    var ids = RUN.guards.filter(function (id) { return !!P.monById(id); });
+    var main = !!(r && r.wasMain);
+    el.appendChild(head(r ? '납품·정산' : (RUN.history.length === 0 && RUN.siteNo === 0 ? '첫 의뢰를 고르세요' : '의뢰를 고르세요')));
 
-    var gbox = div('card');
-    el.appendChild(gbox);
-    function drawGuards() {
-      gbox.innerHTML = '<h3>친위대 고르기 (' + RUN.guards.length + '/' + P.GUARD_MAX + ')</h3>' +
-        '<div class="dim small-text" style="margin-bottom:6px">다음 부지로 함께 갈 몬스터 부대입니다. 안 골라도 돼요.</div><div class="guards"></div>';
-      var gl = gbox.querySelector('.guards');
-      RUN.monsters.forEach(function (m) {
-        var on = RUN.guards.indexOf(m.id) >= 0;
-        var b = document.createElement('button');
-        b.className = 'gbtn' + (on ? ' on' : '');
-        b.innerHTML = '<b>' + m.name + '</b><span>Lv ' + m.lv + ' · ' + P.monGrade(m.lv) + '</span>';
-        b.addEventListener('click', function () {
-          var ids = RUN.guards.slice();
-          var i = ids.indexOf(m.id);
-          if (i >= 0) ids.splice(i, 1);
-          else if (ids.length >= P.GUARD_MAX) { toast('친위대는 최대 ' + P.GUARD_MAX + '칸이에요'); buzz('warn'); return; }
-          else ids.push(m.id);
-          P.setGuards(ids); buzz('tap'); drawGuards();
+    if (r) {
+      el.appendChild(div('stamp' + (main ? ' main' : ''), main ? '메인 의뢰 완료!' : '납품 완료'));
+      el.appendChild(div('dim small-text', r.quest.name + ' · 던전 가치 ' + r.value + ' · 건설 ' + r.builds + '회'));
+      el.appendChild(div('card payout' + (main ? ' main' : ''),
+        '<h3>정산</h3>' +
+        '<div class="stat"><span>의뢰 보수</span><b>금 +' + money(r.base) + (r.gems ? ' · 보석 +' + r.gems : '') + ' · 명성 +' + r.fame + '</b></div>' +
+        '<div class="stat"><span>판매 대금 (가치의 절반)</span><b>금 +' + money(r.sale) + '</b></div>' +
+        '<div class="stat"><span>걸린 기간</span><b>' + r.weeks + '주</b></div>' +
+        '<div class="stat total"><span>자금 합계</span><b>+' + money(r.gold) + '</b></div>' +
+        '<div class="stat"><span>자금</span><b>' + money(r.goldBefore) + ' → ' + money(RUN.gold) + '</b></div>' +
+        '<div class="stat"><span>명성</span><b>' + r.fameBefore + ' → ' + RUN.fame + '</b></div>'));
+      el.appendChild(div('dim small-text mainline', r.nextMain));
+
+      if (Array.isArray(r.carry) || Array.isArray(r.lost)) {
+        el.appendChild(div('cl',
+          '<div class="card carry"><h3>가져가는 것</h3>' + listHtml(r.carry || []) + '</div>' +
+          '<div class="card lost"><h3>사라지는 것</h3>' + listHtml(r.lost || []) + '</div>'));
+      }
+
+      var gbox = div('card');
+      el.appendChild(gbox);
+      var drawGuards = function () {
+        gbox.innerHTML = '<h3>친위대 고르기 (' + ids.length + '/' + P.GUARD_MAX + ')</h3>' +
+          '<div class="dim small-text" style="margin-bottom:6px">골라 둔 몬스터는 레벨을 지닌 채 새 부지로 넘어가요. 안 골라도 돼요.</div><div class="guards"></div>';
+        var gl = gbox.querySelector('.guards');
+        if (!RUN.monsters.length) gl.outerHTML = '<div class="dim small-text">고를 몬스터가 없어요</div>';
+        RUN.monsters.forEach(function (m) {
+          var on = ids.indexOf(m.id) >= 0;
+          var b = document.createElement('button');
+          b.className = 'gbtn' + (on ? ' on' : '');
+          b.innerHTML = '<b>' + m.name + '</b><span>Lv ' + m.lv + ' · ' + P.monGrade(m.lv) + '</span>';
+          b.addEventListener('click', function () {
+            var i = ids.indexOf(m.id);
+            if (i >= 0) ids.splice(i, 1);
+            else if (ids.length >= P.GUARD_MAX) { toast('친위대는 최대 ' + P.GUARD_MAX + '칸이에요'); buzz('warn'); return; }
+            else ids.push(m.id);
+            if (P.setGuards) P.setGuards(ids.slice()); // 새로고침해도 고른 채로
+            buzz('tap'); drawGuards();
+          });
+          gl.appendChild(b);
         });
-        gl.appendChild(b);
-      });
+      };
+      drawGuards();
     }
-    drawGuards();
-    var nb = div('mt-auto', '<button class="btn primary big" data-next>다음 의뢰 고르기</button>');
-    nb.querySelector('[data-next]').addEventListener('click', function () {
-      if (P.toContract()) { buzz('tap'); go('contract', true); }
+
+    var list = P.offerQuests();
+    var hasMain = list.some(function (q) { return q.kind === 'main'; });
+    el.appendChild(div('qtitle', '<h3>새 의뢰를 고르세요</h3><div class="dim small-text">' + (hasMain ? '메인 의뢰가 열렸어요! ' : '') +
+      '카드를 누르면 바로 시작해요. 한 장만 고르고, 기한은 없어요.' + (hasMain ? '' : ' (' + RUN.questsDone + '/' + P.NORMAL_TO_MAIN + ' 일반 의뢰 완료)') + '</div>'));
+    var picked = false;
+    list.forEach(function (q) {
+      el.appendChild(questCard(q, function (qq) {
+        if (picked) return;
+        picked = true;
+        if (P.pickQuest(qq, ids.slice())) { buzz('good'); toast('새 부지에서 시작: ' + qq.name); go('home', true); }
+        else picked = false;
+      }));
     });
-    el.appendChild(nb);
-    buzz(main ? 'best' : 'stamp');
-  };
+    if (r) buzz(main ? 'best' : 'stamp');
+  }
+  SCREENS.contract = deliverScreen;
+  SCREENS.result = deliverScreen;
 
   // ---------- 화면 플러그인 (화면을 별도 파일로 뺄 때: battle.js) ----------
   // 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; } 로 등록한다.
@@ -535,6 +565,8 @@
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
     // 건설 화면용 (build.js)
     head: head, questTag: questTag, goalsHtml: goalsHtml, autoDeliver: autoDeliver,
+    // 전투 화면용: 하단 탭 막대 자리 (전투 시작 버튼이 가운데 "다음 주" 자리와 같은 곳에 오게 battle.js가 여기에 채운다)
+    bar: function () { return tabsEl; },
     // 전투 화면용: 결과 반영(한 번만, 결과표 내용을 돌려줌) / 결과표에서 홈으로 (목표를 채웠으면 바로 납품)
     finishBattle: function (result) { return P.applyBattle(result); },
     backHome: function () { if (!autoDeliver()) go('home', false); }
@@ -569,6 +601,7 @@
     lastName = name;
     P.setBattle(name === 'battle'); // 전투 화면에 있는 동안은 건설 불가
     document.body.setAttribute('data-screen', name);
+    drawTabs(name); // 전투 화면은 이 막대 자리를 battle.js가 채우므로 화면보다 먼저
     var el = div('screen');
     SCREENS[name](el);
     if (animateNext) el.classList.add('enter');
@@ -576,13 +609,22 @@
     view.innerHTML = '';
     view.appendChild(el);
     view.scrollTop = keep;
-    // 탭 막대는 5개 화면에서만
-    var isTab = TAB_IDS.indexOf(name) >= 0;
-    tabsEl.hidden = !isTab;
-    tabsEl.innerHTML = TABS.map(function (t) {
-      return '<button data-go="' + t.id + '" class="' + (t.id === name ? 'on' : '') + '">' + t.label + '</button>';
-    }).join('');
   }
+
+  // 하단 막대: 탭 화면(홈·던전·부대·상점)에서는 홈 · 던전 · [다음 주 ▶] · 부대 · 상점. 전투 화면에서는 비워 두고 battle.js가 채움. 그 외 화면은 숨김.
+  function tabBtn(t, name) { return '<button data-go="' + t.id + '" class="' + (t.id === name ? 'on' : '') + '">' + t.label + '</button>'; }
+  function drawTabs(name) {
+    tabsEl.className = '';
+    if (name === 'battle') { tabsEl.hidden = false; tabsEl.className = 'inbattle'; tabsEl.innerHTML = ''; return; }
+    tabsEl.hidden = TAB_IDS.indexOf(name) < 0;
+    var surge = RUN.phase === 'play' && RUN.quest && P.planInfo().surge;
+    tabsEl.innerHTML = tabBtn(TABS[0], name) + tabBtn(TABS[1], name) +
+      '<button class="tab-main' + (surge ? ' danger' : '') + '" data-week aria-label="다음 주">다음 주 ▶</button>' +
+      tabBtn(TABS[2], name) + tabBtn(TABS[3], name);
+  }
+  tabsEl.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('[data-week]')) startWeek();
+  });
 
   // 눌림은 한 곳에서 받는다: data-go(앞으로, 애니메이션) · data-back(즉시) · data-toast
   document.addEventListener('click', function (e) {

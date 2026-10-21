@@ -6,6 +6,7 @@
  *    몬스터 대기실이면 시트 위쪽에서 몬스터를 넣고 뺀다 (공짜).
  *  - 문 위 숫자 = 침입자 12명이 오면 그 길로 지나갈 인원 (zones.js forecast).
  *  - 쓴 금은 돌려받지 못한다. 시트와 미리보기에 그렇게 적는다.
+ *  - 첫 건설 공사비(P.grantLeft() > 0)가 남아 있으면 위에 안내 줄을 띄우고, 미리보기·짓기 버튼에 "공사비 N + 금 M"(previewBuild의 fromGrant · fromGold)로 보여 준다.
  *  - 판 그리기(boardHtml)는 던전 탭이 읽기 전용으로 같이 쓴다 (window.ZONEVIEW).
  *  - 곡선·시간은 shell.css의 var(--dur-*)/var(--ease-*) (MOTION에서 깔림)만.
  */
@@ -70,16 +71,23 @@
       el.appendChild(api.head('건설', 'home'));
       var sumBox = api.div('bsum');
       var questBox = api.div('');
+      var grantBox = api.div('');     // 첫 건설 공사비 안내 (P.grantLeft가 없거나 0이면 비어 있음)
       var boardBox = api.div('zboard');
       var sheetBox = api.div('');
       el.appendChild(sumBox);
       el.appendChild(questBox);
+      el.appendChild(grantBox);
       el.appendChild(boardBox);
       el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 금은 돌려받지 못해요. 몬스터 넣고 빼기는 공짜예요.'));
       el.appendChild(sheetBox);
 
+      // 이 부지에 남은 첫 건설 공사비 (core 쪽 P.grantLeft. 아직 없으면 0으로 봄)
+      function grantLeft() { return P.grantLeft ? (P.grantLeft() || 0) : 0; }
+
       function drawSummary() {
-        var s = P.siteSummary();
+        var s = P.siteSummary(), gl = grantLeft();
+        grantBox.innerHTML = '';
+        if (gl > 0) grantBox.appendChild(api.div('grantbar', '<b>첫 건설 공사비 ' + money(gl) + '</b><span>이 부지에서만 써요. 안 쓰면 사라져요</span>'));
         sumBox.innerHTML = '<div>자금<b>' + money(RUN.gold) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>건설 횟수<b>' + RUN.site.builds + '회</b></div>';
         questBox.innerHTML = '';
         if (RUN.quest) questBox.appendChild(api.div('card quest' + (RUN.quest.kind === 'main' ? ' main' : ''),
@@ -120,10 +128,10 @@
         }
         h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="zopts">';
         Z.facFor(z).forEach(function (fk) {
-          var ff = Z.FAC[fk], cv = Z.costOf(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, poor = !cur && cv > RUN.gold;
+          var ff = Z.FAC[fk], cv = Z.costOf(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, have = RUN.gold + grantLeft(), poor = !cur && cv > have;
           h += '<button data-pick="' + fk + '" class="' + (cur ? 'cur' : '') + (pick === fk ? ' on' : '') + (poor ? ' poor' : '') + '"' + (cur ? ' disabled' : '') + '>' +
             '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + ff.st + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
-            '<small>금 ' + cv + (vv ? ' · 가치 ' + vv : '') + (poor ? ' · <span class="lack">금 ' + (cv - RUN.gold) + ' 모자람</span>' : '') + '</small></button>';
+            '<small>금 ' + cv + (vv ? ' · 가치 ' + vv : '') + (poor ? ' · <span class="lack">금 ' + (cv - have) + ' 모자람</span>' : '') + '</small></button>';
         });
         h += '</div>';
         var p = preview();
@@ -131,14 +139,17 @@
         if (p) {
           var pf = Z.FAC[pick], after = P.forecast(p.zones, p.units).at[z] || 0, dv = p.valueAfter - p.valueNow;
           h += '<div class="zpreview"><b>미리보기: ' + pf.name + '</b>' +
-            '<div>금 ' + money(RUN.gold) + ' → <b>' + money(p.goldAfter) + '</b> (-' + p.cost + ')</div>' +
+            (p.fromGrant > 0
+              ? '<div>비용 ' + p.cost + ' = 공사비 <b>' + money(p.fromGrant) + '</b>' + (p.fromGold > 0 ? ' + 금 <b>' + money(p.fromGold) + '</b>' : '') + '</div>' +
+                '<div>금 ' + money(RUN.gold) + ' → <b>' + money(RUN.gold - (p.fromGold || 0)) + '</b>' + ' · 공사비 ' + money(grantLeft()) + ' → <b>' + money(Math.max(0, grantLeft() - p.fromGrant)) + '</b></div>'
+              : '<div>금 ' + money(RUN.gold) + ' → <b>' + money(p.goldAfter) + '</b> (-' + (p.fromGold != null ? p.fromGold : p.cost) + ')</div>') +
             '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + (dv >= 0 ? '+' : '') + dv + ')</div>' +
             (t !== 'yard' ? '<div>이 구역에 오는 침입자 ' + now + '명 → <b>' + after + '명</b></div>' : '') +
             (p.back ? '<div class="lack">든 몬스터 ' + p.back + '마리는 대기로 돌아가요</div>' : '') +
             (p.why ? '<div class="lack">' + p.why + '</div>' : '<div class="dim">지은 뒤에는 금을 돌려받지 못해요</div>') + '</div>';
         }
         h += '<div class="zact"><button class="btn" data-close>닫기</button><button class="btn primary" data-build' + (p && p.ok ? '' : ' disabled') + '>' +
-          (p ? (p.ok ? '짓기 (금 ' + p.cost + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
+          (p ? (p.ok ? '짓기 (' + (p.fromGrant > 0 ? '공사비 ' + p.fromGrant + (p.fromGold > 0 ? ' + 금 ' + p.fromGold : '') : '금 ' + p.cost) + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
         var bg = api.div('zsheetbg', '<div class="zsheet">' + h + '</div>');
         sheetBox.appendChild(bg);
         bg.firstChild.scrollTop = keep;
