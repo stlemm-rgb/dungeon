@@ -543,6 +543,48 @@
     draw();
   };
 
+  // ---------- 몬스터 모집 (부대 탭) · 광고 뽑기 (상점 탭) ----------
+  // 계약(progress.js): P.TRIBES · P.recruitInfo(name) · P.recruit(name) · P.gachaInfo() · P.gachaPull(). 하나라도 없으면 그 묶음은 통째로 숨긴다.
+  function uiLine(key, fb) { var u = window.LINES && window.LINES.ui; return u && typeof u[key] === 'string' && u[key].trim() ? u[key] : fb; }
+  function hasRecruit() { return Array.isArray(P.TRIBES) && P.TRIBES.length > 0 && typeof P.recruitInfo === 'function' && typeof P.recruit === 'function'; }
+  function hasGacha() { return typeof P.gachaInfo === 'function' && typeof P.gachaPull === 'function'; }
+  function safe(fn, fb) { try { var v = fn(); return v == null ? fb : v; } catch (e) { return fb; } }
+  function gradeBadge(g) { return '<span class="rg" data-g="' + esc(g) + '">' + esc(g) + '</span>'; }
+  function recruitCost(inf) { return inf && inf.cost && typeof inf.cost.gold === 'number' ? inf.cost.gold : null; }
+  function recruitFull(inf) { return inf && typeof inf.max === 'number' && typeof inf.count === 'number' && inf.count >= inf.max; }
+  // 모집 묶음: 부족마다 한 줄 (계약한 부족을 위로). 금이 모자라거나 상한이면 버튼을 흐리게 (눌러도 이유 토스트만)
+  function recruitHtml() {
+    var all = P.TRIBES.map(function (t) { return { t: t, inf: safe(function () { return P.recruitInfo(t.name); }, {}) }; });
+    var sorted = all.filter(function (x) { return x.inf.contracted; }).concat(all.filter(function (x) { return !x.inf.contracted; }));
+    var rows = sorted.map(function (x) {
+      var t = x.t, inf = x.inf, n = esc(t.name);
+      if (!inf.contracted) {
+        return '<div class="rrow off" data-rt="' + n + '">' + gradeBadge(t.grade) + '<div class="rinfo"><b>' + n + '</b><small>' + esc(uiLine('recruitLocked', '상점의 광고 뽑기로 계약')) + '</small></div></div>';
+      }
+      var cost = recruitCost(inf), full = recruitFull(inf), poor = full || inf.canAfford === false;
+      var stat = (t.hp != null ? ' · 체력 ' + t.hp : '') + (t.atk != null ? ' · 공격 ' + t.atk : '');
+      return '<div class="rrow' + (full ? ' full' : '') + '" data-rt="' + n + '">' + gradeBadge(t.grade) +
+        '<div class="rinfo"><b>' + n + '</b><small>' + (typeof inf.count === 'number' ? inf.count + (typeof inf.max === 'number' ? '/' + inf.max : '') + '마리' : '') + stat + '</small></div>' +
+        '<button class="btn small primary rbtn' + (poor ? ' poor' : '') + '" data-recruit="' + n + '"' + (poor ? ' aria-disabled="true"' : '') + '>' +
+        (full ? '가득 참' : '모집' + (cost != null ? ' (금 ' + money(cost) + ')' : '')) + '</button></div>';
+    }).join('');
+    return '<div class="card recruit"><div class="rhead"><h3>' + esc(uiLine('recruitHead', '몬스터 모집')) + '</h3><span class="chip">보유 금 ' + money(RUN.gold) + '</span></div>' + rows + '</div>';
+  }
+  // 모집 버튼을 눌렀을 때: 못 하는 이유가 있으면 토스트만, 아니면 P.recruit. 결과 { ok, msg, monster }를 돌려줌 (못 했으면 null)
+  function tryRecruit(name) {
+    var inf = safe(function () { return P.recruitInfo(name); }, {}), cost = recruitCost(inf);
+    if (!inf.contracted) { toast(uiLine('recruitLocked', '상점의 광고 뽑기로 계약')); buzz('warn'); return null; }
+    if (recruitFull(inf) || inf.canAfford === false) {
+      toast(inf.why || (recruitFull(inf) ? name + '은(는) 더 모집할 수 없어요 (상한 ' + inf.max + '마리)' :
+        cost != null ? '금이 ' + money(Math.max(0, cost - RUN.gold)) + ' 모자라요 (필요 ' + money(cost) + ' · 보유 ' + money(RUN.gold) + ')' : '지금은 모집할 수 없어요'));
+      buzz('warn'); return null;
+    }
+    var r = safe(function () { return P.recruit(name); }, null);
+    toast(r && r.msg ? r.msg : (r && r.ok ? '모집했어요' : '모집할 수 없어요'));
+    if (r && r.ok) { buzz('good'); return r; }
+    buzz('warn'); return null;
+  }
+
   SCREENS.units = function (el) {
     el.appendChild(head('부대'));
     var tab = 'mon';
@@ -550,12 +592,13 @@
     var listEl = div('', '');
     listEl.style.cssText = 'display:flex;flex-direction:column;gap:8px';
     var hasTribe = !!(P.tribeInfo && P.upgradeTribe);
-    // 몬스터 부족 보석 강화 줄 (같은 이름의 몬스터는 한 부족이라 강화가 같이 오른다)
+    // 몬스터 부족 보석 강화 줄 (같은 이름의 몬스터는 한 부족이라 강화가 같이 오른다. 같은 부족이 여러 마리여도 첫 카드에만 한 번 보임)
     function tribeHtml(m) {
       if (!hasTribe) return '';
       var t = P.tribeInfo(m.name);
       if (!t) return '';
-      return '<div class="tribe"><div class="tribehead"><b>보석 강화 Lv ' + (t.lv || 0) + '</b>' + upBtn(t, 'uptribe', m.name) + '</div>' +
+      var btn = t.contracted === false ? '<button class="btn small upbtn" disabled>계약 필요</button>' : upBtn(t, 'uptribe', m.name);
+      return '<div class="tribe"><div class="tribehead"><b>보석 강화 Lv ' + (t.lv || 0) + '</b>' + btn + '</div>' +
         '<div class="small-text">지금 ' + (t.effect || '없음') + '</div>' +
         '<div class="small-text dim">다음 ' + (t.next != null ? t.next : '최대 단계예요') + '</div></div>';
     }
@@ -564,12 +607,15 @@
         '<button data-t="guard" class="' + (tab === 'guard' ? 'on' : '') + '">친위대 (최대 3칸)</button>';
       var s = '';
       if (tab === 'mon') {
+        if (hasRecruit()) s += recruitHtml();
         if (hasTribe) s += '<div class="gemnote"><span class="chip accent">보석 ' + RUN.gems + '</span><span class="small-text dim">보석 강화는 몬스터 부족에 붙어 새 부지로 가도 남아요. 레벨은 친위대만 남아요.</span></div>';
+        var seen = {};
         RUN.monsters.forEach(function (m) {
-          var guard = RUN.guards.indexOf(m.id) >= 0;
-          s += '<div class="card unit mon" data-tribe="' + esc(m.name) + '"><div class="portrait">도트<br>48×48</div><div class="info"><b>' + m.name + '</b> <span class="chip">Lv ' + m.lv + '</span> ' +
+          var guard = RUN.guards.indexOf(m.id) >= 0, first = !seen[m.name];
+          seen[m.name] = true;
+          s += '<div class="card unit mon" data-mid="' + m.id + '" data-tribe="' + esc(m.name) + '"><div class="portrait">도트<br>48×48</div><div class="info"><b>' + m.name + '</b> <span class="chip">Lv ' + m.lv + '</span> ' +
             '<span class="chip">등급 ' + P.monGrade(m.lv) + '</span>' + (guard ? ' <span class="chip accent">친위대</span>' : '') +
-            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div>' + tribeHtml(m) + '</div></div>';
+            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div>' + (first ? tribeHtml(m) : '') + '</div></div>';
         });
       } else {
         s += '<p class="dim small-text" style="margin:0">친위대는 납품(정산) 때 고릅니다. 보스·보물방을 지키는 몬스터입니다 (가짜).</p>';
@@ -586,6 +632,16 @@
       if (t) { tab = t; draw(); }
     });
     listEl.addEventListener('click', function (e) {
+      var rb = e.target.closest ? e.target.closest('[data-recruit]') : null;
+      if (rb) {
+        var rname = rb.getAttribute('data-recruit'), r = tryRecruit(rname);
+        draw();
+        if (r) { // 성공: 새 카드와 그 부족 줄을 짧게 반짝
+          if (r.monster && r.monster.id != null) flashUp(listEl.querySelector('[data-mid="' + r.monster.id + '"]'));
+          flashUp(listEl.querySelector('[data-rt="' + rname + '"]'));
+        }
+        return;
+      }
       var b = e.target.closest ? e.target.closest('[data-uptribe]') : null;
       if (!b) return;
       var name = b.getAttribute('data-uptribe');
@@ -605,19 +661,63 @@
     });
   };
 
+  // 뽑기 결과의 대체 보상 글 (문자열이면 그대로, 숫자면 금, 객체면 금·보석)
+  function refundText(rf) {
+    if (rf == null || rf === false || rf === 0) return '';
+    if (typeof rf === 'string') return rf;
+    if (typeof rf === 'number') return '금 ' + money(rf);
+    var p = [];
+    if (rf.gold) p.push('금 ' + money(rf.gold));
+    if (rf.gems) p.push('보석 ' + rf.gems);
+    if (rf.text) p.push(String(rf.text));
+    return p.join(' · ');
+  }
+  var BURST = { A: 6, S: 10, SS: 14, SSR: 22 }; // 등급별 터지는 알갱이 수 (높을수록 화려하게)
+  var SHEEN = { A: 1, S: 1, SS: 1, SSR: 1 };
+
   SCREENS.shop = function (el) {
     el.appendChild(head('상점'));
-    var tab = 'gacha';
+    var tab = 'gacha', ratesOpen = false, busy = false, adTimer = null, buzzTimer = null, scrim = null, resBg = null;
     var segEl = div('seg');
     var body = div('');
     body.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+
+    // 광고 뽑기 카드 (몬스터). 안 되는 환경이면 빈 글
+    function gachaHtml() {
+      var gi = safe(function () { return P.gachaInfo(); }, null);
+      if (!gi) return '';
+      var left = Math.max(0, Number(gi.left) || 0), max = Math.max(left, typeof gi.perDay === 'number' && gi.perDay > 0 ? gi.perDay : (typeof gi.max === 'number' && gi.max > 0 ? gi.max : 3)), used = max - left;
+      var ms = gi.resetIn != null ? gi.resetIn : gi.resetMs;
+      var h = '<div class="card gacha"><h3>몬스터 뽑기</h3><div class="dim small-text">광고를 보면 몬스터 부족과 새로 계약하거나 몬스터를 얻어요</div>' +
+        '<button class="btn big primary gadbtn' + (left ? '' : ' poor') + '" data-gad' + (left ? '' : ' aria-disabled="true"') + '>' + esc(uiLine('adButton', '광고 보고 뽑기')) +
+        '<small>오늘 ' + used + '/' + max + '</small></button>';
+      if (!left) h += '<div class="gawait">' + esc(uiLine('gachaSoldOut', '오늘 뽑기를 다 썼어요')) + ' · ' + (typeof ms === 'number' ? resetText(ms) : '내일 다시 뽑을 수 있어요') + '</div>';
+      var rates = Array.isArray(gi.rates) ? gi.rates : [];
+      if (rates.length) {
+        h += '<button class="gtoggle" data-grates aria-expanded="' + ratesOpen + '"><span>등급 확률</span><i>▾</i></button>';
+        if (ratesOpen) {
+          h += '<div class="grates">' + rates.map(function (r) {
+            return '<div class="grate" data-g="' + esc(r.grade) + '">' + gradeBadge(r.grade) + '<div class="meter"><i style="width:' + Math.max(0, Math.min(100, Number(r.pct) || 0)) + '%"></i></div><b>' + esc(r.pct) + '%</b></div>';
+          }).join('') + '</div>';
+        }
+      }
+      var pool = Array.isArray(gi.pool) ? gi.pool : [];
+      if (pool.length) {
+        h += '<div class="gplbl">뽑기 대상 부족</div><div class="gpool">' + pool.map(function (p) {
+          return '<div class="gprow">' + gradeBadge(p.grade) + '<b>' + esc(p.name) + '</b>' + (p.contracted ? '<span class="chip ok">계약함</span>' : '<span class="chip">미계약</span>') + '</div>';
+        }).join('') + '</div>';
+      }
+      return h + '</div>';
+    }
     function draw() {
       segEl.innerHTML = '<button data-t="gacha" class="' + (tab === 'gacha' ? 'on' : '') + '">뽑기</button>' +
         '<button data-t="goods" class="' + (tab === 'goods' ? 'on' : '') + '">물품</button>';
       var s = '';
       if (tab === 'gacha') {
         var g = GRADES.map(function (x) { return '<span class="chip">' + x + '</span>'; }).join('');
-        ['몬스터 뽑기', '부대장 뽑기', '던전 강화 물품 뽑기'].forEach(function (n) {
+        var real = hasGacha() ? gachaHtml() : '';
+        s += real;
+        (real ? ['부대장 뽑기', '던전 강화 물품 뽑기'] : ['몬스터 뽑기', '부대장 뽑기', '던전 강화 물품 뽑기']).forEach(function (n) {
           s += '<div class="card"><h3>' + n + '</h3><div class="dim small-text">나올 수 있는 등급</div><div class="grades">' + g + '</div>' +
             '<div class="row"><button class="btn small grow" data-toast="광고는 출시 때 연결">광고 보고 뽑기</button>' +
             '<button class="btn small grow" data-toast="금 500을 썼어요 (가짜)">금 500 뽑기</button></div></div>';
@@ -630,9 +730,80 @@
       }
       body.innerHTML = s;
     }
+
+    // 가짜 광고: 가림막을 잠깐 보여 준 뒤 뽑는다 (움직임 줄이기면 더 짧게). 도중에 다른 화면으로 가면 뽑지 않고 접는다
+    function closeAd() {
+      clearTimeout(adTimer); adTimer = null;
+      if (scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim);
+      scrim = null; busy = false;
+    }
+    function closeRes() {
+      clearTimeout(buzzTimer); buzzTimer = null;
+      if (resBg && resBg.parentNode) resBg.parentNode.removeChild(resBg);
+      resBg = null;
+    }
+    leaveHooks.push(function () { closeAd(); closeRes(); });
+    function startAd() {
+      if (busy) return;
+      var gi = safe(function () { return P.gachaInfo(); }, null);
+      if (!gi || !(Number(gi.left) > 0)) {
+        var ms = gi && (gi.resetIn != null ? gi.resetIn : gi.resetMs);
+        toast(esc(uiLine('gachaSoldOut', '오늘 뽑기를 다 썼어요')) + (typeof ms === 'number' ? ' · ' + resetText(ms) : ''));
+        buzz('warn'); return;
+      }
+      busy = true; buzz('tap');
+      var dur = S.reduce ? 400 : 1500;
+      scrim = div('adscrim', '<div class="adbox" role="dialog" aria-label="광고"><b>' + esc(uiLine('adWatching', '광고 시청 중…')) + '</b>' +
+        '<div class="dim small-text">' + esc(uiLine('adFake', '가짜 광고예요. 출시 때 진짜 광고가 연결돼요.')) + '</div><div class="adbar"><i></i></div></div>');
+      document.body.appendChild(scrim);
+      var bar = scrim.querySelector('.adbar i');
+      void bar.offsetWidth;
+      bar.style.transition = 'width ' + dur + 'ms linear';
+      bar.style.width = '100%';
+      adTimer = setTimeout(finishAd, dur);
+    }
+    function finishAd() {
+      closeAd();
+      var r = safe(function () { return P.gachaPull(); }, null);
+      draw();
+      if (!r || !r.ok || !r.result) { toast(r && r.msg ? r.msg : '뽑을 수 없어요'); buzz('warn'); return; }
+      showResult(r.result, r.msg);
+    }
+    // 결과: 뒷면이 뒤집히며 등급 색 카드가 나타난다. 높을수록 빛·알갱이가 늘어난다. 움직임 줄이기에서는 바로 앞면
+    function showResult(res, msg) {
+      closeRes();
+      var g = String(res.grade || 'F'), mon = res.monster, rf = refundText(res.refund);
+      var stats = mon && mon.hp != null ? '체력 ' + mon.hp + (mon.atk != null ? ' · 공격 ' + mon.atk : '') : '';
+      var parts = '';
+      for (var i = 0, n = S.reduce ? 0 : (BURST[g] || 0); i < n; i++) {
+        var ang = fxRandom() * Math.PI * 2, dist = 90 + fxRandom() * 70;
+        parts += '<i class="gp' + (fxRandom() < 0.4 ? ' alt' : '') + '" style="--dx:' + Math.round(Math.cos(ang) * dist) + 'px;--dy:' + Math.round(Math.sin(ang) * dist) + 'px"></i>';
+      }
+      resBg = div('popbg gres', '<div class="gwrap" data-g="' + esc(g) + '"><div class="gflip"><div class="gface gback">?</div>' +
+        '<div class="gface gfront">' + (SHEEN[g] ? '<div class="gsheen"></div>' : '') + '<div class="gg">' + esc(g) + '</div><div class="gn">' + esc(res.name || '???') + '</div>' +
+        (stats ? '<div class="gs">' + esc(stats) + '</div>' : '') +
+        (res.isNewContract ? '<span class="gnew">' + esc(uiLine('newContract', '새 계약!')) + '</span>' : '') +
+        (rf ? '<div class="grefund">대체 보상 ' + esc(rf) + '</div>' : '') +
+        (msg ? '<div class="gm dim">' + esc(msg) + '</div>' : '') + '</div></div>' + parts + '</div>' +
+        '<button class="btn primary" data-closepop>확인</button>');
+      resBg.setAttribute('role', 'dialog'); resBg.setAttribute('aria-label', '뽑기 결과');
+      resBg.addEventListener('click', function (e) {
+        if (e.target === resBg || (e.target.closest && e.target.closest('[data-closepop]'))) { closeRes(); buzz('tap'); }
+      });
+      document.body.appendChild(resBg);
+      var strong = g === 'SSR' || g === 'SS' || g === 'S', mid = g === 'A' || g === 'B';
+      buzzTimer = setTimeout(function () { buzz(strong ? 'best' : mid ? 'good' : 'tap'); }, S.reduce ? 0 : MOTION.dur.panel * 2.2);
+    }
+
     segEl.addEventListener('click', function (e) {
       var t = e.target.getAttribute && e.target.getAttribute('data-t');
       if (t) { tab = t; draw(); }
+    });
+    body.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('[data-gad],[data-grates]') : null;
+      if (!t) return;
+      if (t.hasAttribute('data-grates')) { ratesOpen = !ratesOpen; buzz('tap'); draw(); return; }
+      startAd();
     });
     el.appendChild(segEl); el.appendChild(body); draw();
   };
