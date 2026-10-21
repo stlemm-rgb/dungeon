@@ -32,6 +32,10 @@
   --zone-lure: #33263f;
   --zone-boss: #44381a;
   --zone-edge: #8a93a3;
+  /* 의뢰 카드의 판 모양 미리보기 (이웃한 구역끼리 다른 색) */
+  --mini-a: #36506c;
+  --mini-b: #5e4f74;
+  --mini-c: #44624d;
   /* 침입자 등급 (전투 분대 도트) */
   --grade-d: #b9c0cc;
   --grade-c: #7fd18b;
@@ -250,6 +254,28 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .contract .money div { flex: 1; min-width: 0; background: var(--panel-2); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--dim); }
 .contract .money b { display: block; color: var(--text); font-size: 15px; }
 
+/* 판 모양 미리보기 · 건설 요구 · 막힘 안내 (build.js ZONEVIEW) */
+.qsite { display: flex; align-items: center; gap: 10px; margin-top: 6px; min-width: 0; }
+.qsite-t { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.qsite-t .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+.mini { flex: none; display: grid; grid-auto-rows: 12px; width: 84px; border: 2px solid var(--zone-edge); border-radius: 4px; overflow: hidden; background: var(--bg); }
+.mc { box-sizing: border-box; border: 0 solid var(--bg); font-style: normal; font-size: 9px; font-weight: bold; line-height: 12px; text-align: center; color: var(--text); min-width: 0; }
+.mc.m0 { background: var(--mini-a); } .mc.m1 { background: var(--mini-b); } .mc.m2 { background: var(--mini-c); }
+.mc.me { background: var(--ready-soft); color: var(--ready); }
+.mc.mb { background: var(--zone-boss); color: var(--accent); }
+.demand { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 8px; min-width: 0; border: 2px solid var(--accent); border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.demand.ok { border-color: var(--ready); } .demand.no { border-color: var(--danger); }
+.chip.req { flex: none; background: var(--danger); border-color: var(--danger); color: var(--accent-ink); font-weight: bold; }
+.dtxt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dtxt b { min-width: 0; overflow-wrap: anywhere; }
+.dtxt small { font-size: 12px; overflow-wrap: anywhere; }
+.dmark { font-weight: bold; }
+.demand.ok .dmark, .demand.ok .dnum { color: var(--ready); } .demand.no .dmark, .demand.no .dnum { color: var(--danger); }
+.dnum { flex: none; font-size: 14px; }
+.blocker { flex: none; padding: 6px 10px; border: 2px solid var(--danger); border-radius: 8px; background: var(--panel-2); font-size: 13px; overflow-wrap: anywhere; }
+.blocker b { color: var(--danger); }
+.bt-resbox .blocker { margin: 0 0 10px; }
+
 /* 전투 */
 .field { position: relative; width: 100%; height: 300px; background-color: var(--stage-sky); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; --spd: 1;
   background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 20% 14.2857%;
@@ -302,7 +328,7 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .bt-score b { color: var(--text); }
 
 .bt-board { position: relative; }
-.bt-board .zc { aspect-ratio: 5 / 3.3; cursor: default; font-size: 10px; }
+.bt-board .zc { aspect-ratio: calc(var(--za, 1.25) * 1.212); cursor: default; font-size: 10px; }
 .bt-board .zc .fn { font-size: 10.5px; }
 .bt-board .zc .zn { font-size: 8px; }
 .bt-board .zyard { height: 30px; cursor: default; align-items: flex-start; padding-top: 1px; font-size: 10px; }
@@ -467,7 +493,7 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .zyard b { color: var(--text); }
 .zwrap { position: relative; }
 .zgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 2px solid var(--zone-edge); border-radius: 0 0 8px 8px; overflow: hidden; }
-.zc { aspect-ratio: 5 / 4; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+.zc { aspect-ratio: var(--za, 1.25); min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   font-size: 11px; line-height: 1.2; cursor: pointer; border: 1px solid var(--zone-edge); outline: 1px dotted var(--line); outline-offset: -2px;
   background: var(--zone-none); transition: background var(--dur-tap); }
 .zc .zn { color: var(--dim); font-size: 9px; }

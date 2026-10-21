@@ -15,12 +15,17 @@
   'use strict';
 
   var Z = window.ZONES, P = window.PROGRESS, RUN = P.RUN;
+  // 판은 부지마다 다르다 (core 가 ZONES.useBoard 로 바꿔 끼움). 판 값(MAP·NAMES·...)은 모듈 변수에 담지 말고 그릴 때마다 Z 에서 읽는다.
+  function curZ() { Z = window.ZONES || Z; return Z; }
+  function cols() { return Z.MAP[0].length; }
+  // 칸 가로/세로 비율: 판 전체 모양이 5x7 판(비율 1.25)과 비슷하게 유지되도록 칸 수에 맞춰 잡는다 (큰 판이 화면 밖으로 길어지지 않게)
+  function cellRatio(nc, nr) { return Math.round(25 * nr / (28 * nc) * 1000) / 1000; }
 
-  function cellKind(z, k) { return z === 'B' ? 'boss' : Z.FAC[k].kind; }
+  function cellKind(z, k) { return z === 'B' ? 'boss' : (Z.FAC[k] || Z.FAC.empty).kind; }
 
   // 구역 첫 칸에 쓸 글: 구역 이름 / 시설 / 한 줄 정보
   function labelHtml(z, k, units) {
-    var f = Z.FAC[k], us = units[z] || [], h = '<div class="zn">' + Z.NAMES[z] + '</div><div class="fn">' + f.short + '</div>';
+    var f = Z.FAC[k] || Z.FAC.empty, us = units[z] || [], h = '<div class="zn">' + (Z.NAMES[z] || z) + '</div><div class="fn">' + f.short + '</div>';
     if (f.kind === 'den') {
       var sl = Z.slotsOf(k, z);
       h += '<div class="zi' + (us.length ? '' : ' warn') + '">' + us.length + '/' + sl + '</div>';
@@ -30,12 +35,13 @@
 
   // 판 전체 HTML. o = { zones, units, flow(없으면 문 숫자 안 보임), sel(눌린 구역), pv(미리보기 중인 구역) }
   function boardHtml(o) {
-    var zones = o.zones, units = o.units || {}, flow = o.flow || null, seen = {};
+    curZ();
+    var zones = o.zones, units = o.units || {}, flow = o.flow || null, seen = {}, nc = cols();
     function zcls(z) { return (o.sel === z ? ' sel' : '') + (o.pv === z ? ' pv' : ''); }
-    var h = '<div class="zyard' + zcls('Y') + '" data-z="Y">야외 · 집결지 — <b>' + Z.FAC[zones.Y].name + '</b></div>';
-    h += '<div class="zwrap"><div class="zgrid">';
-    for (var r = 0; r < Z.MAP.length; r++) for (var c = 0; c < 5; c++) {
-      var z = Z.MAP[r][c], k = zones[z], first = !seen[z];
+    var h = '<div class="zyard' + zcls('Y') + '" data-z="Y">야외 · 집결지 — <b>' + (Z.FAC[zones.Y] || Z.FAC.forest).name + '</b></div>';
+    h += '<div class="zwrap"><div class="zgrid" style="grid-template-columns:repeat(' + nc + ',minmax(0,1fr));--za:' + cellRatio(nc, Z.MAP.length) + '">';
+    for (var r = 0; r < Z.MAP.length; r++) for (var c = 0; c < nc; c++) {
+      var z = Z.MAP[r][c], k = zones[z] || 'empty', first = !seen[z];
       seen[z] = true;
       var edge = [[-1, 0, 'top'], [1, 0, 'bottom'], [0, -1, 'left'], [0, 1, 'right']].map(function (d) {
         var nb = Z.MAP[r + d[0]] && Z.MAP[r + d[0]][c + d[1]];
@@ -46,13 +52,91 @@
     h += '</div><div class="zdoors">';
     Z.flowPairs().forEach(function (p) {
       var e = Z.sharedEdge(p[0], p[1]); if (!e) return;
-      var x = ((e[0][1] + e[1][1]) / 2 + 0.5) / 5 * 100, y = ((e[0][0] + e[1][0]) / 2 + 0.5) / Z.MAP.length * 100, hz = e[0][1] === e[1][1];
+      var x = ((e[0][1] + e[1][1]) / 2 + 0.5) / nc * 100, y = ((e[0][0] + e[1][0]) / 2 + 0.5) / Z.MAP.length * 100, hz = e[0][1] === e[1][1];
       var n = flow ? flow[p[0] + '>' + p[1]] || 0 : null;
       h += '<div class="zdoor ' + (hz ? 'h' : 'v') + (n === 0 ? ' unused' : '') + '" style="left:' + x + '%;top:' + y + '%">' + (n ? '<b>' + n + '</b>' : '') + '</div>';
     });
     return h + '</div></div>';
   }
-  window.ZONEVIEW = { boardHtml: boardHtml };
+
+  // ---------- 의뢰 카드·팝업 조각: 판 미리보기 · 건설 요구 · 막힘 안내 (core 계약이 아직 없으면 그 부분은 빈 글) ----------
+  // 계약: ZONES.boardInfo(id) -> { id, name, desc, MAP, NAMES } · q.board · q.demand { id, label, text }
+  //       P.demandStatus() -> { id, label, text, ok, now, need } | null · P.questBlockers() -> 문자열 배열
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+  function ui(key, fb) { var u = window.LINES && window.LINES.ui; return u && typeof u[key] === 'string' && u[key].trim() ? u[key] : fb; }
+  function boardOf(id) {
+    curZ();
+    if (!id || typeof Z.boardInfo !== 'function') return null;
+    try { var b = Z.boardInfo(id); return b && Array.isArray(b.MAP) && b.MAP.length && Array.isArray(b.MAP[0]) ? b : null; } catch (e) { return null; }
+  }
+  // 판 모양 작은 미리보기: 구역마다 칸 색 (이웃한 구역은 다른 색), 입구 '입'·보스방 '보'. 구역 사이에만 선을 긋는다
+  function miniHtml(info) {
+    var M = info.MAP, nc = M[0].length, nbs = {}, keys = [], col = {};
+    M.forEach(function (row, r) {
+      row.forEach(function (k, c) {
+        if (!nbs[k]) { nbs[k] = {}; keys.push(k); }
+        [[r, c + 1], [r + 1, c]].forEach(function (p) {
+          var o = M[p[0]] && M[p[0]][p[1]];
+          if (o === undefined || o === k) return;
+          if (!nbs[o]) { nbs[o] = {}; keys.push(o); }
+          nbs[k][o] = 1; nbs[o][k] = 1;
+        });
+      });
+    });
+    keys.forEach(function (k) {
+      var used = {}, i = 0;
+      Object.keys(nbs[k]).forEach(function (o) { if (col[o] !== undefined) used[col[o]] = 1; });
+      while (used[i]) i++;
+      col[k] = i % 3;
+    });
+    var seen = {}, h = '<div class="mini" style="grid-template-columns:repeat(' + nc + ',minmax(0,1fr))" aria-hidden="true">';
+    M.forEach(function (row, r) {
+      row.forEach(function (k, c) {
+        var up = M[r - 1] && M[r - 1][c], lf = row[c - 1];
+        var bw = (up !== undefined && up !== k ? 1 : 0) + 'px 0 0 ' + (lf !== undefined && lf !== k ? 1 : 0) + 'px';
+        var cls = k === 'E' ? 'me' : k === 'B' ? 'mb' : 'm' + col[k], mark = seen[k] ? '' : (k === 'E' ? '입' : k === 'B' ? '보' : '');
+        seen[k] = true;
+        h += '<i class="mc ' + cls + '" style="border-width:' + bw + '">' + mark + '</i>';
+      });
+    });
+    return h + '</div>';
+  }
+  // 판 미리보기 + 판 이름 칩 + 한 줄 설명. 판 정보가 없으면 ''
+  function siteHtml(boardId) {
+    var info = boardOf(boardId);
+    if (!info) return '';
+    return '<div class="qsite">' + miniHtml(info) + '<div class="qsite-t"><span class="chip">' + esc(info.name || boardId) + '</span>' +
+      (info.desc ? '<div class="small-text dim">' + esc(info.desc) + '</div>' : '') + '</div></div>';
+  }
+  // 건설 요구 한 줄. ds = { ok, now, need } (진행 중인 의뢰만. 없으면 요구 글만)
+  function demandRowHtml(d, ds) {
+    if (!d || !d.label) return '';
+    var st = ds && typeof ds.ok === 'boolean' ? (ds.ok ? ' ok' : ' no') : '';
+    var num = ds && typeof ds.need === 'number' && ds.need > 0 && typeof ds.now === 'number' ? '<b class="dnum">' + ds.now + '/' + ds.need + '</b>' : '';
+    return '<div class="demand' + st + '"><span class="chip req">' + esc(ui('demandBadge', '요구')) + '</span>' +
+      '<div class="dtxt"><b>' + (st ? '<span class="dmark">' + (ds.ok ? '✓' : '✗') + '</span> ' : '') + esc(d.label) + '</b>' +
+      (d.text ? '<small class="dim">' + esc(d.text) + '</small>' : '') + '</div>' + num + '</div>';
+  }
+  // 지금 하고 있는 의뢰의 요구 (진행 포함)
+  function demandNowHtml(q) {
+    var ds = null;
+    if (typeof P.demandStatus === 'function') { try { ds = P.demandStatus(); } catch (e) { ds = null; } }
+    if (ds && ds.label) return demandRowHtml(ds, ds);
+    return demandRowHtml(q && q.demand, null);
+  }
+  // 목표는 채웠는데 요구가 안 맞아 납품이 막힌 이유 한 줄 (없으면 '')
+  function blockerHtml() {
+    var q = RUN.quest, b;
+    if (!q || typeof P.questBlockers !== 'function') return '';
+    try {
+      if (!(q.goals || []).every(function (g) { return P.goalNow(g) >= g.target; })) return '';
+      b = P.questBlockers();
+    } catch (e) { return ''; }
+    b = Array.isArray(b) ? b.filter(function (t) { return typeof t === 'string' && t; }) : [];
+    if (!b.length) return '';
+    return '<div class="blocker">' + (/^요구/.test(b[0]) ? '' : '<b>' + esc(ui('blockerHead', '요구가 남았어요:')) + '</b> ') + b.map(esc).join(' · ') + '</div>';
+  }
+  window.ZONEVIEW = { boardHtml: boardHtml, cols: cols, boardOf: boardOf, siteHtml: siteHtml, demandRowHtml: demandRowHtml, demandNowHtml: demandNowHtml, blockerHtml: blockerHtml };
 
   function zoneWhy(z) {
     var t = Z.zoneType(z);
@@ -89,17 +173,20 @@
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
     return function (el) {
+      curZ();
       var sel = null;      // 시트가 열린 구역 (없으면 시트 닫힘)
       var pick = null;     // 시트에서 고른 시설 (아직 안 지음, 미리보기 중)
 
       el.appendChild(api.head('건설', 'home'));
       var sumBox = api.div('bsum');
       var questBox = api.div('');
+      var blockBox = api.div('');     // 납품이 막힌 이유 (목표는 찼는데 요구가 안 맞을 때만)
       var grantBox = api.div('');     // 첫 건설 공사비 안내 (P.grantLeft가 없거나 0이면 비어 있음)
       var boardBox = api.div('zboard');
       var sheetBox = api.div('');
       el.appendChild(sumBox);
       el.appendChild(questBox);
+      el.appendChild(blockBox);
       el.appendChild(grantBox);
       el.appendChild(boardBox);
       el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 금은 돌려받지 못해요. 몬스터 넣고 빼기는 공짜예요.'));
@@ -113,7 +200,8 @@
         morphHtml(grantBox, gl > 0 ? '<div class="grantbar"><b>첫 건설 공사비 ' + money(gl) + '</b><span>이 부지에서만 써요. 안 쓰면 사라져요</span></div>' : '');
         morphHtml(sumBox, '<div>자금<b>' + money(RUN.gold) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>건설 횟수<b>' + RUN.site.builds + '회</b></div>');
         morphHtml(questBox, RUN.quest ? '<div class="card quest' + (RUN.quest.kind === 'main' ? ' main' : '') + '"><div class="qhead"><span class="chip accent">' + api.questTag(RUN.quest) +
-          '</span><b>' + RUN.quest.name + '</b></div>' + api.goalsHtml(RUN.quest, true) + '</div>' : '');
+          '</span><b>' + RUN.quest.name + '</b></div>' + api.goalsHtml(RUN.quest, true) + demandNowHtml(RUN.quest) + '</div>' : '');
+        morphHtml(blockBox, blockerHtml());
       }
 
       function preview() { return sel && pick ? P.previewBuild(sel, pick) : null; }
