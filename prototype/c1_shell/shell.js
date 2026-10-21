@@ -138,7 +138,7 @@
     var status = div('status',
       '<div class="line1"><span class="company">검은망치 건설</span><span class="chip accent">' + RUN.week + '주째</span>' +
       '<button class="gear" data-go="settings" aria-label="설정">&#9881;&#xFE0E;</button></div>' +
-      '<div class="line2"><span class="chip">금 ' + money(RUN.gold) + '</span><span class="chip">보석 ' + RUN.gems + '</span><span class="chip">명성 ' + RUN.fame + '</span></div>');
+      '<div class="line2"><span class="chip" data-chip="gold">금 ' + money(RUN.gold) + '</span><span class="chip" data-chip="gems">보석 ' + RUN.gems + '</span><span class="chip">명성 ' + RUN.fame + '</span></div>');
     el.appendChild(status);
 
     // 대기 화면 무대: 아이소메트릭 방 (그림 = stage.js SVG) + 캐릭터 자리 (stage.js 표)
@@ -151,17 +151,26 @@
       '<button class="btn" data-go="leaders">부대장</button>' +
       '<button class="btn" data-go="records">기록·도감</button>' +
       '<button class="btn" data-go="workshop">공방</button>'));
-    // 퀘스트 버튼: 무대 오른쪽 위. 누르면 현재 의뢰 팝업
-    if (q) {
+    // 퀘스트 버튼: 무대 오른쪽 위. 누르면 [의뢰 / 일일 / 주간] 팝업. 일일·주간 보상을 받을 수 있으면 빨간 점 (계약 함수가 없으면 의뢰만)
+    if (q || choresNow()) {
       var qb = document.createElement('button');
-      qb.className = 'questbtn' + (q.kind === 'main' ? ' main' : '');
       qb.setAttribute('data-quest', '');
-      qb.innerHTML = '<span class="qmark">!</span>퀘스트<b class="qbadge">' + questDone(q) + '/' + q.goals.length + '</b>';
-      qb.addEventListener('click', function () { buzz('tap'); openQuestPop(q); });
+      qb.addEventListener('click', function () { buzz('tap'); openQuestPop(RUN.quest); });
+      fillQuestBtn(qb);
       stage.appendChild(qb);
+    }
+    // 쌓인 금 버튼: 무대 왼쪽 위. 방치 보상이 있을 때만 (팝업을 닫아도 여기서 다시 받을 수 있음)
+    if (idleNow()) {
+      var ib = document.createElement('button');
+      ib.className = 'idlebtn'; ib.setAttribute('data-idle', '');
+      ib.addEventListener('click', function () { buzz('tap'); openIdlePop(); });
+      fillIdleBtn(ib);
+      stage.appendChild(ib);
     }
     el.appendChild(stage);
     wanderActors(actors, stage);
+    // 홈에 들어왔을 때 방치 보상이 있으면 작은 팝업 (받지 않고 닫았으면 다시 받을 때까지 자동으로는 안 띄움)
+    if (justEnteredHome && !idleSeen && idleNow()) openIdlePop();
 
     // 이번 주 침입자 알림 한 줄 + 광고 보기(가짜). 대량 출현이면 경고와 합친다
     if (q) {
@@ -287,21 +296,163 @@
       : RUN.questsDone >= P.NORMAL_TO_MAIN ? '메인 의뢰가 열렸어요. 다음 후보에 나옵니다'
       : '메인 의뢰까지 일반 의뢰 ' + RUN.questsDone + '/' + P.NORMAL_TO_MAIN + ' (다음 메인 ' + P.MAIN_GRADES[RUN.mainGrade] + '급)';
   }
-  function closeQuestPop() { if (questPop && questPop.parentNode) questPop.parentNode.removeChild(questPop); questPop = null; }
-  function openQuestPop(q) {
-    closeQuestPop();
-    var bg = div('popbg', '<div class="pop' + (q.kind === 'main' ? ' main' : '') + '" role="dialog" aria-label="퀘스트">' +
-      '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' +
+  // 팝업은 한 번에 하나만 (퀘스트 팝업 · 방치 보상 팝업이 이 자리를 같이 씀). 닫을 때 popOnClose 가 있으면 한 번 부른다
+  var popOnClose = null;
+  function closeQuestPop() {
+    if (questPop && questPop.parentNode) questPop.parentNode.removeChild(questPop);
+    questPop = null;
+    if (popOnClose) { var f = popOnClose; popOnClose = null; f(); }
+  }
+
+  // ---------- 일일·주간 퀘스트 · 방치 보상 (progress.js 계약 함수. 없거나 오류면 그 칸·팝업을 숨김) ----------
+  var CHORE_SCOPES = [{ id: 'daily', label: '일일' }, { id: 'weekly', label: '주간' }];
+  var questTab = 'quest';      // 마지막으로 본 칸 (팝업을 다시 열어도 기억)
+  var idleSeen = false;        // 방치 보상 팝업을 받지 않고 닫았으면 true (받으면 false로)
+  var justEnteredHome = false; // render 가 정함: 이번에 다른 화면에서 홈으로 들어왔는가
+  function choresNow() {
+    if (typeof P.chores !== 'function' || typeof P.claimChore !== 'function') return null;
+    try {
+      var c = P.chores();
+      if (!c) return null;
+      var out = {};
+      CHORE_SCOPES.forEach(function (sc) { if (c[sc.id] && Array.isArray(c[sc.id].tasks)) out[sc.id] = c[sc.id]; });
+      return Object.keys(out).length ? out : null;
+    } catch (e) { return null; }
+  }
+  function claimableAll() {
+    if (typeof P.choresClaimable !== 'function') return 0;
+    try { return Math.max(0, Number(P.choresClaimable()) || 0); } catch (e) { return 0; }
+  }
+  function claimableIn(sc) { return sc.tasks.filter(function (t) { return t.done && !t.claimed; }).length; }
+  function gemsOf(t) { return (t.reward && Number(t.reward.gems)) || 0; }
+  function resetText(ms) {
+    var min = Math.max(0, Math.ceil((Number(ms) || 0) / 60000)), d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60;
+    if (min <= 0) return '곧 새로 시작해요';
+    return (d > 0 ? d + '일 ' + h + '시간' : h > 0 ? h + '시간 ' + m + '분' : m + '분') + ' 뒤 새로';
+  }
+  function minutesText(min) {
+    min = Math.max(0, Math.floor(Number(min) || 0));
+    var h = Math.floor(min / 60), m = min % 60;
+    return h > 0 ? h + '시간 ' + m + '분' : m + '분';
+  }
+  function idleNow() {
+    if (typeof P.idleInfo !== 'function' || typeof P.claimIdle !== 'function') return null;
+    try { var i = P.idleInfo(); return i && Number(i.gold) > 0 ? i : null; } catch (e) { return null; }
+  }
+  // 홈 위쪽 숫자 칩·버튼을 다시 채운다 (팝업을 닫지 않고 값만 맞춤)
+  function fillQuestBtn(qb) {
+    var q = RUN.quest, n = claimableAll();
+    qb.className = 'questbtn' + (q && q.kind === 'main' ? ' main' : '');
+    qb.innerHTML = '<span class="qmark">!</span>퀘스트' + (q ? '<b class="qbadge">' + questDone(q) + '/' + q.goals.length + '</b>' : '') +
+      (n > 0 ? '<span class="qdot" aria-label="받을 보상 ' + n + '개">' + n + '</span>' : '');
+  }
+  function fillIdleBtn(ib) { var i = idleNow(); ib.innerHTML = '<span class="qmark">+</span>쌓인 금' + (i ? '<b class="qbadge">' + money(Math.floor(i.gold)) + '</b>' : ''); }
+  function refreshHomeBits() {
+    var g = document.querySelector('[data-chip="gold"]'), m = document.querySelector('[data-chip="gems"]');
+    if (g) g.textContent = '금 ' + money(RUN.gold);
+    if (m) m.textContent = '보석 ' + RUN.gems;
+    var qb = document.querySelector('[data-quest]'); if (qb) fillQuestBtn(qb);
+    var ib = document.querySelector('[data-idle]');
+    if (ib) { if (idleNow()) fillIdleBtn(ib); else if (ib.parentNode) ib.parentNode.removeChild(ib); }
+  }
+
+  function questTabHtml(q) {
+    if (!q) return '<div class="dim">진행 중인 의뢰가 없어요</div>';
+    return '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><b>' + q.name + '</b></div>' +
       '<div class="poplabel">목표 ' + questDone(q) + '/' + q.goals.length + '</div>' + goalsHtml(q, true) +
       '<div class="stat"><span>보수</span><b>금 ' + money(q.reward.gold) + ' · 명성 +' + q.reward.fame + '</b></div>' +
-      '<div class="dim small-text mainline">' + mainLineText(q) + '</div>' +
+      '<div class="dim small-text mainline">' + mainLineText(q) + '</div>';
+  }
+  function choreTabHtml(sc, scopeId) {
+    var rest = 0, ready = 0;
+    var rows = sc.tasks.map(function (t) {
+      var need = Math.max(1, Number(t.need) || 1), prog = Math.max(0, Math.min(Number(t.prog) || 0, need));
+      var g = gemsOf(t);
+      if (!t.claimed) { rest += g; if (t.done) ready += g; }
+      var act = t.claimed ? '<span class="cdone">받음</span>'
+        : t.done ? '<button class="btn small primary" data-claimchore="' + esc(t.id) + '">받기</button>'
+        : '<span class="dim small-text">진행 중</span>';
+      return '<div class="chore' + (t.claimed ? ' claimed' : t.done ? ' ready' : '') + '" data-chore="' + esc(t.id) + '">' +
+        '<div class="chead"><span>' + esc(t.label) + '</span><b>' + prog + '/' + need + '</b></div>' +
+        '<div class="meter"><i style="width:' + pct(prog, need) + '"></i></div>' +
+        '<div class="cfoot"><span class="creward">보석 ' + g + '</span>' + act + '</div></div>';
+    }).join('');
+    return '<div class="resetline">' + resetText(sc.resetIn) + '</div>' + (rows || '<div class="dim">지금은 퀘스트가 없어요</div>') +
+      '<div class="stat total"><span>' + (rest > 0 ? '모두 받으면' : '모두 받았어요') + '</span><b>보석 ' + rest + '</b></div>' +
+      (rest > 0 && ready > 0 ? '<div class="dim small-text">지금 받을 수 있는 보석 ' + ready + '</div>' : '') +
+      '<div class="dim small-text choreNote">받지 않은 보상은 ' + (scopeId === 'weekly' ? '주' : '날') + '이 바뀌면 사라져요</div>';
+  }
+
+  function openQuestPop(q) {
+    closeQuestPop();
+    var chores = choresNow(), scopes = chores ? CHORE_SCOPES.filter(function (sc) { return chores[sc.id]; }) : [];
+    if (questTab !== 'quest' && !scopes.some(function (sc) { return sc.id === questTab; })) questTab = 'quest';
+    var bg = div('popbg', '<div class="pop" role="dialog" aria-label="퀘스트"><div class="seg poptabs"></div><div class="popbody"></div>' +
       '<button class="btn primary" data-closepop>닫기</button></div>');
+    var pop = bg.firstChild, tabs = pop.querySelector('.poptabs'), body = pop.querySelector('.popbody');
+    function draw() {
+      var cur = choresNow(), sc = cur && cur[questTab];
+      if (questTab !== 'quest' && !sc) questTab = 'quest';
+      pop.classList.toggle('main', questTab === 'quest' && !!q && q.kind === 'main');
+      tabs.hidden = !cur;
+      tabs.innerHTML = [{ id: 'quest', label: '의뢰' }].concat(scopes).map(function (t) {
+        var n = t.id !== 'quest' && cur && cur[t.id] ? claimableIn(cur[t.id]) : 0;
+        return '<button data-qtab="' + t.id + '" class="' + (t.id === questTab ? 'on' : '') + '">' + t.label + (n > 0 ? '<i class="tdot"></i>' : '') + '</button>';
+      }).join('');
+      body.className = 'popbody' + (questTab === 'quest' ? '' : ' chores');
+      body.innerHTML = questTab === 'quest' ? questTabHtml(RUN.quest || q) : choreTabHtml(sc, questTab);
+    }
     bg.addEventListener('click', function (e) {
-      if (e.target === bg || (e.target.closest && e.target.closest('[data-closepop]'))) { closeQuestPop(); buzz('tap'); }
+      var t = e.target;
+      if (t === bg || (t.closest && t.closest('[data-closepop]'))) { closeQuestPop(); buzz('tap'); return; }
+      var tab = t.closest && t.closest('[data-qtab]');
+      if (tab) { questTab = tab.getAttribute('data-qtab'); buzz('tap'); draw(); return; }
+      var cb = t.closest && t.closest('[data-claimchore]');
+      if (cb) {
+        var id = cb.getAttribute('data-claimchore'), r = P.claimChore(questTab, id) || {};
+        toast(r.msg || (r.ok ? '보석을 받았어요' : '받을 수 없어요'));
+        buzz(r.ok ? 'good' : 'warn');
+        draw(); refreshHomeBits();
+        if (r.ok) { flashUp(body.querySelector('[data-chore="' + id + '"]')); flashUp(document.querySelector('[data-chip="gems"]')); }
+      }
     });
+    draw();
     document.body.appendChild(bg);
     questPop = bg;
     leaveHooks.push(closeQuestPop); // 다른 화면으로 가거나 홈을 다시 그리면 같이 닫힘
+  }
+
+  // 방치 보상 팝업: 공방이 꺼져 있는 동안 쌓인 금. 받기 -> P.claimIdle()
+  function openIdlePop() {
+    var info = idleNow();
+    if (!info) return;
+    closeQuestPop();
+    var cap = info.capped ? '<div class="idlecap">가득 찼어요. 최대 ' + (Number(info.maxHours) || 8) + '시간까지 쌓여요</div>' : '';
+    var rate = Number(info.rate) > 0 ? '시간당 금 ' + money(Math.round(info.rate)) + ' · ' : '';
+    var bg = div('popbg', '<div class="pop idle" role="dialog" aria-label="쌓인 금">' +
+      '<div class="idlehead">공방이 쌓아 둔 금</div>' +
+      '<div class="idlegold">금 ' + money(Math.floor(info.gold)) + '</div>' +
+      '<div class="dim small-text idletime">' + minutesText(info.minutes) + ' 동안 쌓였어요</div>' + cap +
+      '<div class="dim small-text">' + rate + '공방을 강화하면 늘어나요</div>' +
+      '<button class="btn primary" data-claimidle>받기</button>' +
+      '<button class="btn" data-closepop>나중에</button></div>');
+    bg.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t === bg || (t.closest && t.closest('[data-closepop]'))) { closeQuestPop(); buzz('tap'); return; }
+      if (t.closest && t.closest('[data-claimidle]')) {
+        var r = P.claimIdle() || {};
+        popOnClose = null; closeQuestPop();
+        idleSeen = false;
+        toast(r.msg || (r.ok ? '금을 받았어요' : '받을 수 없어요'));
+        buzz(r.ok ? 'good' : 'warn');
+        refreshHomeBits();
+        if (r.ok) flashUp(document.querySelector('[data-chip="gold"]'));
+      }
+    });
+    document.body.appendChild(bg);
+    questPop = bg;
+    popOnClose = function () { idleSeen = true; }; // 받지 않고 닫음: 다시 홈에 와도 자동으로는 안 띄움 (무대 옆 버튼으로 받기)
+    leaveHooks.push(closeQuestPop);
   }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQuestPop(); });
 
@@ -672,6 +823,7 @@
     var name = guardScreen((location.hash || '#home').slice(1));
     if (name === 'home' && P.checkQuest() && autoDeliver()) return; // 결과표에서 새로고침한 경우 등: 목표를 채웠으면 납품
     var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
+    justEnteredHome = name === 'home' && lastName !== 'home';
     lastName = name;
     P.setBattle(name === 'battle'); // 전투 화면에 있는 동안은 건설 불가
     document.body.setAttribute('data-screen', name);
@@ -710,6 +862,13 @@
     else go(t.getAttribute('data-go'), true);
   });
   window.addEventListener('hashchange', render);
+
+  // 방치 시간은 마지막으로 저장한 때(RUN.lastSeen)부터 재므로, 화면을 켜 둔 동안은 1분마다 저장하고 가리거나 닫을 때도 저장한다.
+  // 전투 중에도 저장한다: P.save()는 RUN을 그대로 쓸 뿐이라 전투 저장 지점(RUN.bsave)은 안 바뀐다 (bsave는 saveBattle 로만 갱신).
+  function keepSeen() { if (typeof P.save === 'function') { try { P.save(); } catch (e) { /* 저장이 막힌 환경: 무시 */ } } }
+  setInterval(function () { if (!document.hidden) keepSeen(); }, 60000);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) keepSeen(); });
+  window.addEventListener('pagehide', keepSeen);
 
   applyReduce();
   render();
