@@ -2,6 +2,9 @@
 공방 = 건설 할인·연구실 함정 피해·제작 공방 거부, 몬스터 부족 보석 강화 = 인계 뒤에도 남음.
 일일·주간 퀘스트 = 날·주 바뀜 초기화·진행 훅·받기, 방치 보상 = 10분 미만 없음·시간 비례·8시간 상한·공방 단계 반영 (시계는 가짜 Date.now·setClock).
 튜토리얼 = 새 게임 on·후보 1장(방어 2)·첫 부지 입구 고정·한 길·함정 발동·seen 저장·skip·첫 납품 뒤 off·옛 저장 off.
+부지 모양 3종 = 판마다 입구->보스 길 이어짐·문 맞닿음·forecast 합·useBoard로 Z.MAP 바뀜·부지 바뀔 때·불러올 때 판 유지·옛 저장 fork3.
+건설 요구 = 종류마다 ok/미달·목표 다 채워도 요구 미달이면 납품 안 됨(questBlockers)·맞추면 납품·튜토리얼 요구 없음·옛 저장 null.
+(앞쪽 흐름 시험은 pin()으로 의뢰를 fork3 판·요구 없음으로 고정해 예전 구역 id를 그대로 쓴다)
 
 화면 없이 prototype/c1_shell의 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다.
 node가 없으면 건너뛴다(통과). 사용: python tools/test_c1_core.py
@@ -30,6 +33,8 @@ function boot() {
   ['battle_data.js', 'zones.js', 'progress.js', 'battle_sim.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), sb, { filename: f }));
   return sb;
 }
+// 앞쪽 흐름 시험용: 의뢰를 fork3 판·요구 없음으로 고정 (판·요구 시험은 맨 뒤 따로)
+function pin(q) { q.board = 'fork3'; q.demand = null; return q; }
 let W = boot(), P = W.PROGRESS, R = P.RUN;
 P.reset();
 P.skipTutorial();   // 아래는 일반 흐름 시험 (튜토리얼은 맨 뒤 따로)
@@ -41,7 +46,7 @@ offers.forEach(q => {
   ok(q.attr && ['phys', 'magic', 'ether'].includes(q.attr.id) && q.attr.label && q.attr.effect && q.attr.counter, '속성 모양: ' + JSON.stringify(q.attr));
   ok(q.reward && typeof q.reward.gems === 'number' && q.reward.gems > 0 && typeof q.reward.gold === 'number' && typeof q.reward.fame === 'number', '보상 모양');
 });
-ok(P.pickQuest(offers[0]) === true && R.phase === 'play', 'choose에서 pickQuest');
+ok(P.pickQuest(pin(offers[0])) === true && R.phase === 'play', 'choose에서 pickQuest');
 ok(R.plan && R.plan.attr === R.quest.attr.id, '계획에 속성 반영');
 // 첫 건설 공사비
 ok(P.grantLeft() === P.SITE_GRANT && P.grantLeft() > 0, '새 부지 공사비 ' + P.grantLeft());
@@ -85,7 +90,7 @@ ok(P.toContract() === true && R.phase === 'settle', 'toContract는 무해');
 W = boot(); P = W.PROGRESS; ok(P.load() === true, 'settle 저장 불러오기'); R = P.RUN;
 off2 = P.offerQuests();
 let q2 = off2[off2.length - 1];
-ok(P.pickQuest(q2, [0, 2, 0, 99]) === true, 'settle에서 pickQuest');
+ok(P.pickQuest(pin(q2), [0, 2, 0, 99]) === true, 'settle에서 pickQuest');
 ok(JSON.stringify(R.guards) === '[0,2]', '친위대 정리(중복·없는 id 빼고) ' + JSON.stringify(R.guards));
 ok(R.monsters[0].lv === 12 && R.monsters[0].hp === 999 && R.monsters[0].exp === 3, '친위대 레벨 유지');
 ok(R.monsters[2].lv === 10, '친위대 2 레벨 유지');
@@ -97,7 +102,7 @@ ok(R.plan.attr === q2.attr.id, '새 부지 계획 속성');
 // 같은 이름 의뢰 방지: 방금 끝낸 의뢰 이름이 후보에 없다 (여러 번 반복)
 for (let t = 0; t < 30; t++) {
   const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset();
-  PP.pickQuest(PP.offerQuests()[0]);
+  PP.pickQuest(pin(PP.offerQuests()[0]));
   RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
   const nm = RR.quest.name; PP.deliver();
   ok(RR.offers.every(o => o.name !== nm), '후보에 방금 끝낸 의뢰 이름 없음: ' + nm + ' / ' + RR.offers.map(o => o.name).join(','));
@@ -131,7 +136,7 @@ let wsSample = null;
   ok(JSON.stringify(RR.workshop) === '{"build":0,"lab":0,"craft":0}' && RR.tribes && !Object.keys(RR.tribes).length, '공방·부족 기본값');
   ok(PP.WORKSHOPS.length === 3 && PP.WORKSHOPS.every(w => w.id && w.name && w.desc && typeof w.ready === 'boolean' && w.maxLv > 0), 'WORKSHOPS 모양');
   ok(PP.WORKSHOPS.filter(w => w.id === 'craft')[0].ready === false, '제작 공방 준비 중');
-  PP.pickQuest(PP.offerQuests()[0]);
+  PP.pickQuest(pin(PP.offerQuests()[0]));
   const pv0 = PP.previewBuild('CB', 'trap');
   ok(pv0.discount === 0 && pv0.baseCost === pv0.cost, '공방 0단계면 할인 없음');
   // 보석 부족·제작 공방 거부
@@ -204,7 +209,7 @@ let wsSample = null;
   const W2 = boot(), P2 = W2.PROGRESS; ok(P2.load() === true, '공방 저장 불러오기');
   const R2 = P2.RUN;
   ok(R2.workshop.build === 3 && R2.workshop.lab === 2 && R2.tribes['슬라임'] === 2, '저장에 공방·부족');
-  ok(P2.pickQuest(P2.offerQuests()[0], []) === true, '인계 pickQuest');
+  ok(P2.pickQuest(pin(P2.offerQuests()[0]), []) === true, '인계 pickQuest');
   const s2 = R2.monsters.filter(m => m.name === '슬라임')[0];
   ok(s2.lv === 4 && s2.exp === 0 && s2.hp === 120 + 24 && s2.atk === 8 + 2 && s2.base.hp === 144, '인계 뒤 레벨업분만 사라지고 강화 남음: ' + JSON.stringify([s2.lv, s2.hp, s2.atk]));
   ok(R2.workshop.build === 3 && R2.tribes['슬라임'] === 2 && R2.plan.trapBoost === 0.3, '새 부지에서도 공방·부족 강화 남음');
@@ -235,7 +240,7 @@ let choreSample = null, idleSample = null;
   ok(!r.ok && r.gems === 0 && r.msg, '못 채움 거부');
   ok(!PP.claimChore('monthly', 'd_build').ok && !PP.claimChore('daily', 'nope').ok, '없는 범위·id 거부');
   // 건설 훅: 공사비만 쓴 건설도 셈, 같은 시설로 다시는 안 됨
-  PP.pickQuest(PP.offerQuests()[0]);
+  PP.pickQuest(pin(PP.offerQuests()[0]));
   ok(PP.buildZone('CB', 'trap').ok && PP.buildZone('CC', 'trap').ok && PP.buildZone('CD', 'trap').ok, '건설 3번');
   ok(prog('daily', 'd_build').prog === 2 && prog('daily', 'd_build').done, '건설 진행 2/2 (상한)');
   ok(!PP.buildZone('CB', 'trap').ok && prog('daily', 'd_build').prog === 2, '실패한 건설은 안 셈');
@@ -338,7 +343,7 @@ let choreSample = null, idleSample = null;
   ok(inf.gold === 2 * rate5, '공방 단계 반영 금: ' + JSON.stringify(inf));
   PP.claimIdle();
   // 전투 중에 꺼도 금만 쌓이고 전투는 그대로
-  PP.pickQuest(PP.offerQuests()[0]);
+  PP.pickQuest(pin(PP.offerQuests()[0]));
   PP.buildZone('CB', 'trap'); ok(PP.startBattle().ok, '방치 전투 시작');
   const wk = PP.RUN.week;
   inf = reopen(t + 3 * H); t += 3 * H;
@@ -396,7 +401,7 @@ let tutSample = null;
   const dd = PP.deliver();
   ok(dd && PP.tutorial().on === false && PP.tutorialPath() === null, '첫 납품 뒤 off');
   ok(RR.offers.length >= 2 && RR.offers.every(q => !q.tutorial), '두 번째 후보 여러 장: ' + RR.offers.length);
-  ok(PP.pickQuest(RR.offers[0], []) === true && RR.site.tutorial === false && RR.site.zones.E === 'split', '두 번째 부지는 원래 판');
+  ok(PP.pickQuest(pin(RR.offers[0]), []) === true && RR.site.tutorial === false && RR.site.zones.E === 'split', '두 번째 부지는 원래 판');
   RR.gold = 99999;
   ok(PP.buildZone('E', 'left').ok && PP.tutorialPath() === null, '두 번째 부지 입구 바꿀 수 있음');
   ok(PP.forecast(Object.assign({}, RR.site.zones, { E: 'split' })).at.TL > 0, '두 번째 부지는 갈림길');
@@ -412,7 +417,167 @@ let tutSample = null;
   WW = boot(); PP = WW.PROGRESS;
   ok(PP.load() === true && PP.tutorial().on === false && JSON.stringify(PP.RUN.tutorial.seen) === '{}' && PP.RUN.site.tutorial === false, '옛 저장은 튜토리얼 off');
 }
-console.log(JSON.stringify({ problems, sample: { tutorial: tutSample, carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
+
+// ---------- 부지 모양 3종 ----------
+let boardSample = null, demandSample = null;
+{
+  const WW = boot(), Z = WW.ZONES;
+  ok(Array.isArray(Z.BOARDS) && Z.BOARDS.map(b => b.id).join() === 'fork3,line,fork2x' && Z.BOARDS.every(b => b.name && b.desc), 'BOARDS 모양');
+  ok(Z.boardId() === 'fork3' && Z.MAP[1][2] === 'CB', '처음 판 fork3');
+  boardSample = {};
+  Z.BOARDS.forEach(b => {
+    const id = b.id, info = Z.boardInfo(id);
+    ok(info.id === id && info.name === b.name && info.MAP.length === 7 && info.MAP.every(r => r.length === 5) && info.NAMES.E === '입구', 'boardInfo ' + id);
+    ok(info.MAP[0][2] === 'E' && info.MAP[6][2] === 'B', id + ': 입구 맨 위 가운데, 보스 맨 아래 가운데');
+    ok(Z.useBoard(id) === id && Z.boardId() === id && Z.MAP === info.MAP && Z.NAMES === info.NAMES && Z.EXITS === info.EXITS, 'useBoard 뒤 Z.MAP 등 바뀜 ' + id);
+    boardSample[id] = info.MAP.map(r => r.map(k => (k + '   ').slice(0, 3)).join(' '));
+    // 구역 크기 (Y·E·B 빼고 2~4칸), 이름
+    Object.keys(Z.CELLS).forEach(z => { if (z !== 'E' && z !== 'B') ok(Z.sizeOf(z) >= (id === 'fork3' ? 1 : 2) && Z.sizeOf(z) <= 4 && Z.NAMES[z], id + ' 구역 크기·이름 ' + z + ' ' + Z.sizeOf(z)); });
+    // 길: 모든 문이 맞닿고, 모든 구역이 입구에서 닿고 보스로 이어짐 (순환 없음)
+    Z.flowPairs().forEach(pr => ok(pr[1] === 'B' || Z.sharedEdge(pr[0], pr[1]) ? Z.sharedEdge(pr[0], pr[1]) : false, id + ' 문 맞닿음 ' + pr.join('>')));
+    const seen = { E: 1 }, st = ['E'];
+    while (st.length) { const z = st.pop(); (Z.EXITS[z] || []).forEach(n => { if (!seen[n]) { seen[n] = 1; st.push(n); } }); }
+    ok(Object.keys(Z.CELLS).every(z => seen[z]), id + ' 모든 구역에 길이 닿음: ' + Object.keys(Z.CELLS).filter(z => !seen[z]).join(','));
+    ok(Object.keys(Z.CELLS).every(z => z === 'B' || (Z.EXITS[z] && Z.EXITS[z].length)), id + ' 막다른 구역 없음');
+    // forecast: 합 = 침입 인원 (기본 배치·미끼·대기실 몬스터·입구 시설마다)
+    const units = {};
+    const cases = [Z.defaultZones()];
+    const rooms = Object.keys(Z.CELLS).filter(z => Z.zoneType(z) === 'room');
+    rooms.forEach((z, i) => { const L = Z.defaultZones(); L[z] = i % 2 ? 'lure' : 'trap'; cases.push(L); });
+    Z.facFor('E').forEach(k => { const L = Z.defaultZones(); L.E = k; cases.push(L); });
+    cases.forEach(L => {
+      const fc = Z.forecast(L, units, 20);
+      ok(fc.at.B === 20, id + ' forecast 보스 도착 합 = 20: ' + fc.at.B + ' ' + JSON.stringify(L));
+      const inB = Object.keys(fc.flow).filter(k => k.endsWith('>B')).reduce((a, k) => a + fc.flow[k], 0);
+      ok(inB === 20, id + ' 보스 문 합 20');
+      const r0 = Z.routeOf(L, units, {}); ok(r0[0] === 'E' && r0[r0.length - 1] === 'B', id + ' routeOf E..B');
+    });
+    // 몬스터 대기실을 피함 (다른 길이 있으면) / 입구 시설은 그 판 출구만
+    ok(Z.facFor('E').every(k => !Z.FAC[k].turn || Z.ENTRY[Z.FAC[k].turn]), id + ' 입구 시설은 있는 출구만');
+  });
+  ok(Z.useBoard('nope') === 'fork3' && Z.boardId() === 'fork3', '없는 판은 fork3');
+  Z.useBoard('fork2x');
+  ok(Z.facFor('E').indexOf('wait') < 0 && Z.facFor('E').indexOf('left') >= 0, 'fork2x 입구: 대기 없음, 굽은길 있음');
+  ok(JSON.stringify(Z.routeOf(Object.assign(Z.defaultZones(), { E: 'right' }), {}, {}).slice(0, 2)) === '["E","UR"]', 'fork2x 굽은길 → = UR');
+  Z.useBoard('line');
+  ok(Z.routeOf(Object.assign(Z.defaultZones(), { E: 'wait' }), {}, {})[1] === 'R1', 'line 대기 = R1');
+  ok(JSON.stringify(Z.bossFront()) === '["R5"]', 'line 보스 앞 = R5');
+  Z.useBoard('fork3');
+  ok(Z.ORDER.length === 14 && Z.ORDER[0] === 'E', 'fork3 계산 순서');
+}
+// 부지가 바뀔 때·불러올 때 판 유지, 의뢰 후보에 판·요구
+{
+  let WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset(); PP.skipTutorial();
+  ok(RR.site.board === 'fork3', '새 게임 부지 fork3');
+  const seenB = {}, seenMain = {};
+  for (let t = 0; t < 40; t++) {
+    RR.offers = null; const of = PP.offerQuests();
+    of.forEach(q => { ok(WW.ZONES.hasBoard(q.board) && q.demand && q.demand.id && q.demand.label && q.demand.text, '후보 판·요구 모양 ' + JSON.stringify([q.board, q.demand])); seenB[q.board] = 1; });
+  }
+  ok(Object.keys(seenB).length === 3, '일반 후보 판 3종 다 나옴: ' + Object.keys(seenB));
+  RR.questsDone = 3;
+  for (let t = 0; t < 30; t++) { RR.offers = null; const m = PP.offerQuests().filter(q => q.kind === 'main')[0]; seenMain[m.board] = 1; }
+  ok(!seenMain.line && Object.keys(seenMain).length >= 1, '메인 의뢰는 어려운 판만: ' + Object.keys(seenMain));
+  RR.questsDone = 0;
+  // line 판 의뢰 받기 -> 지금 판 line
+  RR.offers = null; const q = PP.offerQuests()[0]; q.board = 'line'; q.demand = null;
+  ok(PP.pickQuest(q) === true && RR.site.board === 'line' && WW.ZONES.boardId() === 'line' && RR.site.zones.R3 === 'empty' && !('CB' in RR.site.zones), '받으면 line 부지');
+  ok(PP.buildZone('R3', 'trap').ok && !PP.previewBuild('CB', 'trap').ok, 'line 구역에 짓기, 없는 구역은 거부');
+  const fc = PP.forecast(); ok(fc.at.R3 === 20 && fc.at.B === 20, 'line 큰길 전원: ' + JSON.stringify(fc.at));
+  // 불러오기: 판 유지 (다른 sandbox는 fork3로 시작)
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN;
+  ok(PP.load() === true && RR.site.board === 'line' && WW.ZONES.boardId() === 'line' && WW.ZONES.MAP[3][2] === 'R3', '불러와도 line 판');
+  ok(PP.siteSummary().trap === 1 && PP.siteValue() === 30, '불러온 판으로 가치 계산 ' + PP.siteValue());
+  // 전투도 그 판 길
+  ok(PP.startBattle().ok, 'line 전투 시작');
+  const S = WW.BSIM.create({ plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById });
+  ok(S.squads.every(s => s.route.indexOf('R3') >= 0), 'line 전 분대가 큰길 R3');
+  for (let i = 0; i < 3000 && !S.done; i++) WW.BSIM.step(S, 0.1);
+  PP.applyBattle(WW.BSIM.result(S));
+  // 납품 -> 다음 의뢰 fork2x: 부지 바뀌면 판 바뀜
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
+  ok(PP.deliver() !== null && RR.phase === 'settle' && RR.site.board === 'line', '납품 화면에서는 아직 옛 부지');
+  const q2 = RR.offers[0]; q2.board = 'fork2x';
+  ok(PP.pickQuest(q2, []) === true && RR.site.board === 'fork2x' && WW.ZONES.boardId() === 'fork2x' && RR.site.zones.HUB === 'empty', '새 부지 fork2x');
+  // 옛 저장 (site.board·demand·board 없음) -> fork3·null
+  const sv = JSON.parse(store['dunguen_c1_run']);
+  sv.site.zones = (boot().ZONES.defaultZones()); delete sv.site.board; delete sv.quest.board; delete sv.quest.demand;
+  store['dunguen_c1_run'] = JSON.stringify(sv);
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN;
+  ok(PP.load() === true && RR.site.board === 'fork3' && WW.ZONES.boardId() === 'fork3' && RR.quest.board === 'fork3' && RR.quest.demand === null && PP.demandStatus() === null, '옛 저장: fork3·요구 null');
+  ok(PP.buildZone('CB', 'trap').ok, '옛 저장 부지에 짓기');
+  // 옛 저장의 후보(settle)에도 demand 없음 -> null
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; }); PP.deliver();
+  const sv2 = JSON.parse(store['dunguen_c1_run']); sv2.offers.forEach(o => { delete o.demand; delete o.board; }); store['dunguen_c1_run'] = JSON.stringify(sv2);
+  WW = boot(); PP = WW.PROGRESS; RR = PP.RUN;
+  ok(PP.load() === true && RR.offers.every(o => o.demand === null && o.board === 'fork3'), '옛 후보: 판 fork3·요구 null');
+}
+// ---------- 건설 요구 ----------
+{
+  const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset(); PP.skipTutorial();
+  const q = PP.offerQuests()[0]; q.board = 'fork3';
+  PP.pickQuest(q);
+  RR.gold = 99999;
+  const fresh = () => { RR.site.zones = WW.ZONES.defaultZones(); RR.site.units = {}; };
+  const st = () => PP.demandStatus();
+  const set = d => { RR.quest.demand = d; };
+  ok(Object.keys(RR.quest.demand).length >= 3, '받은 의뢰 요구 있음');
+  // trap
+  fresh(); set({ id: 'trap', label: 'x', text: 't', need: 2 });
+  ok(st().ok === false && st().now === 0 && st().need === 2, 'trap 미달');
+  PP.buildZone('CB', 'trap'); PP.buildZone('LC', 'trap');
+  ok(st().ok === true && st().now === 2, 'trap ok');
+  // den: 대기실 1 + 몬스터 2
+  fresh(); set({ id: 'den', label: 'x', text: 't', need: 1, need2: 2 });
+  ok(!st().ok, 'den 미달');
+  PP.buildZone('LC', 'den'); PP.placeMonster('LC', 0);
+  ok(!st().ok && st().now === 1 && st().need === 2 && st().dens === 1, 'den 몬스터 1마리면 미달');
+  PP.placeMonster('LC', 1);
+  ok(st().ok, 'den ok');
+  // lure
+  fresh(); set({ id: 'lure', label: 'x', text: 't', need: 1 });
+  ok(!st().ok, 'lure 미달'); PP.buildZone('TL', 'lure'); ok(st().ok && st().now === 1, 'lure ok');
+  // front: 보스 앞(CD·LE·RE) 빈 구역
+  fresh(); set({ id: 'front', label: 'x', text: 't' });
+  ok(st().ok && st().need === 3, 'front 처음엔 ok');
+  PP.buildZone('CD', 'trap');
+  ok(!st().ok && st().now === 2 && st().note.indexOf('가운데 3') >= 0, 'front 미달: ' + st().note);
+  // value
+  fresh(); set({ id: 'value', label: 'x', text: 't', need: 50 });
+  ok(!st().ok && st().now === 0, 'value 미달'); PP.buildZone('CC', 'trap'); PP.buildZone('LC', 'trap');
+  ok(st().ok && st().now === 60, 'value ok ' + st().now);
+  // thorn
+  fresh(); set({ id: 'thorn', label: 'x', text: 't' });
+  ok(!st().ok, 'thorn 미달'); PP.buildZone('Y', 'thorn'); ok(st().ok, 'thorn ok');
+  // 납품 조건: 목표 다 채워도 요구 미달이면 안 됨
+  fresh(); RR.quest.demand = PP.RUN.quest.demand = { id: 'trap', label: '함정 위주', text: '함정 복도를 3곳 이상 지어 주세요', need: 3 };
+  ok(PP.questBlockers().length === RR.quest.goals.length + 1, '목표·요구 모두 막음: ' + JSON.stringify(PP.questBlockers()));
+  RR.quest.goals.forEach(g => { RR.quest.prog[g.type] = g.target; });
+  const bl = PP.questBlockers();
+  ok(PP.checkQuest() === false && PP.deliver() === null && RR.phase === 'play', '요구 미달이면 납품 안 됨');
+  ok(bl.length === 1 && bl[0].indexOf('요구') === 0 && bl[0].indexOf('0/3') >= 0, '요구 미달 글: ' + JSON.stringify(bl));
+  PP.buildZone('CB', 'trap'); PP.buildZone('CC', 'trap'); PP.buildZone('CD', 'trap');
+  ok(PP.checkQuest() === true && PP.questBlockers().length === 0, '요구 맞추면 막는 것 없음');
+  const dd = PP.deliver();
+  ok(dd && dd.demand && dd.demand.ok === true && RR.phase === 'settle', '요구 맞추면 납품');
+  demandSample = { status: dd.demand, blocked: bl };
+  // 의뢰인 표: 리치는 trap·lure만, 드래곤은 value·den·front
+  const kinds = {};
+  for (let t = 0; t < 200; t++) { RR.offers = null; PP.offerQuests().forEach(o => { (kinds[o.client.name] = kinds[o.client.name] || {})[o.demand.id] = 1; }); }
+  ok(Object.keys(kinds['뼈 골짜기 리치'] || {}).sort().join() === 'lure,trap', '리치 요구: ' + JSON.stringify(kinds['뼈 골짜기 리치']));
+  ok(Object.keys(kinds['붉은 비늘 드래곤'] || {}).every(k => ['value', 'den', 'front'].includes(k)), '드래곤 요구');
+  ok(PP.demandStatus() === null && JSON.stringify(PP.questBlockers()) === '[]', '의뢰 없으면 null·[]');
+}
+// 튜토리얼 의뢰: fork3·요구 없음
+{
+  const WW = boot(), PP = WW.PROGRESS, RR = PP.RUN; PP.reset();
+  const tq = PP.offerQuests()[0];
+  ok(tq.tutorial && tq.board === 'fork3' && tq.demand === null, '튜토리얼 의뢰 fork3·요구 없음');
+  WW.ZONES.useBoard('line');
+  PP.pickQuest(tq);
+  ok(RR.site.board === 'fork3' && WW.ZONES.boardId() === 'fork3' && RR.site.zones.E === 'wait' && PP.demandStatus() === null, '튜토리얼 부지 fork3 입구 대기');
+}
+console.log(JSON.stringify({ problems, sample: { boards: boardSample, demand: demandSample, tutorial: tutSample, carry: d.carry, lost: d.lost, gems: d.gems, client: q2.client, attr: q2.attr, carryWs: wsSample, chore: choreSample, idle: idleSample } }));
 """
 
 
@@ -441,7 +606,7 @@ def main():
         for p in r["problems"]:
             print("  - " + p)
         return 1
-    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상 -> 튜토리얼 첫 부지")
+    print("[test_c1_core] 통과: 납품 -> 후보 -> 친위대 인계 -> 공사비 첫 건설 -> 약탈 한도 -> 저장 -> 공방·부족 강화 -> 일일·주간 퀘스트 -> 방치 보상 -> 튜토리얼 첫 부지 -> 부지 모양 3종 -> 건설 요구")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 

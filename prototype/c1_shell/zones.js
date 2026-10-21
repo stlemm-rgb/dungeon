@@ -1,13 +1,18 @@
 /* C1 구역 판 규칙 (시안 A7 prototype/a7_nest16/rules.js 에서 복사, 숫자 그대로. 화면 그리기 없음)
  *
- *  - 5x7 칸 판, 구역 16곳 (야외 Y, 입구 E, 시설 구역 13곳, 보스·보물방 B). 구역은 2~4칸 덩어리.
- *  - 시설은 구역 종류마다 정해진 목록 (fac[...].for). 비용·가치는 칸 수만큼 커진다 (perCell).
+ *  - 5x7 칸 판. 구역 id Y(야외)·E(입구, 맨 위 가운데)·B(보스·보물방, 맨 아래 가운데)는 모든 판 공통. 나머지 구역은 2~4칸 덩어리.
+ *  - 부지 모양(판) 3종 = BOARD_DATA (fork3 세 갈래 · line 외길 · fork2x 이중 갈림길). 판마다 구역 id·이름·길(exits)·큰길(center)·입구 출구(entry).
+ *    useBoard(id)로 지금 판을 바꿔 끼우면 ZONES.MAP·NAMES·EXITS·CENTER·CELLS·ALL·ORDER와 모든 계산 함수가 그 판 기준이 된다.
+ *    지금 판은 progress.js(RUN.site.board)가 정하고 부지가 바뀌거나 불러올 때 useBoard를 부른다. boardInfo(id)는 지금 판이 아니어도 읽기 가능(의뢰 카드 미리보기)
+ *  - 판 설계 기준: 전투는 분대(10명) 단위로 갈림길에서 번갈아 나뉘므로, 갈렸다가 다시 모이는 구역(합류점)이 있어야 함정 하나가 모두에게 닿는다.
+ *    fork3 = 합류점 없음(옆길로 간 분대는 가운데를 안 지남) · fork2x = 합류점 1곳(HUB) · line = 큰길 전부가 합류점. 길이는 가장 긴 길이 ~11칸 안 (1분 제한에 퇴각이 쉬워지지 않게)
+ *  - 시설은 구역 종류마다 정해진 목록 (fac[...].for). 비용·가치는 칸 수만큼 커진다 (perCell). 입구 시설 대기·굽은길은 그 판에 그 출구가 있을 때만
  *  - 이동 (사용자 결정): 갈림길에서 반반 나뉨, 미끼 쪽으로 몰림, 몬스터가 든 대기실은 피함, 함정은 모르고 들어감.
  *    forecast = 길만 계산해서 "침입자 n명이 각 문을 몇 명 지나가나" 미리 보기 (전투 없음).
  *  - 몬스터 가치는 A7이 종류 표를 썼지만 C1 몬스터는 하나씩 능력치가 달라서 임시 식으로 바꿈 (monValue).
  *  - 전투(battle_sim.js)는 routeOf(분대마다 길)·anchorOf·doorOf(칸 좌표)로 같은 판·같은 길 규칙을 따른다.
- *  - 튜토리얼 첫 부지(tutorialZones): 입구를 '대기'로 시작 -> 전원 가운데 길(E-CB-CC-CD-B) 한 줄. 갈림길은 두 번째 부지부터 (입구 고정은 progress.js)
- *  - 상태는 갖지 않는다. 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
+ *  - 튜토리얼 첫 부지(tutorialZones): fork3 판, 입구를 '대기'로 시작 -> 전원 가운데 길(E-CB-CC-CD-B) 한 줄. (입구 고정은 progress.js)
+ *  - 상태는 갖지 않는다(지금 판 id만). 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
  */
 (function () {
   'use strict';
@@ -15,30 +20,79 @@
   var TRAP_PER_CELL = 6;          // 함정 복도: 칸당 피해
   var PREVIEW_INVADERS = 20;      // 문 위 숫자를 계산할 침입자 수 (평소 전투 = 무리 2개 × 10명, battle_data.js NORMAL과 같게, 임시)
 
-  // 5x7 판의 칸마다 구역 키 (사용자 빨간 선 그림)
-  var MAP = [
-    ['TL', 'TL', 'E', 'TR', 'TR'],
-    ['TL', 'LB', 'CB', 'RB', 'TR'],
-    ['LB', 'LB', 'CB', 'RB', 'RB'],
-    ['LC', 'LC', 'CC', 'RC', 'RC'],
-    ['LC', 'LC', 'CC', 'RC', 'RC'],
-    ['LD', 'LD', 'CD', 'RD', 'RD'],
-    ['LE', 'LE', 'B', 'RE', 'RE']
-  ];
-  var NAMES = { Y: '야외', E: '입구', TL: '왼쪽 위', TR: '오른쪽 위', LB: '왼쪽 1', CB: '가운데 1', RB: '오른쪽 1', LC: '왼쪽 2', CC: '가운데 2', RC: '오른쪽 2',
-    LD: '왼쪽 3', CD: '가운데 3', RD: '오른쪽 3', LE: '왼쪽 4', RE: '오른쪽 4', B: '보스·보물방' };
-  // 길: 각 구역에서 갈 수 있는 다음 구역
-  var EXITS = { E: ['TL', 'CB', 'TR'], TL: ['LB'], TR: ['RB'], LB: ['LC', 'CB'], RB: ['RC', 'CB'], CB: ['CC'],
-    LC: ['LD', 'CC'], RC: ['RD', 'CC'], CC: ['CD'], LD: ['LE', 'CD'], RD: ['RE', 'CD'], CD: ['B'], LE: ['B'], RE: ['B'] };
-  var ORDER = ['E', 'TL', 'TR', 'LB', 'RB', 'CB', 'LC', 'RC', 'CC', 'LD', 'RD', 'CD', 'LE', 'RE']; // 침입 계산 순서 (앞 구역이 먼저)
-  var CENTER = ['CB', 'CC', 'CD'];
+  // ---------- 판 데이터 (고칠 때는 여기만) ----------
+  // map = 칸마다 구역 id (E는 [0][2], B는 [6][2]), exits = 각 구역에서 갈 수 있는 다음 구역, center = 큰길(모두 모이는 길, 화면 설명용),
+  // entry = 입구 시설이 보내는 출구 { wait: 가운데, left: 왼쪽, right: 오른쪽 } (없는 것은 그 판에서 못 지음)
+  var BOARD_DATA = {
+    // 세 갈래 (사용자 빨간 선 그림, 처음 판·튜토리얼 판)
+    fork3: {
+      name: '세 갈래', desc: '입구에서 세 길로 나뉘고 옆길은 가운데로 빠지거나 내려가요. 다시 모이는 곳이 없어 길마다 막아야 해요.',
+      map: [
+        ['TL', 'TL', 'E', 'TR', 'TR'],
+        ['TL', 'LB', 'CB', 'RB', 'TR'],
+        ['LB', 'LB', 'CB', 'RB', 'RB'],
+        ['LC', 'LC', 'CC', 'RC', 'RC'],
+        ['LC', 'LC', 'CC', 'RC', 'RC'],
+        ['LD', 'LD', 'CD', 'RD', 'RD'],
+        ['LE', 'LE', 'B', 'RE', 'RE']
+      ],
+      names: { TL: '왼쪽 위', TR: '오른쪽 위', LB: '왼쪽 1', CB: '가운데 1', RB: '오른쪽 1', LC: '왼쪽 2', CC: '가운데 2', RC: '오른쪽 2',
+        LD: '왼쪽 3', CD: '가운데 3', RD: '오른쪽 3', LE: '왼쪽 4', RE: '오른쪽 4' },
+      exits: { E: ['TL', 'CB', 'TR'], TL: ['LB'], TR: ['RB'], LB: ['LC', 'CB'], RB: ['RC', 'CB'], CB: ['CC'],
+        LC: ['LD', 'CC'], RC: ['RD', 'CC'], CC: ['CD'], LD: ['LE', 'CD'], RD: ['RE', 'CD'], CD: ['B'], LE: ['B'], RE: ['B'] },
+      center: ['CB', 'CC', 'CD'],
+      entry: { wait: 'CB', left: 'TL', right: 'TR' }
+    },
+    // 외길: 큰길 하나(R1~R5)에 곁방(N*)이 붙음. 곁방으로 빠져도 바로 다음 큰길로 돌아온다 -> 큰길 어디든 모두 지난다
+    line: {
+      name: '외길', desc: '큰길 하나에 곁방이 붙은 길. 곁방으로 빠진 침입자도 바로 큰길로 돌아와 모두 같은 길을 지나요.',
+      map: [
+        ['NL1', 'NL1', 'E', 'NR1', 'NR1'],
+        ['NL1', 'R1', 'R1', 'R1', 'NR1'],
+        ['NL2', 'R2', 'R2', 'R2', 'NR2'],
+        ['NL2', 'R3', 'R3', 'R3', 'NR2'],
+        ['NL3', 'R4', 'R4', 'R4', 'NR3'],
+        ['NL3', 'R5', 'R5', 'R5', 'NR3'],
+        ['NL3', 'NL3', 'B', 'NR3', 'NR3']
+      ],
+      names: { R1: '큰길 1', R2: '큰길 2', R3: '큰길 3', R4: '큰길 4', R5: '큰길 5',
+        NL1: '왼쪽 곁방 1', NR1: '오른쪽 곁방 1', NL2: '왼쪽 곁방 2', NR2: '오른쪽 곁방 2', NL3: '왼쪽 곁방 3', NR3: '오른쪽 곁방 3' },
+      // 갈림길마다 큰길 순서를 다르게: 분대는 갈림길마다 번갈아 나뉘므로, 같은 분대가 곁방 셋을 다 돌아 길이 길어지는(1분 퇴각) 일을 막는다 (곁방 최대 2곳)
+      exits: { E: ['R1', 'NL1', 'NR1'], NL1: ['R1'], NR1: ['R1'], R1: ['R2'], R2: ['NL2', 'R3', 'NR2'], NL2: ['R3'], NR2: ['R3'],
+        R3: ['R4'], R4: ['NL3', 'NR3', 'R5'], NL3: ['R5'], NR3: ['R5'], R5: ['B'] },
+      center: ['R1', 'R2', 'R3', 'R4', 'R5'],
+      entry: { wait: 'R1', left: 'NL1', right: 'NR1' }, midDoors: true
+    },
+    // 이중 갈림길: 입구에서 두 갈래 -> 합류점(HUB)에서 모였다가 -> 다시 두 갈래로 보스방까지
+    fork2x: {
+      name: '이중 갈림길', desc: '두 갈래로 나뉘었다가 합류점에서 모이고, 다시 두 갈래로 나뉘어 보스방으로 가요.',
+      map: [
+        ['UL', 'UL', 'E', 'UR', 'UR'],
+        ['UL', 'HUB', 'HUB', 'HUB', 'UR'],
+        ['DL1', 'DL1', 'DL1', 'DR1', 'DR1'],
+        ['DL2', 'DL2', 'DL1', 'DR1', 'DR1'],
+        ['DL2', 'DL2', 'DR2', 'DR2', 'DR2'],
+        ['DL3', 'DL3', 'DR2', 'DR3', 'DR3'],
+        ['DL3', 'DL3', 'B', 'DR3', 'DR3']
+      ],
+      names: { UL: '왼쪽 위', UR: '오른쪽 위', HUB: '합류점', DL1: '왼쪽 아래 1', DL2: '왼쪽 아래 2', DL3: '왼쪽 아래 3',
+        DR1: '오른쪽 아래 1', DR2: '오른쪽 아래 2', DR3: '오른쪽 아래 3' },
+      exits: { E: ['UL', 'UR'], UL: ['HUB'], UR: ['HUB'], HUB: ['DL1', 'DR1'], DL1: ['DL2'], DL2: ['DL3'], DL3: ['B'],
+        DR1: ['DR2'], DR2: ['DR3'], DR3: ['B'] },
+      center: ['HUB'],
+      entry: { left: 'UL', right: 'UR' }, midDoors: true
+    }
+  };
+  var BOARD_IDS = ['fork3', 'line', 'fork2x'];
+  var DEFAULT_BOARD = 'fork3';
+
   var FAC = {
     forest: { name: '숲', short: '숲', cost: 0, value: 0, kind: 'none', st: '아무 일 없음', for: 'yard' },
     thorn: { name: '덫 숲', short: '덫 숲', cost: 20, value: 10, kind: 'none', st: '들어오기 전 전원 -8', for: 'yard' },
-    split: { name: '분기', short: '분기', cost: 0, value: 0, kind: 'turn', st: '갈림길 규칙대로 세 갈래로 나뉨 (미끼 쪽으로 몰리고 몬스터는 피함)', for: 'entry' },
-    wait: { name: '대기', short: '대기', cost: 10, value: 0, kind: 'turn', st: '전원을 가운데로 (가장 짧은 길)', for: 'entry' },
-    left: { name: '굽은길 ←', short: '굽은길←', cost: 10, value: 0, kind: 'turn', st: '전원을 왼쪽 길로', for: 'entry' },
-    right: { name: '굽은길 →', short: '굽은길→', cost: 10, value: 0, kind: 'turn', st: '전원을 오른쪽 길로', for: 'entry' },
+    split: { name: '분기', short: '분기', cost: 0, value: 0, kind: 'turn', st: '갈림길 규칙대로 나뉨 (미끼 쪽으로 몰리고 몬스터는 피함)', for: 'entry' },
+    wait: { name: '대기', short: '대기', cost: 10, value: 0, kind: 'turn', st: '전원을 가운데로 (가장 짧은 길)', for: 'entry', turn: 'wait' },
+    left: { name: '굽은길 ←', short: '굽은길←', cost: 10, value: 0, kind: 'turn', st: '전원을 왼쪽 길로', for: 'entry', turn: 'left' },
+    right: { name: '굽은길 →', short: '굽은길→', cost: 10, value: 0, kind: 'turn', st: '전원을 오른쪽 길로', for: 'entry', turn: 'right' },
     empty: { name: '빈 구역', short: '빈 구역', perCell: 0, value: 0, kind: 'none', st: '그냥 지나감', for: 'room' },
     lure: { name: '미끼', short: '미끼', cost: 20, value: 0, kind: 'lure', st: '보물 냄새로 바로 앞 갈림길의 침입자를 전원 이쪽으로 끌어들임 (피해 없음)', for: 'room' },
     trap: { name: '함정 복도', short: '함정', perCell: 10, valuePerCell: 10, kind: 'trap', st: '지나는 적 전원에게 칸당 피해 6', for: 'room' },
@@ -46,13 +100,44 @@
     boss: { name: '보스·보물방', short: '보스·보물', cost: 0, value: 0, kind: 'none', st: '친위대 자리 (나중에)', for: 'boss' }
   };
 
-  // 구역별 칸 수·칸 목록
-  var CELLS = {};
-  MAP.forEach(function (row, r) { row.forEach(function (k, c) { (CELLS[k] = CELLS[k] || []).push([r, c]); }); });
+  // ---------- 판 하나 준비 (칸 목록·계산 순서) ----------
+  function cellsOf(map) {
+    var cells = {};
+    map.forEach(function (row, r) { row.forEach(function (k, c) { (cells[k] = cells[k] || []).push([r, c]); }); });
+    return cells;
+  }
+  // 침입 계산 순서: 길을 따라 앞 구역이 먼저 (위상 정렬, 같으면 판 칸 순서). B는 빼고
+  function orderOf(map, exits) {
+    var keys = Object.keys(cellsOf(map)), indeg = {}, out = [];
+    keys.forEach(function (z) { indeg[z] = 0; });
+    Object.keys(exits).forEach(function (a) { exits[a].forEach(function (b) { indeg[b]++; }); });
+    var ready = keys.filter(function (z) { return !indeg[z]; });
+    while (ready.length) {
+      var z = ready.shift();
+      if (z !== 'B') out.push(z);
+      (exits[z] || []).forEach(function (b) { if (--indeg[b] === 0) ready.push(b); });
+    }
+    return out.filter(function (z) { return z === 'E' || exits[z]; });
+  }
+  var BOARDS_READY = {};
+  BOARD_IDS.forEach(function (id) {
+    var d = BOARD_DATA[id], names = { Y: '야외', E: '입구', B: '보스·보물방' };
+    Object.keys(d.names).forEach(function (k) { names[k] = d.names[k]; });
+    var cells = cellsOf(d.map);
+    BOARDS_READY[id] = { id: id, name: d.name, desc: d.desc, MAP: d.map, NAMES: names, EXITS: d.exits, CENTER: d.center, ENTRY: d.entry, midDoors: !!d.midDoors,
+      CELLS: cells, ALL: Object.keys(cells).concat(['Y']), ORDER: orderOf(d.map, d.exits) };
+  });
+  var cur = BOARDS_READY[DEFAULT_BOARD];
 
-  function sizeOf(z) { return z === 'Y' ? 1 : CELLS[z].length; }
+  function hasBoard(id) { return BOARD_IDS.indexOf(id) >= 0; }
+
+  function sizeOf(z) { return z === 'Y' ? 1 : cur.CELLS[z].length; }
   function zoneType(z) { return z === 'Y' ? 'yard' : z === 'E' ? 'entry' : z === 'B' ? 'boss' : 'room'; }
-  function facFor(z) { var t = zoneType(z); return Object.keys(FAC).filter(function (k) { return FAC[k].for === t; }); }
+  // 입구 시설은 그 판에 그 출구가 있을 때만 (분기는 늘)
+  function facFor(z) {
+    var t = zoneType(z);
+    return Object.keys(FAC).filter(function (k) { return FAC[k].for === t && (!FAC[k].turn || cur.ENTRY[FAC[k].turn]); });
+  }
   function costOf(k, z) { var f = FAC[k]; return f.perCell !== undefined ? f.perCell * sizeOf(z) : f.cost; }
   function valueOf(k, z) { var f = FAC[k]; return f.valuePerCell !== undefined ? f.valuePerCell * sizeOf(z) : f.value; }
   function slotsOf(k, z) { return FAC[k].kind === 'den' ? 2 * sizeOf(z) : 0; } // 칸당 몬스터 2자리
@@ -60,25 +145,29 @@
   // 몬스터 한 마리의 던전 가치 (임시 식: 체력과 공격으로. A7은 종류별 표 14~40)
   function monValue(m) { return Math.round((m.hp + m.atk * 4) / 6); }
 
-  // 처음 부지: 입구는 분기, 야외는 숲, 나머지는 빈 구역 (모두 무료)
+  // 처음 부지: 입구는 분기, 야외는 숲, 나머지는 빈 구역 (모두 무료). 지금 판 기준
   function defaultZones() {
     var L = { Y: 'forest' };
-    Object.keys(CELLS).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
+    Object.keys(cur.CELLS).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
     return L;
   }
 
-  // 튜토리얼 첫 부지: 처음 부지와 같고 입구만 entry 시설로 (무료로 깔아 둠, 건설 횟수 아님)
+  // 튜토리얼 첫 부지: 처음 부지와 같고 입구만 entry 시설로 (무료로 깔아 둠, 건설 횟수 아님). progress.js가 fork3 판을 끼운 뒤 부른다
   function tutorialZones(entry) { var L = defaultZones(); L.E = entry; return L; }
 
-  // 요약: 던전 가치 (시설 + 대기실 몬스터), 함정·대기실 수. monById(id) -> 몬스터
+  // 보스방 바로 앞 구역들 (B로 가는 길이 있는 구역)
+  function bossFront() { return Object.keys(cur.EXITS).filter(function (z) { return cur.EXITS[z].indexOf('B') >= 0; }); }
+
+  // 요약: 던전 가치 (시설 + 대기실 몬스터), 함정·대기실·미끼 수. monById(id) -> 몬스터
   function summary(zones, units, monById) {
-    var s = { value: 0, trap: 0, den: 0, monsters: 0 };
+    var s = { value: 0, trap: 0, den: 0, lure: 0, monsters: 0 };
     Object.keys(zones).forEach(function (z) {
       var k = zones[z], f = FAC[k];
-      if (!f) return;
+      if (!f || (z !== 'Y' && !cur.CELLS[z])) return;
       s.value += valueOf(k, z);
       if (f.kind === 'trap') s.trap++;
       if (f.kind === 'den') s.den++;
+      if (f.kind === 'lure') s.lure++;
       (units[z] || []).forEach(function (id) {
         var m = monById(id);
         if (m) { s.value += monValue(m); s.monsters++; }
@@ -96,17 +185,18 @@
     return 0;
   }
   function chooseExits(zones, units, from) {
-    var E = zones.E, ex = EXITS[from];
-    if (from === 'E' && E === 'wait') return ['CB'];
-    if (from === 'E' && E === 'left') return ['TL'];
-    if (from === 'E' && E === 'right') return ['TR'];
+    var ex = cur.EXITS[from];
+    if (from === 'E') {
+      var f = FAC[zones.E], to = f && f.turn ? cur.ENTRY[f.turn] : null;
+      if (to) return [to];
+    }
     var sc = ex.map(function (z) { return exitScore(zones, units, z); }), best = Math.max.apply(null, sc);
     return ex.filter(function (z, i) { return sc[i] === best; });
   }
   // 길만 계산 (전투 없이): 침입자 n명이 각 구역에 몇 명 오고(at), 각 문을 몇 명 지나가는지(flow, "TL>LB" 형식)
   function forecast(zones, units, n) {
     var at = { E: n }, flow = {};
-    ORDER.forEach(function (z) {
+    cur.ORDER.forEach(function (z) {
       var k = at[z] || 0; if (!k) return;
       var to = chooseExits(zones, units, z);
       for (var i = 0; i < k; i++) { var t = to[i % to.length]; at[t] = (at[t] || 0) + 1; flow[z + '>' + t] = (flow[z + '>' + t] || 0) + 1; }
@@ -115,23 +205,29 @@
   }
 
   // 문(구역 사이 길)과 맞닿은 두 칸 (화면이 문 표시 위치를 구할 때)
+  // 맞닿은 칸 쌍이 여럿이면: fork3는 첫 쌍(예전 그대로), midDoors 판은 가운데 쌍 (넓은 큰길에서 문이 한쪽 끝으로 쏠려 길이 지그재그가 되지 않게)
   function sharedEdge(a, b) {
-    for (var i = 0; i < CELLS[a].length; i++) {
-      var x = CELLS[a][i];
-      for (var j = 0; j < CELLS[b].length; j++) { var y = CELLS[b][j]; if (Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) === 1) return [x, y]; }
+    var A = cur.CELLS[a], Bc = cur.CELLS[b], all = [];
+    if (!A || !Bc) return null;
+    for (var i = 0; i < A.length; i++) {
+      var x = A[i];
+      for (var j = 0; j < Bc.length; j++) {
+        var y = Bc[j];
+        if (Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) === 1) { if (!cur.midDoors) return [x, y]; all.push([x, y]); }
+      }
     }
-    return null;
+    return all.length ? all[(all.length - 1) >> 1] : null;
   }
   function flowPairs() {
     var p = [];
-    Object.keys(EXITS).forEach(function (a) { EXITS[a].forEach(function (b) { p.push([a, b]); }); });
+    Object.keys(cur.EXITS).forEach(function (a) { cur.EXITS[a].forEach(function (b) { p.push([a, b]); }); });
     return p;
   }
 
   // 전투 화면용 좌표 (칸 단위: x = 열 + 0.5, y = 행 + 0.5. 야외는 y < 0)
   function anchorOf(z) {
     if (z === 'Y') return { x: 2.5, y: -0.3 };
-    var cs = CELLS[z], x = 0, y = 0;
+    var cs = cur.CELLS[z], x = 0, y = 0;
     cs.forEach(function (c) { x += c[1] + 0.5; y += c[0] + 0.5; });
     return { x: x / cs.length, y: y / cs.length };
   }
@@ -152,11 +248,27 @@
     return path;
   }
 
-  window.ZONES = {
-    MAP: MAP, NAMES: NAMES, EXITS: EXITS, CENTER: CENTER, FAC: FAC, CELLS: CELLS,
-    PREVIEW_INVADERS: PREVIEW_INVADERS, ALL: Object.keys(CELLS).concat(['Y']),
+  // ---------- 판 바꿔 끼우기 ----------
+  var api = window.ZONES = {
+    FAC: FAC, PREVIEW_INVADERS: PREVIEW_INVADERS,
+    BOARDS: BOARD_IDS.map(function (id) { return { id: id, name: BOARD_DATA[id].name, desc: BOARD_DATA[id].desc }; }),
+    DEFAULT_BOARD: DEFAULT_BOARD,
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
     monValue: monValue, defaultZones: defaultZones, tutorialZones: tutorialZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
-    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf
+    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf, bossFront: bossFront,
+    hasBoard: hasBoard, useBoard: useBoard, boardInfo: boardInfo, boardId: function () { return cur.id; }
   };
+  // 지금 판을 id로 (없는 id면 기본 판). ZONES.MAP 등 판 속성을 다시 붙인다. 돌려주는 값 = 실제로 끼운 판 id
+  function useBoard(id) {
+    cur = BOARDS_READY[hasBoard(id) ? id : DEFAULT_BOARD];
+    api.board = cur.id; api.MAP = cur.MAP; api.NAMES = cur.NAMES; api.EXITS = cur.EXITS; api.CENTER = cur.CENTER; api.ENTRY = cur.ENTRY;
+    api.CELLS = cur.CELLS; api.ALL = cur.ALL; api.ORDER = cur.ORDER;
+    return cur.id;
+  }
+  // 판 정보 (지금 판이 아니어도): 화면의 의뢰 카드 미리보기용. MAP은 2차원 배열(구역 id)
+  function boardInfo(id) {
+    var b = BOARDS_READY[hasBoard(id) ? id : DEFAULT_BOARD];
+    return { id: b.id, name: b.name, desc: b.desc, MAP: b.MAP, NAMES: b.NAMES, EXITS: b.EXITS, CENTER: b.CENTER };
+  }
+  useBoard(DEFAULT_BOARD);
 })();

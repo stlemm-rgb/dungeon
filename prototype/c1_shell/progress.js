@@ -28,6 +28,10 @@
  *     방치 보상(RUN.idle = { gold, minutes }, RUN.lastSeen = 마지막 저장 시각 ms): 불러올 때 꺼져 있던 시간(최대 8시간, 10분 이상만)만큼
  *     공방 생산 금을 쌓아 두고 퀘스트 화면에서 받는다(claimIdle). 전투는 방치로 진행하지 않는다. 지금 시각은 now() 한곳 (시험용 setClock)
  *  8) 상태는 RUN 하나. 바뀔 때마다 localStorage에 저장. 이어하기 버튼은 없다: 켜면 그대로 이어진다.
+ *  4-1) 부지 모양(RUN.site.board = zones.js 판 id: fork3 세 갈래 · line 외길 · fork2x 이중 갈림길). 의뢰마다 q.board, 받으면 그 판으로 새 부지.
+ *     일반 = 판 3종 중 무작위, 메인 = 어려운 판(BOARDS_MAIN) 중. 부지가 바뀌거나 불러올 때 ZONES.useBoard를 부른다(setSite·ensureStateReady). 옛 저장은 fork3
+ *  4-2) 건설 요구(q.demand = { id, label, text, need, need2 }): 의뢰인 종류·이름별 표(DEMAND_BY_*)에서 하나. 지금 지은 상태로만 판정(demandStatus, 전투 결과와 무관).
+ *     납품 = 목표 전부 + 요구 ok (checkQuest). 못 채운 것 글 = questBlockers. 튜토리얼 의뢰는 요구 없음(null). 옛 저장은 null
  *  8-1) 튜토리얼(RUN.tutorial = { on, seen }): 새 게임만 on. 첫 후보는 고정 의뢰 한 장(TUTORIAL_QUEST, 은발 마왕·물리·보물방 방어 2회),
  *     그 부지(site.tutorial)는 입구가 '대기'로 고정돼 갈림길 없이 한 길(tutorialPath)로만 온다. 첫 납품이 끝나면 off. 옛 저장은 off로 채움
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만 쓴다. 전투 안의 무작위는 계획에 저장한 시드(plan.seed)로 battle_sim.js가 굴린다.
@@ -74,6 +78,25 @@
   var TUTORIAL_QUEST = { name: '첫 납품: 연습용 동굴', attr: 'phys', goals: [{ type: 'defends', target: 2 }], reward: { gold: 600, gems: 6, fame: 1 } };
   var TUTORIAL_ENTRY = 'wait';    // 튜토리얼 부지 입구 시설 (고정): 전원 가운데 길로 -> 갈림길 없음 (zones.js tutorialZones)
   var SITE_GRANT = 60;            // 새 부지마다 첫 건설 전용 공사비 (임시. 함정 복도 2~4칸·대기실 하나를 지을 만큼)
+  // 부지 모양 (zones.js 판 id). 일반 의뢰 = BOARDS_NORMAL 중 무작위, 메인 = BOARDS_MAIN 중 (막기 어려운 판: 합류점이 적음)
+  var TUTORIAL_BOARD = 'fork3';
+  var BOARDS_NORMAL = ['fork3', 'line', 'fork2x'];
+  var BOARDS_MAIN = ['fork3', 'fork2x'];
+  // 건설 요구 종류 (임시 숫자). need(s)·need2(s): s = 의뢰 크기 (일반 1, 메인 C=2 ~ S=5). text(d) = 설명 한 줄. 판정은 demandStatus
+  //  trap 함정 복도 N곳 이상 · den 대기실 N곳 + 배치 몬스터 M마리 이상 · lure 미끼 N곳 이상 · front 보스방 바로 앞 구역은 모두 빈 구역
+  //  value 던전 가치 N 이상 · thorn 야외에 덫 숲
+  var DEMAND_DEFS = {
+    trap:  { label: '함정 위주', need: function (s) { return 1 + s; }, text: function (d) { return '함정 복도를 ' + d.need + '곳 이상 지어 주세요'; } },
+    den:   { label: '몬스터 숙소', need: function (s) { return s >= 3 ? 2 : 1; }, need2: function (s) { return Math.min(6, 1 + s); },
+             text: function (d) { return '몬스터 대기실 ' + d.need + '곳 이상, 몬스터 ' + d.need2 + '마리 이상 배치해 주세요'; } },
+    lure:  { label: '보물 냄새', need: function (s) { return s >= 3 ? 2 : 1; }, text: function (d) { return '미끼를 ' + d.need + '곳 이상 지어 주세요'; } },
+    front: { label: '앞마당 비우기', text: function () { return '보스방 바로 앞 구역은 모두 빈 구역으로 두세요'; } },
+    value: { label: '값비싼 던전', need: function (s) { return 40 + 40 * s; }, text: function (d) { return '던전 가치를 ' + d.need + ' 이상으로 지어 주세요'; } },
+    thorn: { label: '가시 울타리', text: function () { return '야외에 덫 숲을 지어 주세요'; } }
+  };
+  // 의뢰인 종류별 요구 후보 (이름 표가 있으면 이름 표가 먼저)
+  var DEMAND_BY_KIND = { '마왕': ['trap', 'front', 'value'], '드래곤': ['value', 'den', 'front'], '마계 종족': ['den', 'lure', 'thorn'] };
+  var DEMAND_BY_NAME = { '뼈 골짜기 리치': ['trap', 'lure'], '늪지 리자드맨 족장': ['thorn', 'den'], '흡혈귀 백작 가문': ['lure', 'den'] };
   var START_MONSTERS = [
     { name: '슬라임',   lv: 4, hp: 120, atk: 8 },  { name: '고블린',   lv: 3, hp: 90,  atk: 14 },
     { name: '스켈레톤', lv: 5, hp: 140, atk: 16 }, { name: '박쥐 떼',  lv: 2, hp: 60,  atk: 10 },
@@ -120,8 +143,10 @@
   // 새 부지: 구역별 시설(zones), 대기실 몬스터(units: 구역 -> 몬스터 id 목록), 가치(value, 저장 때 맞춰 둠), 건설 횟수,
   // grant = 남은 첫 건설 전용 공사비 (이 부지에서만)
   // tutorial = 튜토리얼 의뢰의 부지 (입구 고정, 한 길)
-  function freshSite(tut) {
-    return { value: 0, builds: 0, zones: tut ? ZONES.tutorialZones(TUTORIAL_ENTRY) : ZONES.defaultZones(), units: {}, grant: SITE_GRANT, tutorial: !!tut };
+  // board = 부지 모양 (zones.js 판 id). 튜토리얼 부지는 늘 TUTORIAL_BOARD. 판을 끼운 뒤(useBoard) 처음 시설을 만든다
+  function freshSite(tut, board) {
+    var b = ZONES.useBoard(tut ? TUTORIAL_BOARD : board || ZONES.DEFAULT_BOARD);
+    return { value: 0, builds: 0, board: b, zones: tut ? ZONES.tutorialZones(TUTORIAL_ENTRY) : ZONES.defaultZones(), units: {}, grant: SITE_GRANT, tutorial: !!tut };
   }
 
   // 몬스터: base = 처음 값(레벨·체력·공격). 새 부지로 갈 때 친위대가 아니면 이 값으로 돌아간다 (레벨업분만 사라짐)
@@ -208,8 +233,19 @@
     tu.on = tu.on === true;
     if (!tu.seen || typeof tu.seen !== 'object' || Array.isArray(tu.seen)) tu.seen = {};
     RUN.site.tutorial = RUN.site.tutorial === true;
+    // 부지 모양: 없으면(옛 저장) fork3. 지금 판을 끼운다
+    if (!ZONES.hasBoard(RUN.site.board)) RUN.site.board = ZONES.DEFAULT_BOARD;
+    ZONES.useBoard(RUN.site.board);
+    // 의뢰의 판·요구: 없으면(옛 저장) 판 fork3(진행 중 의뢰는 지금 부지 판), 요구 null
+    if (RUN.quest) fixQuest(RUN.quest, RUN.site.board);
+    if (Array.isArray(RUN.offers)) RUN.offers.forEach(function (q) { fixQuest(q, ZONES.DEFAULT_BOARD); });
     if (!Array.isArray(RUN.guards)) RUN.guards = [];
     RUN.monsters.forEach(function (m) { if (!m.base) m.base = { lv: m.lv, hp: m.hp, atk: m.atk }; });
+  }
+  function fixQuest(q, board) {
+    if (!q || typeof q !== 'object') return;
+    if (!ZONES.hasBoard(q.board)) q.board = board;
+    if (!q.demand || typeof q.demand !== 'object' || !DEMAND_DEFS[q.demand.id]) q.demand = null;
   }
   function setRun(src) {
     Object.keys(RUN).forEach(function (k) { delete RUN[k]; });
@@ -297,12 +333,52 @@
     var first = RUN.siteNo === 0 && !RUN.history.length;
     var c = first ? FIRST_CLIENT : CLIENTS[rint(CLIENTS.length)];
     var a = BD.ATTRS[rint(BD.ATTRS.length)];
+    var boards = kind === 'main' ? BOARDS_MAIN : BOARDS_NORMAL;
     return {
       id: RUN.qid++, kind: kind, grade: kind === 'main' ? MAIN_GRADES[RUN.mainGrade] : '',
       name: name, goals: goals, reward: reward, prog: { gold: 0, gems: 0, exp: 0, defends: 0 }, startWeek: 0,
       client: { name: c.name, kind: c.kind },
-      attr: { id: a.id, label: a.label, effect: a.effect, counter: a.counter }
+      attr: { id: a.id, label: a.label, effect: a.effect, counter: a.counter },
+      board: boards[rint(boards.length)],
+      demand: makeDemand(c, s)
     };
+  }
+  // ---------- 건설 요구 ----------
+  // 의뢰인 c(이름·종류)와 의뢰 크기 s로 요구 하나: { id, label, text, need?, need2? }
+  function makeDemand(c, s) {
+    var pool = DEMAND_BY_NAME[c.name] || DEMAND_BY_KIND[c.kind] || Object.keys(DEMAND_DEFS);
+    var id = pool[rint(pool.length)], D = DEMAND_DEFS[id], d = { id: id, label: D.label };
+    if (D.need) d.need = D.need(s);
+    if (D.need2) d.need2 = D.need2(s);
+    d.text = D.text(d);
+    return d;
+  }
+  // 지금 의뢰의 요구를 지금 지은 상태로 판정: { id, label, text, ok, now, need } (now/need가 의미 없으면 null). 요구가 없으면 null
+  function demandStatus() {
+    var d = RUN.quest && RUN.quest.demand;
+    if (!d || !DEMAND_DEFS[d.id]) return null;
+    var sm = siteSummary(), zones = RUN.site.zones, r = { id: d.id, label: d.label, text: d.text, ok: false, now: null, need: null, note: '' };
+    if (d.id === 'trap') { r.now = sm.trap; r.need = d.need; r.ok = r.now >= r.need; r.note = '함정 복도 ' + r.now + '/' + r.need + '곳'; }
+    else if (d.id === 'lure') { r.now = sm.lure; r.need = d.need; r.ok = r.now >= r.need; r.note = '미끼 ' + r.now + '/' + r.need + '곳'; }
+    else if (d.id === 'value') { r.now = sm.value; r.need = d.need; r.ok = r.now >= r.need; r.note = '던전 가치 ' + r.now + '/' + r.need; }
+    else if (d.id === 'den') {
+      r.now = sm.monsters; r.need = d.need2; r.dens = sm.den; r.densNeed = d.need;
+      r.ok = sm.den >= d.need && sm.monsters >= d.need2;
+      r.note = '대기실 ' + sm.den + '/' + d.need + '곳 · 몬스터 ' + sm.monsters + '/' + d.need2 + '마리';
+    } else if (d.id === 'front') {
+      var fr = ZONES.bossFront(), bad = fr.filter(function (z) { return zones[z] !== 'empty'; });
+      r.now = fr.length - bad.length; r.need = fr.length; r.ok = !bad.length;
+      r.note = bad.length ? '비워야 할 곳: ' + bad.map(function (z) { return ZONES.NAMES[z]; }).join(', ') : '보스방 앞 모두 빈 구역';
+    } else if (d.id === 'thorn') { r.ok = zones.Y === 'thorn'; r.note = r.ok ? '야외 덫 숲 있음' : '야외가 아직 ' + ZONES.FAC[zones.Y].name; }
+    return r;
+  }
+  // 납품을 막는 것들 (글 목록, 못 채운 목표 먼저 -> 요구). 다 채웠으면 []. 요구 글은 "요구"로 시작
+  function questBlockers() {
+    if (RUN.phase !== 'play' || !RUN.quest) return [];
+    var out = RUN.quest.goals.filter(function (g) { return goalNow(g) < g.target; }).map(goalText);
+    var ds = demandStatus();
+    if (ds && !ds.ok) out.push('요구 미달: ' + ds.text + ' (지금 ' + ds.note + ')');
+    return out;
   }
   // 후보: 일반 2~3장, 메인이 열렸으면 메인 1장 더. 한 번 만들면 저장해 두어 새로고침해도 같다.
   function offerQuests() {
@@ -328,7 +404,8 @@
       name: T.name, goals: T.goals.map(function (g) { return { type: g.type, target: g.target }; }),
       reward: { gold: T.reward.gold, gems: T.reward.gems, fame: T.reward.fame }, prog: { gold: 0, gems: 0, exp: 0, defends: 0 }, startWeek: 0,
       client: { name: FIRST_CLIENT.name, kind: FIRST_CLIENT.kind },
-      attr: { id: a.id, label: a.label, effect: a.effect, counter: a.counter }
+      attr: { id: a.id, label: a.label, effect: a.effect, counter: a.counter },
+      board: TUTORIAL_BOARD, demand: null   // 튜토리얼은 요구 없음 (대사가 요구를 아직 설명하지 않음)
     };
   }
   function tutorial() {
@@ -374,7 +451,7 @@
     }
     found.startWeek = RUN.week;
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
-    RUN.site = freshSite(found.tutorial === true);
+    RUN.site = freshSite(found.tutorial === true, found.board);   // 판도 여기서 바꿔 끼운다
     RUN.siteNo++;
     ensurePlan();   // 계획의 레벨·힘·속성은 새 부지(가치 0)와 새 의뢰 속성으로 다시 맞춰진다 (fitPlan)
     save();
@@ -384,7 +461,9 @@
   // ---------- 달성 판단·납품 ----------
   function checkQuest() {
     if (RUN.phase !== 'play' || !RUN.quest) return false;
-    return RUN.quest.goals.every(function (g) { return goalNow(g) >= g.target; });
+    if (!RUN.quest.goals.every(function (g) { return goalNow(g) >= g.target; })) return false;
+    var ds = demandStatus();
+    return !ds || ds.ok;   // 요구도 지금 지은 상태로 맞아야 납품
   }
   function deliver() {
     if (!checkQuest()) return null;
@@ -396,7 +475,7 @@
     var rep = {
       quest: q, base: q.reward.gold, sale: sale, gold: total, gems: q.reward.gems, fame: q.reward.fame, weeks: RUN.week - q.startWeek + 1,
       value: RUN.site.value, builds: RUN.site.builds, fameBefore: RUN.fame, goldBefore: RUN.gold, gemsBefore: RUN.gems, wasMain: wasMain,
-      nextMain: '', carry: [], lost: []
+      nextMain: '', carry: [], lost: [], demand: demandStatus(), board: RUN.site.board
     };
     RUN.gold += total; RUN.gems += q.reward.gems; RUN.fame += q.reward.fame;
     choreAdd('deliver');
@@ -852,7 +931,7 @@
     planInfo: planInfo, watchAd: watchAd, startBattle: startBattle, battlePlan: battlePlan, battleSave: battleSave, saveBattle: saveBattle, setBattleSpeed: setBattleSpeed, setCardCount: setCardCount, applyBattle: applyBattle, levelNeed: levelNeed, checkQuest: checkQuest, deliver: deliver,
     siteSummary: siteSummary, siteValue: siteValue, idleMonsters: idleMonsters, previewBuild: previewBuild, buildZone: buildZone,
     placeMonster: placeMonster, removeMonster: removeMonster, forecast: forecast, setBattle: setBattle, monById: monById,
-    offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
+    offerQuests: offerQuests, pickQuest: pickQuest, demandStatus: demandStatus, questBlockers: questBlockers, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,
     WORKSHOPS: WORKSHOP_DEFS.map(function (d) { return { id: d.id, name: d.name, desc: d.desc, ready: d.ready, maxLv: d.maxLv }; }),
     workshopInfo: workshopInfo, upgradeWorkshop: upgradeWorkshop, tribeInfo: tribeInfo, upgradeTribe: upgradeTribe, buildCost: buildCost,
     tutorial: tutorial, tutorialSeen: tutorialSeen, skipTutorial: skipTutorial, tutorialPath: tutorialPath,
