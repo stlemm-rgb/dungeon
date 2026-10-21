@@ -141,8 +141,8 @@
   function zoneWhy(z) {
     var t = Z.zoneType(z);
     return (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.'
-      : t === 'boss' ? '' : Z.CENTER.indexOf(z) >= 0 ? '가운데 길: 옆길에서 빠져나온 침입자가 모두 모이는 큰길. 피할 수 없어요.'
-      : Z.EXITS[z] && Z.EXITS[z].length > 1 ? '갈림길: 지나간 침입자가 아래로 내려가거나 가운데로 빠져요.' : '옆길.') +
+      : t === 'boss' ? '' : Z.CENTER.indexOf(z) >= 0 ? '큰길: 침입자가 모두 모이는 길. 피할 수 없어요.'
+      : Z.EXITS[z] && Z.EXITS[z].length > 1 ? '갈림길: 지나간 침입자가 여러 길로 나뉘어요.' : '옆길.') +
       (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '');
   }
   function money(n) { return Number(n).toLocaleString('en-US'); }

@@ -131,6 +131,7 @@
 
   // 다음 주: 어느 탭에서든 누르면 이번 주 전투를 시작한다 (안 되면 이유를 토스트로)
   function startWeek() {
+    if (autoDeliver()) return; // 목표·요구를 이미 채웠으면 전투 대신 납품
     var r = P.startBattle();
     if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
     buzz('tap');
