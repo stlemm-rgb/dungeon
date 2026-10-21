@@ -5,7 +5,7 @@
  *    (나중에 안드로이드 뒤로 버튼과 연결).
  *  - 하단 탭: 홈 · 던전 · [다음 주 ▶] · 부대 · 상점. 가운데 "다음 주"는 어느 탭 화면에서든 누를 수 있다 (화면 이동이 아니라 동작 버튼).
  *    탭 막대가 보이는 화면: home · dungeon · units · shop. 전투 화면은 같은 막대 자리에 배속 · 전투 시작 · 안내가 들어간다 (battle.js).
- *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · build(건설) · settings(오른쪽 위 톱니, 뒤로 가기) · battle(다음 주 = 매주 전투)
+ *  - 홈에서 가는 곳: leaders(부대장) · records(기록·도감) · workshop(공방, 보석 강화) · build(건설) · settings(오른쪽 위 톱니, 뒤로 가기) · battle(다음 주 = 매주 전투)
  *  - 진행 화면 (탭 막대 숨김): contract(첫 의뢰) -> home -> build / battle -> (목표 달성 즉시) result(납품·정산·친위대·새 의뢰 후보 한 화면) -> home
  *    contract와 result는 같은 함수(deliverScreen). 첫 시작(report 없음)에는 정산·친위대 없이 후보만 보인다.
  *  - "다음 주"를 누르면 이번 주 전투가 시작되고(PROGRESS.startBattle) 결과를 반영할 때까지 전투 화면에서 못 나간다.
@@ -146,10 +146,11 @@
     var stage = div('stage'), box = div('stagebox', ST.roomSvg());
     stage.appendChild(box);
     var actors = startActors(stage, box);
-    // 부대장·기록 버튼은 무대 바닥 위에 얹는다 (홈이 한 화면에 들어오게)
+    // 부대장·기록·공방 버튼은 무대 바닥 위에 얹는다 (홈이 한 화면에 들어오게)
     stage.appendChild(div('quick',
       '<button class="btn" data-go="leaders">부대장</button>' +
-      '<button class="btn" data-go="records">기록·도감</button>'));
+      '<button class="btn" data-go="records">기록·도감</button>' +
+      '<button class="btn" data-go="workshop">공방</button>'));
     // 퀘스트 버튼: 무대 오른쪽 위. 누르면 현재 의뢰 팝업
     if (q) {
       var qb = document.createElement('button');
@@ -324,21 +325,88 @@
     el.appendChild(div('mt-auto', '<button class="btn primary" data-go="' + (RUN.quest ? 'build' : 'contract') + '">' + (RUN.quest ? '건설하기' : '의뢰 고르기') + '</button>'));
   };
 
+  // ---------- 보석 강화 (공방 · 몬스터 부족 공통 조각) ----------
+  // 계약(progress.js): P.WORKSHOPS · P.workshopInfo(id) · P.upgradeWorkshop(id) · P.tribeInfo(name) · P.upgradeTribe(name). 없으면 그 부분은 숨기거나 "준비 중".
+  function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+  function gemCost(info) { return info && info.cost && typeof info.cost.gems === 'number' ? info.cost.gems : null; }
+  // 강화 버튼: 준비 중 / 최대 단계 / 강화 (보석 N) (모자라면 흐리게, 눌러도 토스트만)
+  function upBtn(info, attr, key, notReady) {
+    if (notReady) return '<button class="btn small upbtn" disabled>준비 중</button>';
+    var c = gemCost(info);
+    if (info.next == null || c == null) return '<button class="btn small upbtn" disabled>최대 단계</button>';
+    return '<button class="btn small primary upbtn' + (info.canAfford ? '' : ' poor') + '" data-' + attr + '="' + esc(key) + '"' +
+      (info.canAfford ? '' : ' aria-disabled="true"') + '>강화 (보석 ' + c + ')</button>';
+  }
+  // 강화 버튼을 눌렀을 때: 모자라면 이유 토스트, 아니면 강화 함수를 불러 결과를 토스트로. 성공하면 true
+  function tryUpgrade(info, fn, key) {
+    var c = gemCost(info);
+    if (c != null && !info.canAfford) { toast('보석이 ' + (c - RUN.gems) + '개 모자라요 (필요 ' + c + ' · 보유 ' + RUN.gems + ')'); buzz('warn'); return false; }
+    var r = fn(key);
+    toast(r && r.msg ? r.msg : (r && r.ok ? '강화했어요' : '강화할 수 없어요'));
+    if (r && r.ok) { buzz('good'); return true; }
+    buzz('warn'); return false;
+  }
+  // 성공 연출: 그 요소를 짧게 반짝 (shell.css .upflash, 시간은 --dur-fx)
+  function flashUp(node) { if (!node) return; node.classList.remove('upflash'); void node.offsetWidth; node.classList.add('upflash'); }
+
+  // 공방 화면 (탭 아님, 왼쪽 위 "← 홈"). 카드 3장 = P.WORKSHOPS 순서
+  SCREENS.workshop = function (el) {
+    el.appendChild(head('공방', 'home'));
+    var gemBar = div('gembar'), list = div('wslist');
+    el.appendChild(gemBar); el.appendChild(list);
+    function draw() {
+      gemBar.innerHTML = '<span>보유 보석</span><b>' + RUN.gems + '</b>';
+      if (!(P.WORKSHOPS && P.workshopInfo)) { list.innerHTML = '<div class="card dim">공방은 준비 중이에요</div>'; return; }
+      list.innerHTML = P.WORKSHOPS.map(function (w) {
+        var inf = P.workshopInfo(w.id) || {}, off = w.ready === false || inf.ready === false, maxLv = inf.maxLv || w.maxLv || 0;
+        var h = '<div class="card ws' + (off ? ' off' : '') + '" data-ws="' + esc(w.id) + '">' +
+          '<div class="wshead"><h3>' + w.name + '</h3>' + (off ? '<span class="chip">준비 중</span>' : '<span class="chip accent">단계 ' + (inf.lv || 0) + '/' + maxLv + '</span>') + '</div>' +
+          '<div class="dim small-text">' + (w.desc || '') + '</div>';
+        if (!off) {
+          h += '<div class="stat"><span>지금 효과</span><b>' + (inf.effect || '없음') + '</b></div>' +
+            '<div class="stat"><span>다음 단계</span><b>' + (inf.next != null ? inf.next : '최대 단계예요') + '</b></div>';
+        }
+        return h + upBtn(inf, 'upws', w.id, off) + '</div>';
+      }).join('');
+    }
+    list.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-upws]') : null;
+      if (!b) return;
+      var id = b.getAttribute('data-upws');
+      var ok = tryUpgrade(P.workshopInfo(id) || {}, P.upgradeWorkshop, id);
+      draw();
+      if (ok) { flashUp(list.querySelector('[data-ws="' + id + '"]')); flashUp(gemBar); }
+    });
+    draw();
+  };
+
   SCREENS.units = function (el) {
     el.appendChild(head('부대'));
     var tab = 'mon';
     var segEl = div('seg');
     var listEl = div('', '');
     listEl.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+    var hasTribe = !!(P.tribeInfo && P.upgradeTribe);
+    // 몬스터 부족 보석 강화 줄 (같은 이름의 몬스터는 한 부족이라 강화가 같이 오른다)
+    function tribeHtml(m) {
+      if (!hasTribe) return '';
+      var t = P.tribeInfo(m.name);
+      if (!t) return '';
+      return '<div class="tribe"><div class="tribehead"><b>보석 강화 Lv ' + (t.lv || 0) + '</b>' + upBtn(t, 'uptribe', m.name) + '</div>' +
+        '<div class="small-text">지금 ' + (t.effect || '없음') + '</div>' +
+        '<div class="small-text dim">다음 ' + (t.next != null ? t.next : '최대 단계예요') + '</div></div>';
+    }
     function draw() {
       segEl.innerHTML = '<button data-t="mon" class="' + (tab === 'mon' ? 'on' : '') + '">몬스터</button>' +
         '<button data-t="guard" class="' + (tab === 'guard' ? 'on' : '') + '">친위대 (최대 3칸)</button>';
       var s = '';
       if (tab === 'mon') {
+        if (hasTribe) s += '<div class="gemnote"><span class="chip accent">보석 ' + RUN.gems + '</span><span class="small-text dim">보석 강화는 몬스터 부족에 붙어 새 부지로 가도 남아요. 레벨은 친위대만 남아요.</span></div>';
         RUN.monsters.forEach(function (m) {
-          s += '<div class="card unit"><div class="portrait">도트<br>48×48</div><div class="info"><b>' + m.name + '</b> <span class="chip">Lv ' + m.lv + '</span> ' +
-            '<span class="chip">등급 ' + P.monGrade(m.lv) + '</span>' +
-            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div></div></div>';
+          var guard = RUN.guards.indexOf(m.id) >= 0;
+          s += '<div class="card unit mon" data-tribe="' + esc(m.name) + '"><div class="portrait">도트<br>48×48</div><div class="info"><b>' + m.name + '</b> <span class="chip">Lv ' + m.lv + '</span> ' +
+            '<span class="chip">등급 ' + P.monGrade(m.lv) + '</span>' + (guard ? ' <span class="chip accent">친위대</span>' : '') +
+            '<div class="nums"><span>체력 ' + m.hp + '</span><span>공격 ' + m.atk + '</span><span>경험치 ' + m.exp + '/2</span></div>' + tribeHtml(m) + '</div></div>';
         });
       } else {
         s += '<p class="dim small-text" style="margin:0">친위대는 납품(정산) 때 고릅니다. 보스·보물방을 지키는 몬스터입니다 (가짜).</p>';
@@ -353,6 +421,14 @@
     segEl.addEventListener('click', function (e) {
       var t = e.target.getAttribute && e.target.getAttribute('data-t');
       if (t) { tab = t; draw(); }
+    });
+    listEl.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-uptribe]') : null;
+      if (!b) return;
+      var name = b.getAttribute('data-uptribe');
+      var ok = tryUpgrade(P.tribeInfo(name) || {}, P.upgradeTribe, name);
+      draw();
+      if (ok) listEl.querySelectorAll('.mon').forEach(function (c) { if (c.getAttribute('data-tribe') === name) flashUp(c); });
     });
     el.appendChild(segEl); el.appendChild(listEl); draw();
   };

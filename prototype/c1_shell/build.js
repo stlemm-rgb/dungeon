@@ -128,10 +128,11 @@
         }
         h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="zopts">';
         Z.facFor(z).forEach(function (fk) {
-          var ff = Z.FAC[fk], cv = Z.costOf(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, have = RUN.gold + grantLeft(), poor = !cur && cv > have;
+          var ff = Z.FAC[fk], base = Z.costOf(fk, z), cv = P.buildCost ? P.buildCost(fk, z) : base, vv = Z.valueOf(fk, z), cur = fk === k, have = RUN.gold + grantLeft(), poor = !cur && cv > have;
+          var costTxt = cv < base ? '금 <s>' + base + '</s> ' + cv : '금 ' + cv; // 건설 공방 할인 중이면 원래 가격에 줄을 그어 함께 보여 줌
           h += '<button data-pick="' + fk + '" class="' + (cur ? 'cur' : '') + (pick === fk ? ' on' : '') + (poor ? ' poor' : '') + '"' + (cur ? ' disabled' : '') + '>' +
             '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + ff.st + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
-            '<small>금 ' + cv + (vv ? ' · 가치 ' + vv : '') + (poor ? ' · <span class="lack">금 ' + (cv - have) + ' 모자람</span>' : '') + '</small></button>';
+            '<small>' + costTxt + (vv ? ' · 가치 ' + vv : '') + (poor ? ' · <span class="lack">금 ' + (cv - have) + ' 모자람</span>' : '') + '</small></button>';
         });
         h += '</div>';
         var p = preview();
@@ -143,6 +144,7 @@
               ? '<div>비용 ' + p.cost + ' = 공사비 <b>' + money(p.fromGrant) + '</b>' + (p.fromGold > 0 ? ' + 금 <b>' + money(p.fromGold) + '</b>' : '') + '</div>' +
                 '<div>금 ' + money(RUN.gold) + ' → <b>' + money(RUN.gold - (p.fromGold || 0)) + '</b>' + ' · 공사비 ' + money(grantLeft()) + ' → <b>' + money(Math.max(0, grantLeft() - p.fromGrant)) + '</b></div>'
               : '<div>금 ' + money(RUN.gold) + ' → <b>' + money(p.goldAfter) + '</b> (-' + (p.fromGold != null ? p.fromGold : p.cost) + ')</div>') +
+            (p.discount > 0 ? '<div class="discount">건설 공방 할인 -' + money(p.discount) + '</div>' : '') +
             '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + (dv >= 0 ? '+' : '') + dv + ')</div>' +
             (t !== 'yard' ? '<div>이 구역에 오는 침입자 ' + now + '명 → <b>' + after + '명</b></div>' : '') +
             (p.back ? '<div class="lack">든 몬스터 ' + p.back + '마리는 대기로 돌아가요</div>' : '') +
