@@ -15,6 +15,7 @@
  *  - 건설 화면(구역 판)은 build.js, 전투 화면은 battle.js (SCREEN_PLUGINS). 판 규칙은 zones.js.
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
+ *  - 튜토리얼: 은발 마왕 말풍선(#tut, 탭 막대 바로 위). 대사는 lines.js, 단계 기록은 progress.js(P.tutorial 등). 아래 "튜토리얼" 절 참고.
  *  - 숫자는 가짜(균형 없음). 상태(RUN)는 progress.js가 localStorage에 자동 저장한다. 설정은 이 파일이 따로 저장.
  */
 (function () {
@@ -660,6 +661,7 @@
       holdTimer = setTimeout(function () {
         stopHold(); buzz('warn');
         P.reset();
+        tut.local = {}; tut.off = false; tutEnd(false); // 튜토리얼도 처음부터
         toast('처음부터 다시 시작해요');
         go('contract', true);
       }, MOTION.hold.charge);
@@ -782,6 +784,122 @@
   SCREENS.contract = deliverScreen;
   SCREENS.result = deliverScreen;
 
+  // ---------- 튜토리얼: 은발 마왕 말풍선 (대사는 lines.js, 단계 기록은 progress.js 계약 함수) ----------
+  // 계약: P.tutorial() -> { on, seen } · P.tutorialSeen(id) (본 단계로 기록) · P.skipTutorial() · P.tutorialPath() (구역 id 배열 또는 null).
+  // 하나라도 없거나 오류면 튜토리얼을 아예 안 띄운다. 말풍선은 화면 아래 탭 막대 바로 위(#tut)에 끼어 들어가 화면이 그만큼 줄어들 뿐 아무것도 가리지 않는다.
+  // 단계 하나 = LINES.tutorial 에서 id 가 같은 줄들. 탭하면 다음 줄, 마지막 줄에서 탭하면 닫히고 "본 단계"로 기록.
+  // 강조 = 목표 요소에 .tut-hl (shell.css). 목표를 누르거나 다른 화면으로 가면 그 단계는 끝난 것으로 기록.
+  var tutEl = document.getElementById('tut');
+  var tut = { cur: null, local: {}, off: false };
+  function tutLines(id) {
+    var L = window.LINES, a = L && Array.isArray(L.tutorial) ? L.tutorial : [];
+    return a.filter(function (l) { return l && l.id === id && typeof l.text === 'string' && l.text.trim(); });
+  }
+  function tutOn() {
+    if (tut.off || typeof P.tutorial !== 'function' || typeof P.tutorialSeen !== 'function' || typeof P.skipTutorial !== 'function') return false;
+    try { var t = P.tutorial(); return !!(t && t.on); } catch (e) { return false; }
+  }
+  function tutSeenIn(id) { // progress.js 기록에 있는가 (seen 은 id 배열이거나 { id: true } 표)
+    try {
+      var sn = P.tutorial().seen;
+      return Array.isArray(sn) ? sn.indexOf(id) >= 0 : !!(sn && sn[id]);
+    } catch (e) { return false; }
+  }
+  function tutSeenNow(id) { return !!tut.local[id] || tutSeenIn(id); }
+  function tutMark(id) {
+    try { P.tutorialSeen(id); } catch (e) { /* 무시 */ }
+    if (!tutSeenIn(id)) tut.local[id] = true; // 기록이 안 남는 경우에도 이번에 켜 둔 동안은 다시 안 띄움
+  }
+  function tutClearHl() {
+    if (tut.cur && tut.cur.nodes) tut.cur.nodes.forEach(function (n) { n.classList.remove('tut-hl'); });
+  }
+  function tutApply() { // 목표 요소 강조 (화면에 이미 붙어 있는 것만)
+    var c = tut.cur;
+    if (!c || !c.target) return;
+    tutClearHl();
+    c.nodes = Array.prototype.slice.call(document.querySelectorAll(c.target));
+    c.nodes.forEach(function (n) { n.classList.add('tut-hl'); });
+  }
+  function tutDraw() {
+    var c = tut.cur;
+    if (!c) { tutEl.hidden = true; tutEl.innerHTML = ''; return; }
+    var l = c.lines[c.i], last = c.i >= c.lines.length - 1;
+    if (tutEl.hidden || !tutEl.firstChild) {
+      tutEl.innerHTML = '<div class="tut-face" aria-hidden="true"><b>마왕</b>도트<br>48×48</div>' +
+        '<div class="tut-bubble"><div class="tut-top"><small class="tut-who"></small><button class="tut-skip" type="button">건너뛰기</button></div>' +
+        '<div class="tut-text"></div>' +
+        '<div class="tut-foot"><span class="tut-count"></span><button class="tut-next" type="button"></button></div></div>';
+      tutEl.hidden = false;
+    }
+    tutEl.querySelector('.tut-who').textContent = (typeof l.who === 'string' && l.who) ? l.who : '은발 마왕';
+    tutEl.querySelector('.tut-text').textContent = l.text; // 글자 그대로 (줄바꿈은 CSS pre-line)
+    tutEl.querySelector('.tut-count').textContent = c.lines.length > 1 ? (c.i + 1) + '/' + c.lines.length : '';
+    tutEl.querySelector('.tut-next').textContent = last ? '닫기' : '다음 ▶';
+  }
+  function tutEnd(mark) {
+    var c = tut.cur;
+    if (!c) return;
+    tutClearHl();
+    tut.cur = null;
+    if (mark) tutMark(c.id);
+    tutDraw();
+  }
+  // 단계 보이기. opts.target = 강조할 요소 선택자, opts.keep = true 면 목표를 눌러도 끝나지 않음. 보였으면 true
+  function tutStart(id, opts) {
+    if (!tutOn() || tutSeenNow(id)) return false;
+    if (tut.cur && tut.cur.id === id) { tutApply(); return true; }
+    var lines = tutLines(id);
+    if (!lines.length) return false;
+    if (tut.cur) tutEnd(true); // 앞 단계가 남아 있으면 본 것으로 치고 새 단계로
+    opts = opts || {};
+    tut.cur = { id: id, lines: lines, i: 0, target: opts.target || null, keep: !!opts.keep, nodes: [], screen: lastName };
+    tutDraw(); tutApply();
+    return true;
+  }
+  function tutActive(id) { return !!(tut.cur && tut.cur.id === id); }
+  function tutNext() {
+    var c = tut.cur;
+    if (!c) return;
+    buzz('tap');
+    if (c.i >= c.lines.length - 1) tutEnd(true);
+    else { c.i++; tutDraw(); }
+  }
+  tutEl.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.tut-skip')) {
+      try { P.skipTutorial(); } catch (err) { /* 무시 */ }
+      tut.off = true; tutEnd(false); buzz('tap');
+      return;
+    }
+    if (e.target.closest && e.target.closest('.tut-bubble')) tutNext();
+  });
+  // 강조한 목표를 누르면 그 단계는 끝 (누른 동작은 그대로 진행)
+  document.addEventListener('click', function (e) {
+    var c = tut.cur;
+    if (!c || c.keep || !c.nodes.length || !e.target.closest || e.target.closest('#tut')) return;
+    if (c.nodes.some(function (n) { return n.contains(e.target); })) tutEnd(true);
+  }, true);
+  // 화면이 바뀔 때 (render 가 부름): 다른 화면으로 갔으면 끝난 것으로 기록, 같은 화면을 다시 그리는 거면 그냥 접어 두고 다시 시작
+  function tutLeave(name) { if (tut.cur) tutEnd(tut.cur.screen !== name); }
+  // shell.js 가 직접 그리는 화면의 단계 (건설·전투 화면은 build.js·battle.js 가 api.tutStart 로)
+  function tutCheck(name) {
+    if (!tutOn()) return;
+    if (name === 'contract' && RUN.phase === 'choose') tutStart('welcome', { target: '#view .card.contract' });
+    else if (name === 'result' && RUN.phase === 'settle') tutStart('deliver', { target: '#view .payout' });
+    else if (name === 'home' && RUN.phase === 'play' && RUN.quest) {
+      if (RUN.site.builds === 0) tutStart('build', { target: '#view .homebar [data-go="build"]' });
+      else tutStart('nextweek', { target: '#tabs [data-week]' });
+    }
+    tutApply();
+  }
+  // 건설 화면 강조 구역: P.tutorialPath() 중 입구(E)·보물방(B)은 빼고 지을 수 있는 칸만. 'zones' 단계가 떠 있을 때만
+  function tutZones() {
+    if (!tutActive('zones') || typeof P.tutorialPath !== 'function') return [];
+    try {
+      var p = P.tutorialPath();
+      return Array.isArray(p) ? p.filter(function (z) { return z !== 'E' && z !== 'B'; }) : [];
+    } catch (e) { return []; }
+  }
+
   // ---------- 화면 플러그인 (화면을 별도 파일로 뺄 때: battle.js) ----------
   // 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; } 로 등록한다.
   // api.onLeave(fn): 다른 화면으로 나갈 때 한 번 불러 준다 (타이머·루프 정리용).
@@ -790,6 +908,8 @@
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
     // 건설 화면용 (build.js)
     head: head, questTag: questTag, goalsHtml: goalsHtml, autoDeliver: autoDeliver,
+    // 튜토리얼 (build.js·battle.js): 단계 보이기 · 끝내기(본 것으로 기록) · 떠 있나 · 건설 화면 강조 구역
+    tutStart: tutStart, tutDone: function (id) { if (tutActive(id)) tutEnd(true); }, tutActive: tutActive, tutZones: tutZones,
     // 전투 화면용: 하단 탭 막대 자리 (전투 시작 버튼이 가운데 "다음 주" 자리와 같은 곳에 오게 battle.js가 여기에 채운다)
     bar: function () { return tabsEl; },
     // 전투 화면용: 결과 반영(한 번만, 결과표 내용을 돌려줌) / 결과표에서 홈으로 (목표를 채웠으면 바로 납품)
@@ -822,6 +942,7 @@
     leaveHooks.splice(0).forEach(function (fn) { fn(); });
     var name = guardScreen((location.hash || '#home').slice(1));
     if (name === 'home' && P.checkQuest() && autoDeliver()) return; // 결과표에서 새로고침한 경우 등: 목표를 채웠으면 납품
+    tutLeave(name);
     var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
     justEnteredHome = name === 'home' && lastName !== 'home';
     lastName = name;
@@ -835,6 +956,7 @@
     view.innerHTML = '';
     view.appendChild(el);
     view.scrollTop = keep;
+    tutCheck(name);
   }
 
   // 하단 막대: 탭 화면(홈·던전·부대·상점)에서는 홈 · 던전 · [다음 주 ▶] · 부대 · 상점. 전투 화면에서는 비워 두고 battle.js가 채움. 그 외 화면은 숨김.

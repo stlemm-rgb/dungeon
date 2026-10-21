@@ -13,6 +13,8 @@
  *  - 결과는 전투가 끝나는 순간 api.finishBattle로 한 번만 반영 (새로고침해도 두 번 반영 안 됨)
  *  - 저장 지점 = 전투 시작 + 이벤트 카드를 고른 순간 (P.saveBattle에 전투 계산 상태를 통째로). 새로고침하면 마지막 저장 지점부터
  *    일시정지 상태로 이어지고, 고른 카드는 바꿀 수 없다. 배속·카드 수는 바꿀 때마다 저장
+ *  - 튜토리얼 말풍선(api.tutStart): 첫 전투 화면(battle) · 첫 이벤트 카드(card) · 첫 결과표(result). 안 켜져 있으면 아무 일도 안 일어난다.
+ *    card 안내가 떠 있는 동안에는 그 카드의 제한 시간만 멈춘다 (전투 속도는 원래대로 0.3배)
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드)
  */
 (function () {
@@ -27,6 +29,9 @@
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.battle = function (api) {
     var div = api.div, buzz = api.buzz, fxRandom = api.fxRandom;
+    function tutStart(id, target) { if (api.tutStart) api.tutStart(id, { target: target }); }
+    function tutDone(id) { if (api.tutDone) api.tutDone(id); }
+    function tutActive(id) { return !!(api.tutActive && api.tutActive(id)); }
 
     return function (el) {
       var P = window.PROGRESS, RUN = P.RUN, plan = P.battlePlan();
@@ -233,8 +238,9 @@
         c.animate([{ transform: 'translateY(-200px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
         attachDrag(card);
         buzz('tap');
+        tutStart('card', '.bt-card');
       }
-      function endCard() { U.card = null; setHot(null, null); slot.classList.remove('on'); }
+      function endCard() { U.card = null; setHot(null, null); slot.classList.remove('on'); tutDone('card'); }
       function setHot(hot, armed) {
         if (hot) el.setAttribute('data-hot', hot); else el.removeAttribute('data-hot');
         if (armed) el.setAttribute('data-armed', armed); else el.removeAttribute('data-armed');
@@ -346,6 +352,7 @@
         box.querySelector('.card').animate([{ transform: 'scale(.7)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
         el.appendChild(box);
         buzz(ok ? 'stamp' : 'warn');
+        tutStart('result', '.bt-result [data-home]');
       }
 
       // ---------- 버튼 ----------
@@ -408,7 +415,7 @@
         } else if (U.phase === 'fight' && !U.paused) {
           var card = U.card;
           if (card && card.state === 'idle') {
-            if (!card.dragging) card.age += real;
+            if (!card.dragging && !tutActive('card')) card.age += real; // 튜토리얼 안내가 떠 있는 동안은 카드 시간 멈춤
             var left = Math.max(0, 1 - card.age / BD.CARD_LIFE);
             card.bar.style.width = (left * 100) + '%';
             card.bar.classList.toggle('low', left < 0.3);
@@ -440,6 +447,7 @@
         if (U.fastUsed) log('저장된 배속 ×' + BD.SPEEDS[U.speedIdx] + ' · 이번 전투 카드 ' + RUN.prefs.cards + '장 (아래 버튼에서 바꿀 수 있어요)', 'dim');
         log('"전투 시작"을 누르세요. 최고 등급: ' + top.grade + '급', 'dim');
       }
+      if (!resumed) tutStart('battle', '.bt-start'); // 저장 지점에서 이어진 전투에는 안내 없음
       run.raf = requestAnimationFrame(frame);
     };
   };
