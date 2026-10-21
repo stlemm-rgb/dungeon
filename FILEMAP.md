@@ -37,7 +37,7 @@
 
 - `tools/autoplay.py` — 자동 진행 측정: 많은 턴을 돌려 오류 수, 걸린 시간, 세이브 크기를 출력한다.
   - `arg`, `main`
-- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, 화면 비교.
+- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, C1 대사 파일, 화면 비교.
   - `main`
 - `tools/filemap.py` — 파일 지도 만들기: FILEMAP.md에 파일마다 한 줄 설명과 그 안의 함수 목록을 적는다.
   - `describe`, `functions`, `main`
@@ -53,6 +53,8 @@
   - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`
+- `tools/test_lines.py` — 대사 파일 검사: prototype/c1_shell/lines.js 가 열리는지, 튜토리얼 단계마다 대사가 있는지, 줄마다 말한 사람과 글이 있는지, 홈 잡담 이름이 맞는지를 확인한다.
+  - `actor_names`, `check`, `main`
 - `tools/test_names.py` — 이름 검사: 전역 이름 겹침, 파일 앞글자 규칙, 불러오기 목록 빠짐.
   - `check`, `main`
 - `tools/test_oldsaves.py` — 예전 세이브 검사: tools/oldsaves/*.txt를 불러와 save_ensureStateReady 뒤 오류가 없는지.

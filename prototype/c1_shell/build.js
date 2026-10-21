@@ -8,6 +8,7 @@
  *  - 쓴 금은 돌려받지 못한다. 시트와 미리보기에 그렇게 적는다.
  *  - 첫 건설 공사비(P.grantLeft() > 0)가 남아 있으면 위에 안내 줄을 띄우고, 미리보기·짓기 버튼에 "공사비 N + 금 M"(previewBuild의 fromGrant · fromGold)로 보여 준다.
  *  - 판 그리기(boardHtml)는 던전 탭이 읽기 전용으로 같이 쓴다 (window.ZONEVIEW).
+ *  - 튜토리얼(첫 건설 전): 'zones' 단계 말풍선 + 첫 부지의 필수 길(P.tutorialPath, 입구·보물방 빼고)을 반짝이게 한다 (api.tutStart·api.tutZones). 처음 짓는 순간 단계가 끝난다.
  *  - 곡선·시간은 shell.css의 var(--dur-*)/var(--ease-*) (MOTION에서 깔림)만.
  */
 (function () {
@@ -100,6 +101,9 @@
         var p = preview();
         var zones = p && p.zones ? p.zones : RUN.site.zones, units = p && p.units ? p.units : RUN.site.units;
         boardBox.innerHTML = boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null });
+        api.tutZones().forEach(function (z) {
+          boardBox.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('tut-hl'); });
+        });
       }
 
       function drawSheet() {
@@ -187,12 +191,14 @@
           api.toast(r.msg);
           if (!r.ok) { api.buzz('warn'); redraw(); return; }
           api.buzz('good');
+          api.tutDone('zones'); // 첫 건설을 했으면 안내 끝
           if (Z.FAC[pick].kind !== 'den') sel = null; // 대기실을 지었으면 시트를 열어 둬서 바로 몬스터를 넣게
           pick = null;
           if (!api.autoDeliver()) redraw();
         }
       });
 
+      if (RUN.quest && RUN.site.builds === 0) api.tutStart('zones', { keep: true }); // 첫 건설 전 안내 (강조는 redraw 가 api.tutZones 로)
       redraw();
     };
   };

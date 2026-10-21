@@ -42,6 +42,19 @@
       lines: ['방패는 언제든 준비돼 있습니다.', '문 앞은 맡겨 주십시오.', '...배가 고픈데요.'] }
   ];
 
+  // 잡담은 lines.js(사용자가 메모장으로 고치는 대사 파일)의 LINES.home 에서 읽는다. 없거나 비어 있으면 위 표의 lines 를 그대로 쓴다.
+  (function () {
+    var home = window.LINES && window.LINES.home;
+    if (!home) return;
+    ACTORS.forEach(function (a) {
+      var l = home[a.name];
+      if (Array.isArray(l)) {
+        l = l.filter(function (t) { return typeof t === 'string' && t.trim(); });
+        if (l.length) a.lines = l;
+      }
+    });
+  })();
+
   // 바닥 가구. 상자 모양: x0~x1, y0~y1 (칸), h = 높이, z0 = 띄운 높이(위에 올린 물건), m = 재질 (shell.css 의 .m-재질)
   var RUG = { x0: 2.0, x1: 4.4, y0: 2.6, y1: 4.6, inset: 0.25 };
   var FURNITURE = [
