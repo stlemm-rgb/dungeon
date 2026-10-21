@@ -7,6 +7,7 @@
  *     평소 = 일반 침입자(battle_data.js NORMAL), 예고된 주(RUN.surgeWeek)와 광고 본 주(watchAd) = 대량 출현(SURGE).
  *     침입자 레벨·힘은 던전 가치(던전 레벨)와 명성으로 정하고(fitPlan, 숫자는 battle_data.js), 전투 시작 때 확정한다.
  *     이 부지에서 금을 쓴 건설이 하나도 없으면 "다음 주"가 막힌다.
+ *     배속·배속 때 카드 수는 RUN.prefs에 저장해 다음 전투에도 기억 (setBattleSpeed·setCardCount).
  *     전투 저장 지점(RUN.bsave) = 전투 시작 + 이벤트 카드를 고른 순간. 새로고침하면 마지막 저장 지점부터 (고른 카드는 못 바꿈)
  *  3) 건설(buildZone)은 언제든, 금이 있는 만큼, 전투 중에는 못 지음. 구역 16곳에 시설을 하나씩 (규칙은 zones.js).
  *     쓴 금은 환불 없음. 대기실 몬스터 넣고 빼기는 공짜. 건설 횟수(builds)는 돈(공사비 또는 금)을 쓴 건설만 센다.
@@ -87,15 +88,25 @@
       questsDone: 0, mainGrade: 0, qid: 1, siteNo: 0,
       site: freshSite(),
       monsters: monsters, guards: [],
-      surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: []
+      surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
+      prefs: freshPrefs()
     };
   }
-  // 전투 저장 지점: snap = battle_sim.js snapshot (null이면 전투 시작 지점), ui = 화면 진행(카드 몇 장째 등), 배속
-  function freshBattleSave() { return { snap: null, ui: null, speedIdx: 0, fastUsed: false }; }
+  // 설정 칸 (전투가 끝나도 남음): 마지막으로 고른 배속(BD.SPEEDS 번호)과 배속 때 그 전투에 나올 카드 수(0~카드 지점 수). 처음 기본 = 1배속, 카드 1장
+  function freshPrefs() { return { speedIdx: 0, cards: 1 }; }
+  // 전투 저장 지점: snap = battle_sim.js snapshot (null이면 전투 시작 지점), ui = 화면 진행(카드 몇 장째 등),
+  // fastUsed = 이 전투에서 배속을 켠 적이 있나 (켜면 꺼도 카드 상한이 prefs.cards로 유지)
+  function freshBattleSave() { return { snap: null, ui: null, fastUsed: false }; }
   // 불러온 뒤 빠진 칸 채우기
   function ensureStateReady() {
     if (RUN.battling && (!RUN.bsave || typeof RUN.bsave !== 'object')) RUN.bsave = freshBattleSave();
     if (!RUN.battling) RUN.bsave = null;
+    // 설정 칸: v5 저장에는 없으니 기본값으로 채운다 (옛 전투 저장 지점에 배속이 있으면 그걸로)
+    var pf = RUN.prefs && typeof RUN.prefs === 'object' ? RUN.prefs : (RUN.prefs = freshPrefs());
+    if (typeof pf.speedIdx !== 'number') pf.speedIdx = RUN.bsave && typeof RUN.bsave.speedIdx === 'number' ? RUN.bsave.speedIdx : 0;
+    pf.speedIdx = Math.max(0, Math.min(BD.SPEEDS.length - 1, pf.speedIdx | 0));
+    if (typeof pf.cards !== 'number') pf.cards = 1;
+    pf.cards = Math.max(0, Math.min(BD.CARD_AT.length, pf.cards | 0));
     if (typeof RUN.site.grant !== 'number' || RUN.site.grant < 0) RUN.site.grant = 0;
     if (!Array.isArray(RUN.guards)) RUN.guards = [];
     RUN.monsters.forEach(function (m) { if (!m.base) m.base = { lv: m.lv, hp: m.hp, atk: m.atk }; });
@@ -195,7 +206,9 @@
   // 후보: 일반 2~3장, 메인이 열렸으면 메인 1장 더. 한 번 만들면 저장해 두어 새로고침해도 같다.
   function offerQuests() {
     if (RUN.offers && RUN.offers.length) return RUN.offers;
-    var used = [], list = [];
+    // 방금 끝낸 의뢰(history 마지막)와 같은 이름은 후보에 안 나오게 이름 목록에 미리 넣어 둔다
+    var last = RUN.history.length ? RUN.history[RUN.history.length - 1].name : '';
+    var used = last ? [last] : [], list = [];
     var n = 2 + rint(2);
     for (var i = 0; i < n; i++) list.push(makeQuest('normal', used));
     if (RUN.questsDone >= NORMAL_TO_MAIN) list.unshift(makeQuest('main', used)); // 메인은 맨 위에
@@ -446,11 +459,16 @@
     save();
     return true;
   }
-  // 배속 설정은 바꿀 때마다 저장. 배속을 한 번 켰다는 기록(fastUsed)은 되돌아가지 않는다
+  // 배속은 바꿀 때마다 RUN.prefs에 저장 -> 다음 전투도 그 배속으로 시작.
+  // fastUsed = 이 전투에서 배속을 켠 적이 있나 (battle.js가 정해서 줌. 전투 시작 전에는 지금 배속이 2 이상인지)
   function setBattleSpeed(idx, fastUsed) {
-    if (!RUN.battling) return;
-    RUN.bsave.speedIdx = Math.max(0, Math.min(BD.SPEEDS.length - 1, idx | 0));
-    RUN.bsave.fastUsed = RUN.bsave.fastUsed || !!fastUsed;
+    RUN.prefs.speedIdx = Math.max(0, Math.min(BD.SPEEDS.length - 1, idx | 0));
+    if (RUN.battling && RUN.bsave) RUN.bsave.fastUsed = !!fastUsed;
+    save();
+  }
+  // 배속 때 그 전투에 나올 카드 수 (0~카드 지점 수). 바꿀 때마다 저장해 다음 전투에도 기억
+  function setCardCount(n) {
+    RUN.prefs.cards = Math.max(0, Math.min(BD.CARD_AT.length, n | 0));
     save();
   }
 
@@ -508,7 +526,7 @@
     RUN: RUN, GOAL_TYPES: GOAL_TYPES, MAIN_GRADES: MAIN_GRADES, SITE_GRANT: SITE_GRANT,
     NORMAL_TO_MAIN: NORMAL_TO_MAIN, GUARD_MAX: GUARD_MAX,
     goalNow: goalNow, goalText: goalText, monGrade: monGrade, isSurgeWeek: isSurgeWeek, surgeIn: surgeIn,
-    planInfo: planInfo, watchAd: watchAd, startBattle: startBattle, battlePlan: battlePlan, battleSave: battleSave, saveBattle: saveBattle, setBattleSpeed: setBattleSpeed, applyBattle: applyBattle, levelNeed: levelNeed, checkQuest: checkQuest, deliver: deliver,
+    planInfo: planInfo, watchAd: watchAd, startBattle: startBattle, battlePlan: battlePlan, battleSave: battleSave, saveBattle: saveBattle, setBattleSpeed: setBattleSpeed, setCardCount: setCardCount, applyBattle: applyBattle, levelNeed: levelNeed, checkQuest: checkQuest, deliver: deliver,
     siteSummary: siteSummary, siteValue: siteValue, idleMonsters: idleMonsters, previewBuild: previewBuild, buildZone: buildZone,
     placeMonster: placeMonster, removeMonster: removeMonster, forecast: forecast, setBattle: setBattle, monById: monById,
     offerQuests: offerQuests, pickQuest: pickQuest, setGuards: setGuards, toContract: toContract, grantLeft: grantLeft,

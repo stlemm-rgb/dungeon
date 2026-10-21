@@ -116,8 +116,7 @@
     if (!P.checkQuest()) return false;
     var rep = P.deliver();
     if (!rep) return false;
-    toastsEl.innerHTML = ''; // 앞선 토스트는 치우고 납품 알림만
-    toast((rep.wasMain ? '메인 의뢰 완료! ' : '목표 달성! ') + rep.quest.name + ' 납품');
+    toastsEl.innerHTML = ''; // 앞선 토스트는 치운다. 납품 알림은 정산 화면 머리의 도장("납품 완료")이 대신해서 토스트는 안 띄움 (의뢰 카드를 가리지 않게)
     buzz('best');
     go('result', true);
     return true;
@@ -147,11 +146,10 @@
     var stage = div('stage'), box = div('stagebox', ST.roomSvg());
     stage.appendChild(box);
     var actors = startActors(stage, box);
-    // 부대장·기록·우편함 버튼은 무대 바닥 위에 얹는다 (홈이 한 화면에 들어오게)
+    // 부대장·기록 버튼은 무대 바닥 위에 얹는다 (홈이 한 화면에 들어오게)
     stage.appendChild(div('quick',
       '<button class="btn" data-go="leaders">부대장</button>' +
-      '<button class="btn" data-go="records">기록·도감</button>' +
-      '<button class="btn" data-toast="우편함은 아직 비어 있어요">우편함<span class="badge">2</span></button>'));
+      '<button class="btn" data-go="records">기록·도감</button>'));
     // 퀘스트 버튼: 무대 오른쪽 위. 누르면 현재 의뢰 팝업
     if (q) {
       var qb = document.createElement('button');
