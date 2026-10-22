@@ -41,7 +41,7 @@
 - 부대장이 좋아하는 가구를 놓으면 호감도·입주 (포켓 캠프) [출처: refs/ref_housing_affinity.md]
 - 부대장 부탁은 한 번에 3개까지 (포켓 캠프) [출처: refs/ref_housing_affinity.md]
 - 몬스터 숙소: 부족별, 좋을수록 회복·경험치 보너스
-- 레벨 공유: 새 몬스터 부족을 친위대 레벨에 맞춰 바로 쓰게 [출처: refs/ref_afk_arena.md]
+- 레벨 공유: 새 몬스터 부족을 친위대 레벨에 맞춰 바로 쓰게 [출처: refs/ref_afk_arena.md] **[미채택 10-22: 레벨 공유 없이 회사 레벨에 따른 시작 레벨 적용(GAME_STRUCTURE 6절)]**
 - 식당·주점: 부대장끼리 대화, 술자리 이벤트
 - 마왕 방문: 은발 마왕이 저택에 불쑥 (츤데레 이벤트)
 - 기념품 진열장: 작품집 기념품, 용사단 전리품 장식
@@ -98,17 +98,17 @@
 - 전설 용사 습격 (주간 도전)
 - 천적 침입자: 마족 슬레이어 같은 특수 인간 (전설 등급, 등장 연출) [출처: refs/ref_nest_dragon_deep.md]
 - 의뢰인의 던전 평가 방문: 납품 전에 와서 훈수·평가 [출처: refs/ref_nest_dragon_deep.md]
-- 매주 운명 카드: 이번 주 "전투 / 사건"을 고름 (DM) [출처: refs/ref_mobile_dungeon_games.md]
+- 매주 운명 카드: 이번 주 "전투 / 사건"을 고름 (DM) [출처: refs/ref_mobile_dungeon_games.md] **[미채택 10-22: 주 시작 운명 카드 없이 주 종류 자동(GAME_STRUCTURE 6절)]**
 - 의뢰 고르기 화면: 현판형 의뢰 + 구성 미리보기 + 보상 (LoK 미션 지도) [출처: refs/ref_mobile_dungeon_games.md]
 - 진행 칸 종류에 휴식·상점·정예 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 의뢰 안의 주기와 보스 주: N주마다 정예·보스 침입, 그 전 주는 휴식·강화 주 [출처: refs/ref_dungeon_maker_deep.md]
-- 매주 카드 3장 중 1장(전투·정예·휴식·상인·이벤트·보물), 싸우지 않고 넘기는 주가 있음 [출처: refs/ref_dungeon_maker_deep.md]
+- 매주 카드 3장 중 1장(전투·정예·휴식·상인·이벤트·보물), 싸우지 않고 넘기는 주가 있음 [출처: refs/ref_dungeon_maker_deep.md] **[미채택 10-22: 주 시작 운명 카드 없이 주 종류 자동(GAME_STRUCTURE 6절)]**
 - 명확한 숫자 목표 (DM의 "100일"처럼: 작품 100개·평판 100 등) [출처: refs/ref_dungeon_maker_deep.md]
 - 건설 대회: 마계 건축 박람회, 주제별 순위
 - 탑·심연: 끝없이 내려가는 도전 던전 (친위대만)
 - 계절 축제: 기간 한정
 - 시즌 테마 부지: 기간 한정 의뢰로 따로 짓는 이벤트 던전 (Fallout Shelter 시즌 볼트) [출처: refs/ref_fallout_shelter.md]
-- 서두르기: 즉시 완료 + 사고 확률 상승 → 과금 없이 한 판 길이 조절 [출처: refs/ref_fallout_shelter.md]
+- 서두르기: 즉시 완료 + 사고 확률 상승 → 과금 없이 한 판 길이 조절 [출처: refs/ref_fallout_shelter.md] **[미채택 10-22: 건설 즉시 완료로 서두르기 불필요(GAME_STRUCTURE 6절)]**
 - 에너지 없는 유연한 세션: 오래 할수록 보상이 줄어 스스로 쉬게 [출처: refs/ref_fallout_shelter.md]
 - 다른 유저 던전 침공 (나중, 비동기 대전)
 - 친구 던전에 내 친위대 지원 보내기 (비동기 협동, 나중) [출처: refs/ref_lucky_defense.md]
@@ -127,7 +127,7 @@
 - 대표 수치 하나로 성장 체감 (갑부의 "버는 속도" → 우리는 회사 평판·던전 가치 등) [출처: refs/ref_gabu_business_era.md]
 - 보스 침입자를 막으면 얻는 수집품 (갑부의 진귀한 짐승) [출처: refs/ref_gabu_business_era.md]
 - 언제나 떠 있는 목표 3개 (하나 끝내면 새로) [출처: refs/ref_fallout_shelter.md]
-- 일일 퀘스트 점수제: 20점마다 보상, 100점 큰 보상, 다 안 해도 됨 [출처: refs/ref_afk_arena.md]
+- 일일 업무 점수제: 20점마다 보상, 100점 큰 보상, 다 안 해도 됨 [출처: refs/ref_afk_arena.md]
 - 회사 연혁: 내 회사 역사 연표
 
 ## 참고 게임 조사 순서 (하나씩, 조사하면 refs/에 한 파일 + 위 목록에 추가)
