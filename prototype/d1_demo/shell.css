@@ -38,6 +38,8 @@
   --zone-lure: #33263f;
   --zone-boss: #44381a;
   --zone-fixed: #1d3846;
+  --zone-stairs: #2c3550;
+  --lock-veil: rgba(12, 13, 16, .66);
   --ice: #9fd8ee;
   --zone-edge: #8a93a3;
   /* 의뢰 카드의 판 모양 미리보기 (이웃한 구역끼리 다른 색) */
@@ -777,3 +779,94 @@ body.reduce .tut-hl { animation: none; }
 .tribecard .tribehead b { font-size: 15px; }
 .row2 { display: flex; gap: 8px; margin-top: 4px; }
 .row2 .btn { flex: 1; min-width: 0; padding: 8px 6px; }
+
+/* ---- D1 3차: 세로 층 · 층별 출진 · 퇴각 · 위기 카드 · 데모 끝 ---- */
+.chip.warn { border-color: var(--danger); color: var(--danger); }
+.fpow { color: var(--accent); font-weight: bold; font-size: 13px; }
+.fsub { font-size: 12px; color: var(--dim); margin-top: -4px; }
+.floor.done { padding: 8px 10px; background: var(--earth-1); }
+.floor.done .fhead span { color: var(--ready); font-weight: bold; }
+/* 현장 단면: 출진 칸 줄 (누르면 출진 화면) */
+.sortiebar { display: flex; gap: 6px; width: 100%; padding: 6px; border: 1px dashed var(--earth-edge); border-radius: 10px; background: var(--earth-3); text-align: center; }
+.sortiebar.none { justify-content: center; padding: 8px; }
+.nocap { font-size: 12px; color: var(--dim); line-height: 1.35; }
+.uslot { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 4px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-2); line-height: 1.25; }
+.uslot b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.uslot small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--dim); }
+.uslot.empty { border-style: dashed; background: none; }
+.uslot.guard { border-color: var(--accent); }
+.uslot.rest, .sslot.rest, .srow.rest { opacity: .6; }
+.zz { color: var(--danger); }
+/* 잠긴 층 */
+.lockedfloor { gap: 12px; }
+.lockedfloor .flockmini { flex: none; opacity: .55; filter: grayscale(.6); }
+.lockedfloor .flockmini .mini { width: 70px; }
+.flocktxt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.lockedfloor.gate { justify-content: flex-start; }
+.floor.f3.lockedfloor { justify-content: center; }
+.floor.f3.lockedfloor .flocktxt { align-items: center; }
+
+/* 출진 화면 */
+.sortiebox { display: flex; flex-direction: column; gap: 10px; }
+.floortabs button small { font-size: 11px; font-weight: normal; }
+.autobox .toggle { padding: 2px 0; gap: 10px; }
+.autobox .toggle > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.autobox .toggle small { font-size: 12px; line-height: 1.35; }
+.sslots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.sslot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; min-height: 84px; padding: 6px 3px; text-align: center; color: var(--text); }
+.sslot b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.sslot small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--dim); }
+.sslot.filled { border-color: var(--line-strong); background: var(--panel-2); }
+.sslot.filled.guard { border-color: var(--accent); }
+.sslot.filled .out { color: var(--accent); }
+.sslot.empty { border-style: dashed; background: none; }
+.srow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.srow.guard { border-color: var(--accent); }
+.srow .sinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.srow .nums { font-size: 12px; color: var(--dim); }
+.srow .btn { flex: none; }
+.srow .btn.poor { opacity: .45; }
+
+/* 건설 화면: 층 탭 · 잠긴 층 · 계단 */
+.bfloors { margin-top: -4px; }
+.bfloors span { opacity: .7; }
+.floortabs { flex: none; }
+.zyard.stair { cursor: default; color: var(--dim); }
+.zc.k-stairs { background: var(--zone-stairs); cursor: default; } .zc.k-stairs .fn { color: var(--ice); }
+.zc.gap { background: var(--bg); border-color: transparent; outline: 0; cursor: default; color: var(--dim); font-size: 10px; }
+.zwrap.locked .zgrid { filter: grayscale(.8) brightness(.55); }
+.zlock { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: var(--lock-veil); border-radius: 0 0 8px 8px; text-align: center; padding: 0 16px; }
+.zlock b { font-size: 28px; }
+.zlock span { font-size: 13px; font-weight: bold; }
+
+/* 전투 화면: 층을 쌓은 판 · 퇴각 · 위기 */
+.bt-board.tall { min-height: calc(var(--rows, 12) * 38px + 24px); max-height: none; }
+.bt-board.tall .zc .zn { display: none; }
+.bt-board.tall .zc .zi { font-size: 9.5px; }
+.bt-board .zc.gap { background: var(--zone-stairs); border-color: var(--zone-stairs); color: var(--ice); font-weight: bold; }
+.bt-locked { flex: none; padding: 5px 10px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--dim); font-size: 12px; text-align: center; }
+.bt-mon.out { opacity: .3; filter: grayscale(1); border-style: dashed; }
+.bt-mon.retreating { animation: bt-retreat calc(var(--dur-fx) * 2) var(--ease-out) forwards; }
+@keyframes bt-retreat { 0% { transform: scale(1); opacity: 1; } 40% { transform: scale(1.5); opacity: 1; } 100% { transform: scale(1); opacity: .3; } }
+.bt-float.retreat { color: var(--dir-up); font-size: 12px; }
+.bt-float.alarm { color: var(--danger); font-size: 16px; }
+.bt-board.bt-alarm { animation: bt-alarm calc(var(--dur-fx) * 2) var(--ease-out); }
+@keyframes bt-alarm { 0% { box-shadow: 0 0 0 4px var(--danger); } 100% { box-shadow: 0 0 0 0 transparent; } }
+body.reduce .bt-mon.retreating, body.reduce .bt-board.bt-alarm { animation: none; }
+.bt-crisis { position: absolute; left: 8px; top: 8px; padding: 1px 9px; border-radius: 99px; background: var(--danger); color: var(--text); font-size: 11px; font-weight: bold; }
+.bt-resbox .bt-group { margin-top: 2px; font-size: 13px; }
+.bt-group .stat { align-items: flex-start; gap: 8px; }
+.bt-group .stat b { text-align: right; font-weight: normal; min-width: 0; overflow-wrap: anywhere; }
+.bt-group .lbl-retreat { color: var(--dir-up); font-weight: bold; }
+.bt-group .lbl-down { color: var(--accent); font-weight: bold; }
+.bt-group .lbl-died { color: var(--danger); font-weight: bold; }
+.bt-group .lbl-ok { color: var(--ready); font-weight: bold; }
+.bt-hint.demo { border-color: var(--ready); background: var(--ready-soft); }
+.bt-grant { color: var(--ready); }
+#tabs.inbattle .bt-cards small { white-space: nowrap; font-size: 9px; }
+
+/* 데모 끝 */
+.demoend h3 { font-size: 18px; color: var(--accent); }
+.demoend .stat { font-size: 14px; }
+.demoshaft .surface { background: var(--earth-edge); }
