@@ -5,6 +5,7 @@ AI에게는 "그때 그거처럼" 대신 "refs/파일이름 참고해서"라고 
 
 | 파일 | 종류 | 내용 |
 | --- | --- | --- |
+| `ref_fallout_shelter.md` | 참고 게임 | Fallout Shelter: 지하 층별 단면·방치 탐험·방 합치기 |
 | `ref_mobile_dungeon_games.md` | 참고 게임 | Legend of Keepers·Dungeon Maker: Dark Lord (우리와 다른 점, 확인할 것) |
 | `ref_nest_dragon.md` | 참고 게임 | 둥지짓는 드래곤 둥지 짓기 방식 요약 (구역 + 시설의 출발점) |
 | `ref_football_agency.md` | 참고 게임 | 풋볼 에이전시 분석 → 우리 게임 적용표 (React 세로형 구조) |
