@@ -1,6 +1,6 @@
-/* C1 전투 숫자·글 표 (한곳에 모음. 계산 없음, 모두 임시 숫자, 균형 맞추지 않음)
+/* D1 데모 숫자·글 표 (한곳에 모음. 계산 없음, 모두 임시 숫자). 전투 숫자 + 데모 규칙(의뢰·납품 기준·부족·회사 레벨·고정 구역·끈 기능)
  *
- * 기준: docs/GAME_PLAN.md "플레이 흐름 (2026-10-21 사용자, 최우선)"
+ * 기준: docs/GAME_PLAN.md "플레이 흐름 (2026-10-21)" + 2026-10-22·23 절, docs/GAME_STRUCTURE.md 3·6절. 아래 DEMO 이후가 D1에서 새로 생긴 표
  *  - 매주 전투. 평소 = 일반 침입자, 예고 주·광고 = 대량 출현
  *  - 무리(등급 D·C·B·A·S)가 낮은 등급부터 대기 장소(야외)에 등장 -> 가장 높은 무리의 침입자 카드(비서) -> 10명 = 1분대로 진입
  *  - 가장 앞선 분대의 진행도 15·30·45·60%에서 이벤트 카드 (위·아래·왼쪽·오른쪽)
@@ -46,14 +46,15 @@ window.BATTLE_DATA = {
   SURGE_FIRST: 4, SURGE_GAP: [3, 4],     // 첫 대량 출현 주, 다음까지 간격(주)
 
   // 침입자 강함은 던전 가치(= 던전 레벨)에 맞춘다. 새 부지는 인지도가 낮아 약한 적이 온다 (사용자 10-21)
-  //  던전 레벨 = 가치 ÷ VALUE_PER_DLV (내림)
-  //  무리 평균 레벨 = BASE_LV + 던전 레벨 + 명성 ÷ FAME_PER_LV (내림) + 등급 lvAdd + 0~2
-  //  힘 배율(체력·공격) = POWER_MIN + (1 - POWER_MIN) × min(1, 가치 ÷ POWER_FULL_VALUE)
+  //  D1: 아래 "가치"는 위협 점수 = 던전 가치 + 던전 전투력 (가치가 시설만 세게 바뀌어서. progress.js threatOf)
+  //  던전 레벨 = 위협 점수 ÷ VALUE_PER_DLV (내림)
+  //  무리 평균 레벨 = BASE_LV + 던전 레벨 + (회사 레벨 - 1) ÷ CLV_PER_LV (내림) + 등급 lvAdd + 0~2   (D1: 명성 대신 회사 레벨)
+  //  힘 배율(체력·공격) = POWER_MIN + (1 - POWER_MIN) × min(1, 위협 점수 ÷ POWER_FULL_VALUE)
   //  주 시작에 계획을 만들고, 건설로 가치가 바뀌면 홈 알림이 따라 바뀐다. "다음 주"를 누르는 순간(전투 시작) 확정
   //  근거(측정, 일반 침입 60판): 가운데 함정 3곳(가치 50) 방어율 L5 ×1 = 82%, 대량 출현은 L3 ×0.6 = 80% · L9 ×1 = 52% · L20 ×1 = 20%
   BASE_LV: 3,
   VALUE_PER_DLV: 40,                     // 가치 40마다 던전 레벨 +1 (다 지은 판 ~480 = 12)
-  FAME_PER_LV: 2,                        // 명성 2마다 침입자 레벨 +1 (회사 이름값. 예전엔 명성 1 = 레벨 1 + 주/4)
+  CLV_PER_LV: 2,                         // 회사 레벨 2마다 침입자 레벨 +1 (D1: 옛 명성 FAME_PER_LV 대신)
   POWER_MIN: 0.6, POWER_FULL_VALUE: 200, // 가치 0이면 힘 ×0.6, 가치 200 이상이면 ×1
 
   // 무리 이름 (등급마다)
@@ -119,5 +120,94 @@ window.BATTLE_DATA = {
   DIR_LABEL: { up: '지휘', down: '보호', left: '시설', right: '부대' }, // 카드 전용 화면 가장자리 글의 분야 이름 (분야 고정, 토론 결과). 효과 내용은 카드 데이터 그대로
 
   // 결과표 "이번 수입으로 할 수 있는 강화" (가짜 문구 포함)
-  GEM_UPGRADE: { name: '몬스터 강화', cost: 5 } // 보석 5개당 (아직 준비 중)
+  GEM_UPGRADE: { name: '몬스터 강화', cost: 5 }, // 보석 5개당 (아직 준비 중)
+
+  // ===================== DEMO (D1에서 새로 생긴 표. 쓰는 곳: progress.js·zones.js·battle_sim.js) =====================
+
+  START: { gold: 0, gems: 0 },  // 새 게임 회사 금·보석 (회사 금은 영구 재화. 건설·조달은 의뢰 예산)
+
+  // 데모에서 끈 기능 (true = 꺼짐). 화면만 숨기지 않고 지급 경로까지 막는다 (progress.js). 코드는 남아 있다
+  //  gacha 광고 뽑기 · adSurge 광고 보고 대량 출현 · surge 예고된 대량 출현 · chores 일일/주간 업무 · idle 방치 보상 · workshop 공방 강화
+  DEMO_OFF: { gacha: true, adSurge: true, surge: true, chores: true, idle: true, workshop: true },
+
+  // 데모 시설: 방(room)에 지을 수 있는 시설 id (zones.js FAC). 입구는 분기(split, 갈림길)로 고정, 야외는 숲만
+  DEMO_FACILITIES: { room: ['empty', 'trap', 'den', 'lure'], entry: ['split'], yard: ['forest'] },
+  DEN_SLOTS_PER_CELL: 1,       // 몬스터 대기실 칸 하나에 부대(또는 친위대) 하나
+
+  // 고정 구역 (의뢰마다 정해짐, 바꿀 수 없음). refs/draft_fixed_zones.md. zones.js가 FAC에 'fz_' + id 시설로 넣는다
+  //  slow = 지나간 침입자 이동 감소 비율, span = 이 구역 포함 몇 구역 동안 (2 = 이 구역 + 다음 구역을 벗어날 때까지)
+  FIXED_ZONES: {
+    frozen_dock: { name: '얼어붙은 하역장', short: '하역장', look: '얼음 속 수레 옆에 \'제설 별도\' 팻말.', attr: '얼음',
+      st: '지나간 침입자는 다음 구역을 벗어날 때까지 느려진다', slow: 0.4, span: 2, value: 0 }
+  },
+
+  // 몬스터 부족 (refs/draft_tribes.md 데모 2종). 능력치는 항목 표: base = 1명 처음 값, grow = 레벨 1당 base에 곱해 더하는 비율
+  //  hp 체력 · atk 초당 공격 · def 받는 피해 감소 비율(0~DEF_MAX). 계산은 progress.js statOf 한곳
+  //  grow 근거(측정): 레벨당 체력 0.12·공격 0.08이면 레벨 1 -> 4에서 최적 전투력이 141 -> 149로 거의 안 바뀌어 성장이 납품 기준에 안 보임 -> 둘 다 0.2
+  STATS: [
+    { key: 'hp', label: '체력' },
+    { key: 'atk', label: '초당 공격' },
+    { key: 'def', label: '방어(피해 감소)' }
+  ],
+  DEF_MAX: 0.8,
+  TRIBES: [
+    { id: 'stone', name: '돌등껍질족', role: '버팀', look: '짧은 팔다리에 네모난 돌껍질을 멘 회색 거북',
+      talk: '“급하면 어제 오셨어야죠.”', feature: '단단한 껍질로 정면 공격을 버티며 침입자를 붙잡아 둔다.', attr: '물리·바위',
+      guardName: '버팀돌', guardIntro: '검수관이 벽으로 착각해 두드려도 “근무 중입니다”만 반복하는 대장.',
+      base: { hp: 120, atk: 5, def: 0.25 }, grow: { hp: 0.2, atk: 0.2, def: 0 } },
+    { id: 'ember', name: '불씨도마뱀족', role: '공격', look: '붉은 몸에 노란 꼬리불이 붙은 짧은 도마뱀',
+      talk: '“예열 끝! 뭐 태워요?”', feature: '불을 뿜어 맞은 침입자에게 화상을 남긴다.', attr: '마법·불',
+      guardName: '꼬리불', guardIntro: '의뢰인의 “따뜻한 분위기”를 문자 그대로 받아들여 소장이 따라다니는 대장.',
+      base: { hp: 70, atk: 11, def: 0 }, grow: { hp: 0.2, atk: 0.2, def: 0 } }
+  ],
+  // 부대 (같은 부족 몇 명 묶음). 조달은 의뢰 예산으로만 (회사 금 안 씀)
+  //  newCost = 새 부대(START명) 조달비 · memberCost = 1명 보충비 · cap = 정원 · FREE = 새 현장마다 무료 기본 부대
+  MON_SQUAD: { start: 3, cap: 6, newCost: { stone: 40, ember: 50 }, memberCost: { stone: 12, ember: 15 } },
+  MON_SQUAD_FREE: { tribe: 'stone', count: 3 },
+  // 새 부대 시작 레벨 = 회사 레벨 칸의 값 (회사 레벨 1 = [0]. 표를 넘으면 마지막 값). 의뢰 기준보다 낮게
+  SQUAD_START_LV: [1, 1, 2, 2, 3],
+  // 친위대 (이름 있는 개체 1명). 능력치 = 그 부족 1명 값 × MUL (같은 레벨 기준). 최대 MAX명. 납품 때 부대 하나를 골라 대장을 친위대로
+  GUARD: { max: 2, mul: { hp: 3, atk: 3, def: 1 } },
+  // 경험치 = 출진·참여 단위 (막타 계산 없음). deploy = 대기실에 출진만 해도 · fight = 그 대기실이 실제로 싸웠으면 더
+  //  근거(측정, 20시드 실제 전투): 출진 2·싸움 6이면 보통 배치가 5단계까지 평균 8.1주 -> 4·12로 최적 배치 2주 · 보통 배치 평균 4.5주 ("전투 3주 안팎")
+  EXP: { deploy: 4, fight: 12 },
+  // 부족 보석 강화 (영구): 단계마다 1명 base의 체력·공격 × PER (반올림, 최소 1)을 더함. 비용 = COSTS[단계] 보석. 데모는 MAX단계까지
+  TRIBE_UP: { per: 0.10, costs: [3, 6, 10], max: 1 },
+
+  // 작품집 효과 (확정 A, 2026-10-23): 작품이 needWorks개 이상이면 현장 부대 훈련(참여) 경험치 +squadExp. 작품 수만큼 쌓지 않음
+  WORKS_EFFECT: { id: 'train', label: '훈련 노하우', text: '현장 부대 훈련 경험치 +10%', needWorks: 1, squadExp: 0.10 },
+
+  // 회사 레벨 (대표 성장 수치). NEED[i] = 레벨 i+1 -> i+2에 필요한 경험치. 표를 넘으면 마지막 값
+  //  얻는 곳: battle 전투 한 번 · stage 납품 기준 한 단계 · deliver 납품 (의뢰 reward.companyExp가 있으면 그것)
+  COMPANY: { need: [12, 30, 50, 80], gain: { battle: 1, stage: 1 } },
+
+  // 던전 전투력 B안 (refs/draft_battle_data_2026-10-23.md 2절): 부대 점수 U·함정 점수 T × 통과 비율 w
+  //  U = 인원 × (1인 체력 ÷ hpDiv + 1인 초당 공격) · T = 1회 피해 × 발동 확률 × 대상 수 × 발동 횟수 ÷ 10, 발동 횟수 = 1 + 내림(stay ÷ TRAP_EVERY)
+  //  w = 침입자 flowN명을 길 계산(forecast)으로 보냈을 때 그 구역에 오는 비율. 친위대·부대장·카드는 안 셈
+  //  근거(측정 2026-10-23, 1층 의뢰 예산 260, 언덕 오르기 최적 배치): 초안 값(hpDiv 20·대상 10)은 레벨 1 부대 + 함정만으로 가치 55·전투력 216이 나와
+  //  1~3단계를 바로 넘고 부대 성장이 필요 없었음 -> 대상 5·hpDiv 10: 레벨 1 최적 = 3단계(가치 185·전투력 137), 5단계는 부대 레벨 4(최적 198)부터
+  POWER: { hpDiv: 10, trapTargets: 5, trapStay: 3, flowN: 600 },
+
+  // 이벤트 카드 규칙 (B안: 위기 때만 최대 2장, 사용자 2026-10-23). 위기 감지는 2차 — 지금은 데이터 자리만
+  //  crisisProgress = 가장 앞선 분대 진행도(%)가 이만큼 넘으면 위기
+  CARD_RULE: { mode: 'crisis', maxPerBattle: 2, crisisProgress: 50 },
+
+  // 데모 의뢰 (무작위 의뢰·메인/등급 상승은 데모에서 끔). 순서대로, minCompanyLv 이상이면 후보에 나온다
+  //  floors = 의뢰 층 수 · budget = 의뢰 예산(건설·부대 조달 전용) · fixed = 고정 구역 { 구역 id: FIXED_ZONES id }
+  //  stages = 납품 기준 5단계 (refs/draft_battle_data 3절 예시 숫자 그대로, 임시): value 가치 · power 전투력(전 층 합) ·
+  //           floor2 = 그중 2층 전투력 이상 · opens = 이 단계를 채우면 열리는 층. reward.companyExp = 납품 때 회사 경험치
+  //  예산 근거(측정, 최적 배치·레벨 1): 1층 의뢰 260 = 바로 3단계까지(4단계 전투력 137/145), 240이면 5단계에 부대 레벨 5 필요(느림).
+  //   2층 의뢰 320이면 레벨 1로 바로 3단계(2층 열림)라 데모 끝 장면의 "🔒 2층"이 안 보임 -> 200 = 바로 2단계까지. 2층 건설비는 2차에서 다시
+  //  2층 의뢰 4·5단계는 2층 전투력이 필요해 1차(2층 미구현)에서는 못 채움 (의도)
+  QUESTS: [
+    { key: 'q1', name: '작은 돌 성채', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 1, minCompanyLv: 1,
+      board: 'fork3', fixed: { CC: 'frozen_dock' }, budget: 260,
+      reward: { gold: 600, gems: 6, companyExp: 10 },
+      stages: [{ value: 40, power: 50 }, { value: 70, power: 80 }, { value: 110, power: 110 }, { value: 150, power: 145 }, { value: 180, power: 180 }] },
+    { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2,
+      board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 200,
+      reward: { gold: 900, gems: 8, companyExp: 15 },
+      stages: [{ value: 60, power: 70 }, { value: 100, power: 110 }, { value: 140, power: 150, opens: 2 },
+        { value: 210, power: 230, floor2: 50 }, { value: 280, power: 320, floor2: 90 }] }
+  ]
 };

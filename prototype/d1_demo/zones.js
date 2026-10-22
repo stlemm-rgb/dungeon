@@ -1,5 +1,7 @@
-/* C1 구역 판 규칙 (시안 A7 prototype/a7_nest16/rules.js 에서 복사, 숫자 그대로. 화면 그리기 없음)
+/* D1 구역 판 규칙 (C1 zones.js에서 이어 옴. 화면 그리기 없음)
  *
+ *  D1 바뀐 점: 던전 가치 = 시설 점수만(몬스터 제외) · 데모 시설 제한(BATTLE_DATA.DEMO_FACILITIES) · 고정 구역 시설('fz_' + id, 못 지음) ·
+ *    대기실 자리 = 칸당 부대 하나(DEN_SLOTS_PER_CELL) · 전투력 B안용 passRatios(통과 비율)·trapScore(함정 점수)
  *  - 5x7 칸 판. 구역 id Y(야외)·E(입구, 맨 위 가운데)·B(보스·보물방, 맨 아래 가운데)는 모든 판 공통. 나머지 구역은 2~4칸 덩어리.
  *  - 부지 모양(판) 3종 = BOARD_DATA (fork3 세 갈래 · line 외길 · fork2x 이중 갈림길). 판마다 구역 id·이름·길(exits)·큰길(center)·입구 출구(entry).
  *    useBoard(id)로 지금 판을 바꿔 끼우면 ZONES.MAP·NAMES·EXITS·CENTER·CELLS·ALL·ORDER와 모든 계산 함수가 그 판 기준이 된다.
@@ -17,6 +19,7 @@
 (function () {
   'use strict';
 
+  var BD = window.BATTLE_DATA || {};
   var TRAP_PER_CELL = 6;          // 함정 복도: 칸당 피해
   var PREVIEW_INVADERS = 20;      // 문 위 숫자를 계산할 침입자 수 (평소 전투 = 무리 2개 × 10명, battle_data.js NORMAL과 같게, 임시)
 
@@ -99,6 +102,14 @@
     den: { name: '몬스터 대기실', short: '대기실', perCell: 10, valuePerCell: 5, kind: 'den', st: '칸당 몬스터 2자리. 몬스터가 보이면 침입자가 피해 감(다른 길이 있으면). 바로 앞이 함정이면 기습 ×1.5', for: 'room' },
     boss: { name: '보스·보물방', short: '보스·보물', cost: 0, value: 0, kind: 'none', st: '친위대 자리 (나중에)', for: 'boss' }
   };
+  // 고정 구역 시설 (BATTLE_DATA.FIXED_ZONES): 'fz_' + id. 지을 수 없다(for: 'fixed'). 길 계산에서는 빈 구역처럼 지나감
+  var FIXED_PREFIX = 'fz_';
+  Object.keys(BD.FIXED_ZONES || {}).forEach(function (id) {
+    var d = BD.FIXED_ZONES[id];
+    FAC[FIXED_PREFIX + id] = { name: d.name, short: d.short, cost: 0, value: d.value || 0, kind: 'fixed', st: d.st, for: 'fixed', fixedId: id };
+  });
+  function fixedFac(id) { return FIXED_PREFIX + id; }
+  function isFixedFac(k) { return !!(FAC[k] && FAC[k].kind === 'fixed'); }
 
   // ---------- 판 하나 준비 (칸 목록·계산 순서) ----------
   function cellsOf(map) {
@@ -133,22 +144,28 @@
 
   function sizeOf(z) { return z === 'Y' ? 1 : cur.CELLS[z].length; }
   function zoneType(z) { return z === 'Y' ? 'yard' : z === 'E' ? 'entry' : z === 'B' ? 'boss' : 'room'; }
-  // 입구 시설은 그 판에 그 출구가 있을 때만 (분기는 늘)
+  // 입구 시설은 그 판에 그 출구가 있을 때만 (분기는 늘). 데모는 DEMO_FACILITIES에 있는 시설만 (없으면 제한 없음)
   function facFor(z) {
-    var t = zoneType(z);
-    return Object.keys(FAC).filter(function (k) { return FAC[k].for === t && (!FAC[k].turn || cur.ENTRY[FAC[k].turn]); });
+    var t = zoneType(z), allow = BD.DEMO_FACILITIES && BD.DEMO_FACILITIES[t];
+    return Object.keys(FAC).filter(function (k) {
+      return FAC[k].for === t && (!FAC[k].turn || cur.ENTRY[FAC[k].turn]) && (!allow || allow.indexOf(k) >= 0);
+    });
   }
   function costOf(k, z) { var f = FAC[k]; return f.perCell !== undefined ? f.perCell * sizeOf(z) : f.cost; }
   function valueOf(k, z) { var f = FAC[k]; return f.valuePerCell !== undefined ? f.valuePerCell * sizeOf(z) : f.value; }
-  function slotsOf(k, z) { return FAC[k].kind === 'den' ? 2 * sizeOf(z) : 0; } // 칸당 몬스터 2자리
+  function slotsOf(k, z) { return FAC[k] && FAC[k].kind === 'den' ? (BD.DEN_SLOTS_PER_CELL || 2) * sizeOf(z) : 0; } // 칸당 부대 자리
   function trapDmgOf(z) { return TRAP_PER_CELL * sizeOf(z); }
-  // 몬스터 한 마리의 던전 가치 (임시 식: 체력과 공격으로. A7은 종류별 표 14~40)
-  function monValue(m) { return Math.round((m.hp + m.atk * 4) / 6); }
+  // (C1 화면 호환용으로 남김. D1 던전 가치에는 안 들어감) 몬스터 한 마리 점수 (임시 식)
+  function monValue(m) { return Math.round(((m.hp || 0) + (m.atk || 0) * 4) / 6); }
 
   // 처음 부지: 입구는 분기, 야외는 숲, 나머지는 빈 구역 (모두 무료). 지금 판 기준
-  function defaultZones() {
+  // fixed = { 구역 id: FIXED_ZONES id } 고정 구역 (있으면 그 구역은 고정 구역 시설). 판에 없는 구역·없는 고정 구역은 무시
+  function defaultZones(fixed) {
     var L = { Y: 'forest' };
     Object.keys(cur.CELLS).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
+    Object.keys(fixed || {}).forEach(function (z) {
+      if (zoneType(z) === 'room' && cur.CELLS[z] && FAC[fixedFac(fixed[z])]) L[z] = fixedFac(fixed[z]);
+    });
     return L;
   }
 
@@ -158,9 +175,11 @@
   // 보스방 바로 앞 구역들 (B로 가는 길이 있는 구역)
   function bossFront() { return Object.keys(cur.EXITS).filter(function (z) { return cur.EXITS[z].indexOf('B') >= 0; }); }
 
-  // 요약: 던전 가치 (시설 + 대기실 몬스터), 함정·대기실·미끼 수. monById(id) -> 몬스터
-  function summary(zones, units, monById) {
-    var s = { value: 0, trap: 0, den: 0, lure: 0, monsters: 0 };
+  // 요약: 던전 가치 (D1: 지어 둔 시설 점수 합만, 몬스터 제외), 함정·대기실·미끼·고정 구역 수, 대기실에 든 부대 수(monsters).
+  // unitById(id)가 있으면 있는 부대만 센다 (없으면 id 개수)
+  function summary(zones, units, unitById) {
+    var s = { value: 0, trap: 0, den: 0, lure: 0, fixed: 0, monsters: 0 };
+    units = units || {};
     Object.keys(zones).forEach(function (z) {
       var k = zones[z], f = FAC[k];
       if (!f || (z !== 'Y' && !cur.CELLS[z])) return;
@@ -168,12 +187,24 @@
       if (f.kind === 'trap') s.trap++;
       if (f.kind === 'den') s.den++;
       if (f.kind === 'lure') s.lure++;
-      (units[z] || []).forEach(function (id) {
-        var m = monById(id);
-        if (m) { s.value += monValue(m); s.monsters++; }
-      });
+      if (f.kind === 'fixed') s.fixed++;
+      if (f.kind === 'den') (units[z] || []).forEach(function (id) { if (!unitById || unitById(id)) s.monsters++; });
     });
     return s;
+  }
+  // ---------- 던전 전투력 B안 재료 (BATTLE_DATA.POWER) ----------
+  // 통과 비율: 침입자 n명(기본 POWER.flowN)을 길 계산으로 보냈을 때 구역마다 오는 비율 { 구역: 0~1 }
+  function passRatios(zones, units, n) {
+    n = n || (BD.POWER && BD.POWER.flowN) || 600;
+    var at = forecast(zones, units || {}, n).at, w = {};
+    Object.keys(at).forEach(function (z) { w[z] = at[z] / n; });
+    return w;
+  }
+  // 함정 점수 T (통과 비율 곱하기 전): 1회 피해 × 발동 확률 × 대상 수 × 발동 횟수 ÷ 10. boost = 함정 피해 추가 비율(연구실 등)
+  function trapScore(z, boost) {
+    var P = BD.POWER || { trapTargets: 10, trapStay: 3 }, every = BD.TRAP_EVERY || 1.2;
+    var fires = 1 + Math.floor(P.trapStay / every);
+    return trapDmgOf(z) * (1 + (boost || 0)) * (BD.TRAP_CHANCE || 0.85) * P.trapTargets * fires / 10;
   }
 
   // 갈림길에서 어디로 갈까: 미끼 쪽 +2, 몬스터가 든 대기실 쪽 -1 (보여서 피함), 함정·빈 구역 0. 점수가 가장 높은 쪽들로 번갈아 나뉨
@@ -254,6 +285,7 @@
     BOARDS: BOARD_IDS.map(function (id) { return { id: id, name: BOARD_DATA[id].name, desc: BOARD_DATA[id].desc }; }),
     DEFAULT_BOARD: DEFAULT_BOARD,
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
+    fixedFac: fixedFac, isFixedFac: isFixedFac, passRatios: passRatios, trapScore: trapScore,
     monValue: monValue, defaultZones: defaultZones, tutorialZones: tutorialZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
     chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf, bossFront: bossFront,
     hasBoard: hasBoard, useBoard: useBoard, boardInfo: boardInfo, boardId: function () { return cur.id; }

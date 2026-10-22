@@ -1,6 +1,10 @@
-/* C1 전투 계산 (화면 그리기 없음). 숫자는 battle_data.js, 판·길 규칙은 zones.js
+/* D1 전투 계산 (C1 battle_sim.js에서 이어 옴. 화면 그리기 없음). 숫자는 battle_data.js, 판·길 규칙은 zones.js
  *
- *  - create(o): o = { plan(progress.js의 이번 주 계획), zones, units(대기실 몬스터 id), monById } -> 전투 상태 S
+ *  - create(o): o = { plan(progress.js의 이번 주 계획), zones, units(대기실 부대 id 목록), unitById } -> 전투 상태 S
+ *    unitById(id) -> { kind: 'squad'|'guard', name, count(인원), hp·atk·def(1명 능력치, progress.js statOf) }. 옛 이름 monById도 받음
+ *    D1: 대기실에는 부대 인원 수만큼 싸우는 개체가 생긴다(각 1명 능력치). 방어(def) = 받는 피해 감소 비율
+ *  - 고정 구역 '얼어붙은 하역장'(kind fixed, BATTLE_DATA.FIXED_ZONES slow·span): 지나간 분대는 span 구역 동안 이동이 느려짐 (q.chill)
+ *  - result(S)에 deployed(대기실에 든 부대 id) · fought(실제로 싸운 대기실의 부대 id) 추가 -> progress.js 참여 경험치
  *  - step(S, dt): 게임 시간 dt초 진행. 일어난 일 목록(events)을 돌려준다 (화면이 연출에 씀)
  *  - applyCard(S, side): 이벤트 카드 한 방향 효과. 대부분 전투 끝까지(S.mod에 쌓임), once는 그 자리에서 한 번
  *  - progress(S): 가장 앞선 분대가 보물방까지 간 거리(%). result(S): 결과 (progress.js applyBattle에 넘김)
@@ -38,23 +42,29 @@
     return fx;
   }
   function kindOf(S, z) { return z === 'B' || z === 'Y' ? 'none' : Z.FAC[S.zones[z]].kind; }
+  function fixedDef(S, z) { var f = z === 'B' || z === 'Y' ? null : Z.FAC[S.zones[z]]; return f && f.fixedId ? (BD.FIXED_ZONES || {})[f.fixedId] || null : null; }
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 
   function create(o) {
     var plan = o.plan, zones = o.zones, units = o.units;
     var S = {
       plan: plan, zones: zones, units: units, rs: plan.seed | 0, t: 0, released: 0, releaseT: 0,
-      icard: cardById(plan.card), fx: mergeFx(plan), squads: [], dens: {}, guard: 0, freeze: 0, done: false, timeout: false, maxProg: 0,
+      icard: cardById(plan.card), fx: mergeFx(plan), squads: [], dens: {}, fought: {}, guard: 0, freeze: 0, done: false, timeout: false, maxProg: 0,
       mod: { trapDmg: 0, trapRate: 0, monAtk: 0, slow: 0, weak: 0 },
       gain: { gold: 0, gems: 0, exp: 0, kills: 0, porterKills: 0 }, reached: 0, retreated: 0, loot: 0, total: 0
     };
-    // 대기실 몬스터 (전투 안에서만 쓰는 복사본. 잃은 체력은 수리 금으로)
+    // 대기실 부대 (전투 안에서만 쓰는 복사본). 부대 하나 = 인원 수만큼의 개체 (n = 몇 번째 사람)
+    var getU = o.unitById || o.monById;
     Object.keys(units).forEach(function (z) {
-      if (Z.FAC[zones[z]].kind !== 'den') return;
-      S.dens[z] = units[z].map(function (id) {
-        var m = o.monById(id);
-        return m ? { id: id, name: m.name, hp: m.hp, max: m.hp, atk: m.atk, lost: 0 } : null;
-      }).filter(Boolean);
+      if (!Z.FAC[zones[z]] || Z.FAC[zones[z]].kind !== 'den') return;
+      var list = [];
+      units[z].forEach(function (id) {
+        var u = getU ? getU(id) : null;
+        if (!u) return;
+        var n = Math.max(1, (u.count === undefined ? 1 : u.count) | 0);
+        for (var i = 0; i < n; i++) list.push({ id: id, n: i, name: u.name, hp: u.hp, max: u.hp, atk: u.atk, def: u.def || 0, guard: u.kind === 'guard', lost: 0 });
+      });
+      S.dens[z] = list;
     });
     // 분대 만들기: 무리 순서(등급 낮은 무리부터)대로. 대기 장소(야외)에 한 줄로 선다
     var turn = {}, all = [];
@@ -83,7 +93,7 @@
       var len = 0; // 진행도는 입구 문부터 보물방까지 (대기 장소에서 걷는 거리는 빼고)
       for (var w = 2; w < wps.length; w++) len += dist(wps[w - 1], wps[w]);
       q.id = i; q.route = route; q.wps = wps; q.wp = 1; q.x = home.x; q.y = home.y; q.home = home;
-      q.len = len; q.went = 0; q.state = 'wait'; q.zone = 'Y'; q.prevZone = 'Y'; q.trapT = 0;
+      q.len = len; q.went = 0; q.state = 'wait'; q.zone = 'Y'; q.prevZone = 'Y'; q.trapT = 0; q.chill = 0; q.chillSlow = 0;
       S.total += q.mem.length;
     });
     S.squads = all;
@@ -125,13 +135,17 @@
 
   function enterZone(S, q, z, ev) {
     q.prevZone = q.zone; q.zone = z;
+    // 고정 구역 느려짐: 들어서면 span 구역 동안 (이 구역 포함). 다른 구역에 들어설 때마다 하나씩 줄어듦
+    var fd = fixedDef(S, z);
+    if (fd && fd.slow) { q.chill = fd.span || 1; q.chillSlow = fd.slow; ev.push({ type: 'chill', id: q.id, z: z, x: q.x, y: q.y }); }
+    else if (q.chill > 0) { q.chill--; if (!q.chill) q.chillSlow = 0; }
     if (q.prevZone === 'Y' && S.zones.Y === 'thorn') { ev.push({ type: 'thorn', x: q.x, y: q.y }); hurtAll(S, q, BD.THORN_DMG, ev); }
     if (q.state === 'dead') return;
     if (kindOf(S, z) === 'trap') { q.trapT = BD.TRAP_EVERY; trapRoll(S, q, ev); }
   }
 
   function moveSquad(S, q, dt, ev) {
-    var speed = BD.MOVE_SPEED * (1 + (S.fx.speed || 0)) * Math.max(0.1, 1 - S.mod.slow), left = speed * dt;
+    var speed = BD.MOVE_SPEED * (1 + (S.fx.speed || 0)) * Math.max(0.1, 1 - S.mod.slow - (q.chill > 0 ? q.chillSlow || 0 : 0)), left = speed * dt;
     while (left > 0 && q.state === 'move') {
       var t = q.wps[q.wp], d = dist(q, t);
       var count = q.wp >= 2;
@@ -161,7 +175,8 @@
       // 침입자 -> 앞 몬스터
       var atk = 0;
       qs.forEach(function (q) { aliveMem(q).forEach(function (m) { atk += m.atk; }); });
-      var tgt = mons[0], d = Math.min(tgt.hp, atk * (1 + (S.fx.atk || 0)) * dt);
+      S.fought[z] = true;
+      var tgt = mons[0], d = Math.min(tgt.hp, atk * (1 + (S.fx.atk || 0)) * (1 - Math.min(BD.DEF_MAX || 0.8, tgt.def || 0)) * dt);
       tgt.hp -= d; tgt.lost += d;
       if (tgt.hp <= 0) { tgt.hp = 0; ev.push({ type: 'mdown', z: z, id: tgt.id }); }
       // 몬스터 -> 분대 앞사람 (분대가 여럿이면 번갈아)
@@ -229,12 +244,18 @@
   }
 
   function result(S) {
-    var damage = 0;
-    Object.keys(S.dens).forEach(function (z) { S.dens[z].forEach(function (m) { damage += m.lost; }); });
+    var damage = 0, deployed = [], fought = [];
+    Object.keys(S.dens).forEach(function (z) {
+      S.dens[z].forEach(function (m) {
+        damage += m.lost;
+        if (deployed.indexOf(m.id) < 0) deployed.push(m.id);
+        if (S.fought && S.fought[z] && fought.indexOf(m.id) < 0) fought.push(m.id);
+      });
+    });
     return {
       kills: S.gain.kills, porterKills: S.gain.porterKills, total: S.total, squads: S.squads.length,
       gold: S.gain.gold, gems: S.gain.gems, exp: S.gain.exp, reached: S.reached, retreated: S.retreated,
-      timeout: S.timeout, loot: S.loot, damage: damage, time: S.t
+      timeout: S.timeout, loot: S.loot, damage: damage, time: S.t, deployed: deployed, fought: fought
     };
   }
   // 저장 지점: S를 순수 데이터로 (참조 빼고 깊은 복사)
@@ -248,6 +269,7 @@
   function restore(o, snap) {
     if (!snap || typeof snap.t !== 'number' || typeof snap.rs !== 'number' || !snap.squads || !snap.dens || !snap.mod || !snap.gain) return null;
     var S = JSON.parse(JSON.stringify(snap));
+    if (!S.fought || typeof S.fought !== 'object') S.fought = {};
     S.plan = o.plan; S.zones = o.zones; S.units = o.units; S.icard = cardById(o.plan.card); S.fx = mergeFx(o.plan);
     return S;
   }
