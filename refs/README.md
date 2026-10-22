@@ -15,6 +15,7 @@ AI에게는 "그때 그거처럼" 대신 "refs/파일이름 참고해서"라고 
 | `ref_afk_arena.md` | 참고 게임 | AFK 아레나: 방치형 표준(12시간 상한·일일 점수제·장소 허브 입구) |
 | `ref_dungeon_maker_deep.md` | 참고 게임 | Dungeon Maker: Dark Lord 심층: 한국 인디 성공작 전체 구조·성공 요인 |
 | `ref_dungeon_keeper_mobile.md` | 반면교사 | Dungeon Keeper 모바일: 타이머 과금·평점 거르기로 망한 사례, 피할 것 체크리스트 |
+| `debate_structure_2026-10-22.md` | 토론 기록 | 큰 틀(탭 × 입구) Codex 반박 + 총괄 합치기 |
 | `ref_mobile_dungeon_games.md` | 참고 게임 | Legend of Keepers·Dungeon Maker: Dark Lord (우리와 다른 점, 확인할 것) |
 | `ref_nest_dragon_deep.md` | 참고 게임 | 둥지짓는 드래곤 심층: 컨셉·분위기·설정·시스템 (성인 요소 제외) |
 | `ref_nest_dragon.md` | 참고 게임 | 둥지짓는 드래곤 둥지 짓기 방식 요약 (구역 + 시설의 출발점) |
