@@ -1,20 +1,21 @@
-/* C1 건설 화면: 구역 판 (시안 A7의 판을 C1 안으로) + 구역 시트 (몬스터 배치, 시설 고르기 -> 미리보기 -> 짓기)
+/* D1 건설 화면: 구역 판 + 구역 시트 (시설 고르기 -> 미리보기 -> 짓기, 대기실에 부대 넣고 빼기)
  *
  * 구조 (shell.js의 SCREEN_PLUGINS 방식, battle.js와 같음)
- *  - 규칙은 zones.js(판·시설·이동), 상태와 바꾸는 함수는 progress.js(buildZone·placeMonster·removeMonster). 여기는 보여 주고 누름만 받는다.
- *  - 흐름: 구역 누르기 -> 시트가 열림 -> 시설 고르기(미리보기: 금·가치·침입자 수 변화, 판에 흐리게 미리 보임) -> 짓기.
- *    몬스터 대기실이면 시트 위쪽에서 몬스터를 넣고 뺀다 (공짜).
- *  - 문 위 숫자 = 침입자 12명이 오면 그 길로 지나갈 인원 (zones.js forecast).
- *  - 쓴 금은 돌려받지 못한다. 시트와 미리보기에 그렇게 적는다.
- *  - 첫 건설 공사비(P.grantLeft() > 0)가 남아 있으면 위에 안내 줄을 띄우고, 미리보기·짓기 버튼에 "공사비 N + 금 M"(previewBuild의 fromGrant · fromGold)로 보여 준다.
- *  - 판 그리기(boardHtml)는 던전 탭이 읽기 전용으로 같이 쓴다 (window.ZONEVIEW).
+ *  - 규칙은 zones.js(판·시설·이동), 상태와 바꾸는 함수는 progress.js (API.md: previewBuild·buildZone·placeUnit·removeUnit·idleUnits·powerInfo). 여기는 보여 주고 누름만 받는다.
+ *  - 흐름: 구역 누르기 -> 시트가 열림 -> 시설 고르기(미리보기: 의뢰 예산·가치·전투력 전후, 판에 흐리게 미리 보임) -> 짓기.
+ *    몬스터 대기실이면 시트 위쪽에서 부대(친위대 포함)를 넣고 뺀다 (공짜. 칸당 한 자리).
+ *  - 돈: 건설·부대 조달은 의뢰 예산(회사 금 아님). 모자라면 "예산 N 모자람". 쓴 예산은 돌려받지 못한다. 예산 0이어도 다음 주는 진행된다.
+ *  - 가치 = 지어 둔 시설 점수, 전투력 = 함정 점수 + 인계할 부대 점수를 침입자가 지나는 비율로 곱한 것 (API.md). 구역마다 전투력(powerInfo)을 판 위에 작게 보여 준다 (⚔).
+ *  - 고정 구역(의뢰가 정함, 예: 얼어붙은 하역장)은 🔒로 보이고 못 짓고 못 바꾼다.
+ *  - 문 위 숫자 = 침입자 20명이 오면 그 길로 지나갈 인원 (zones.js forecast).
+ *  - 판 그리기(boardHtml)·의뢰 카드 조각(siteHtml·fixedHtml)은 shell.js·battle.js가 같이 쓴다 (window.ZONEVIEW).
  *  - 튜토리얼(첫 건설 전): 'zones' 단계 말풍선 + 첫 부지의 필수 길(P.tutorialPath, 입구·보물방 빼고)을 반짝이게 한다 (api.tutStart·api.tutZones). 처음 짓는 순간 단계가 끝난다.
  *  - 곡선·시간은 shell.css의 var(--dur-*)/var(--ease-*) (MOTION에서 깔림)만.
  */
 (function () {
   'use strict';
 
-  var Z = window.ZONES, P = window.PROGRESS, RUN = P.RUN;
+  var Z = window.ZONES, P = window.PROGRESS, RUN = P.RUN, BD = window.BATTLE_DATA;
   // 판은 부지마다 다르다 (core 가 ZONES.useBoard 로 바꿔 끼움). 판 값(MAP·NAMES·...)은 모듈 변수에 담지 말고 그릴 때마다 Z 에서 읽는다.
   function curZ() { Z = window.ZONES || Z; return Z; }
   function cols() { return Z.MAP[0].length; }
@@ -22,18 +23,27 @@
   function cellRatio(nc, nr) { return Math.round(25 * nr / (28 * nc) * 1000) / 1000; }
 
   function cellKind(z, k) { return z === 'B' ? 'boss' : (Z.FAC[k] || Z.FAC.empty).kind; }
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+  function money(n) { return Number(n).toLocaleString('en-US'); }
+  function fmtN(n) { return String(Math.round(Number(n) * 10) / 10); }
+  function sign(n) { return (n >= 0 ? '+' : '') + fmtN(n); }
 
-  // 구역 첫 칸에 쓸 글: 구역 이름 / 시설 / 한 줄 정보
-  function labelHtml(z, k, units) {
-    var f = Z.FAC[k] || Z.FAC.empty, us = units[z] || [], h = '<div class="zn">' + (Z.NAMES[z] || z) + '</div><div class="fn">' + f.short + '</div>';
-    if (f.kind === 'den') {
-      var sl = Z.slotsOf(k, z);
-      h += '<div class="zi' + (us.length ? '' : ' warn') + '">' + us.length + '/' + sl + '</div>';
-    } else if (f.kind === 'trap') h += '<div class="zi">피해 ' + Z.trapDmgOf(z) + '</div>';
+  // 구역 첫 칸에 쓸 글: 구역 이름 / 시설 / 한 줄 정보 / (있으면) 구역 전투력 ⚔
+  function labelHtml(z, k, units, pp) {
+    var f = Z.FAC[k] || Z.FAC.empty, us = units[z] || [], h = '<div class="zn">' + (Z.NAMES[z] || z) + '</div>';
+    if (f.kind === 'fixed') h += '<div class="fn">🔒 ' + f.short + '</div><div class="zi">고정 구역</div>';
+    else {
+      h += '<div class="fn">' + f.short + '</div>';
+      if (f.kind === 'den') {
+        var sl = Z.slotsOf(k, z);
+        h += '<div class="zi' + (us.length ? '' : ' warn') + '">' + us.length + '/' + sl + '</div>';
+      } else if (f.kind === 'trap') h += '<div class="zi">피해 ' + Z.trapDmgOf(z) + '</div>';
+    }
+    if (pp && pp[z] && pp[z].power > 0) h += '<div class="zp">⚔ ' + fmtN(pp[z].power) + '</div>';
     return h;
   }
 
-  // 판 전체 HTML. o = { zones, units, flow(없으면 문 숫자 안 보임), sel(눌린 구역), pv(미리보기 중인 구역) }
+  // 판 전체 HTML. o = { zones, units, flow(없으면 문 숫자 안 보임), sel(눌린 구역), pv(미리보기 중인 구역), pp(구역별 전투력 { 구역: { power } }) }
   function boardHtml(o) {
     curZ();
     var zones = o.zones, units = o.units || {}, flow = o.flow || null, seen = {}, nc = cols();
@@ -47,7 +57,7 @@
         var nb = Z.MAP[r + d[0]] && Z.MAP[r + d[0]][c + d[1]];
         return nb === z ? 'border-' + d[2] + '-color:transparent;' : '';
       }).join('');
-      h += '<div class="zc k-' + cellKind(z, k) + zcls(z) + '" data-z="' + z + '" style="' + edge + '">' + (first ? labelHtml(z, k, units) : '') + '</div>';
+      h += '<div class="zc k-' + cellKind(z, k) + zcls(z) + '" data-z="' + z + '" style="' + edge + '">' + (first ? labelHtml(z, k, units, o.pp) : '') + '</div>';
     }
     h += '</div><div class="zdoors">';
     Z.flowPairs().forEach(function (p) {
@@ -59,11 +69,7 @@
     return h + '</div></div>';
   }
 
-  // ---------- 의뢰 카드·팝업 조각: 판 미리보기 · 건설 요구 · 막힘 안내 (core 계약이 아직 없으면 그 부분은 빈 글) ----------
-  // 계약: ZONES.boardInfo(id) -> { id, name, desc, MAP, NAMES } · q.board · q.demand { id, label, text }
-  //       P.demandStatus() -> { id, label, text, ok, now, need } | null · P.questBlockers() -> 문자열 배열
-  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
-  function ui(key, fb) { var u = window.LINES && window.LINES.ui; return u && typeof u[key] === 'string' && u[key].trim() ? u[key] : fb; }
+  // ---------- 의뢰 카드·팝업 조각: 판 미리보기 · 고정 구역 ----------
   function boardOf(id) {
     curZ();
     if (!id || typeof Z.boardInfo !== 'function') return null;
@@ -108,44 +114,32 @@
     return '<div class="qsite">' + miniHtml(info) + '<div class="qsite-t"><span class="chip">' + esc(info.name || boardId) + '</span>' +
       (info.desc ? '<div class="small-text dim">' + esc(info.desc) + '</div>' : '') + '</div></div>';
   }
-  // 건설 요구 한 줄. ds = { ok, now, need } (진행 중인 의뢰만. 없으면 요구 글만)
-  function demandRowHtml(d, ds) {
-    if (!d || !d.label) return '';
-    var st = ds && typeof ds.ok === 'boolean' ? (ds.ok ? ' ok' : ' no') : '';
-    var num = ds && typeof ds.need === 'number' && ds.need > 0 && typeof ds.now === 'number' ? '<b class="dnum">' + ds.now + '/' + ds.need + '</b>' : '';
-    return '<div class="demand' + st + '"><span class="chip req">' + esc(ui('demandBadge', '요구')) + '</span>' +
-      '<div class="dtxt"><b>' + (st ? '<span class="dmark">' + (ds.ok ? '✓' : '✗') + '</span> ' : '') + esc(d.label) + '</b>' +
-      (d.text ? '<small class="dim">' + esc(d.text) + '</small>' : '') + '</div>' + num + '</div>';
+  // 고정 구역 목록 (의뢰 q.fixed = { 구역 id: 고정 구역 id }): "고정 | 가운데 2 — 얼어붙은 하역장 / 효과"
+  function fixedHtml(q) {
+    curZ();
+    var ids = q && q.fixed ? Object.keys(q.fixed) : [];
+    if (!ids.length) return '';
+    var info = boardOf(q.board), names = info ? info.NAMES : {};
+    return ids.map(function (z) {
+      var f = Z.FAC[Z.fixedFac(q.fixed[z])] || {};
+      return '<div class="demand fixed"><span class="chip req">고정</span><div class="dtxt"><b>' + esc(names[z] || z) + ' — ' + esc(f.name || q.fixed[z]) + '</b>' +
+        '<small class="dim">바꿀 수 없어요. ' + esc(f.st || '') + '</small></div></div>';
+    }).join('');
   }
-  // 지금 하고 있는 의뢰의 요구 (진행 포함)
-  function demandNowHtml(q) {
-    var ds = null;
-    if (typeof P.demandStatus === 'function') { try { ds = P.demandStatus(); } catch (e) { ds = null; } }
-    if (ds && ds.label) return demandRowHtml(ds, ds);
-    return demandRowHtml(q && q.demand, null);
-  }
-  // 목표는 채웠는데 요구가 안 맞아 납품이 막힌 이유 한 줄 (없으면 '')
-  function blockerHtml() {
-    var q = RUN.quest, b;
-    if (!q || typeof P.questBlockers !== 'function') return '';
-    try {
-      if (!(q.goals || []).every(function (g) { return P.goalNow(g) >= g.target; })) return '';
-      b = P.questBlockers();
-    } catch (e) { return ''; }
-    b = Array.isArray(b) ? b.filter(function (t) { return typeof t === 'string' && t; }) : [];
-    if (!b.length) return '';
-    return '<div class="blocker">' + (/^요구/.test(b[0]) ? '' : '<b>' + esc(ui('blockerHead', '요구가 남았어요:')) + '</b> ') + b.map(esc).join(' · ') + '</div>';
-  }
-  window.ZONEVIEW = { boardHtml: boardHtml, cols: cols, boardOf: boardOf, siteHtml: siteHtml, demandRowHtml: demandRowHtml, demandNowHtml: demandNowHtml, blockerHtml: blockerHtml };
+  window.ZONEVIEW = { boardHtml: boardHtml, cols: cols, boardOf: boardOf, siteHtml: siteHtml, fixedHtml: fixedHtml };
 
   function zoneWhy(z) {
     var t = Z.zoneType(z);
-    return (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 어느 길로 보낼지 정해요.'
+    return (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 데모에서는 분기로 고정이에요 (갈림길 규칙대로 나뉘어요).'
       : t === 'boss' ? '' : Z.CENTER.indexOf(z) >= 0 ? '큰길: 침입자가 모두 모이는 길. 피할 수 없어요.'
       : Z.EXITS[z] && Z.EXITS[z].length > 1 ? '갈림길: 지나간 침입자가 여러 길로 나뉘어요.' : '옆길.') +
-      (t === 'room' ? ' 큰 구역일수록 함정이 세고 몬스터 자리가 많아요.' : '');
+      (t === 'room' ? ' 큰 구역일수록 함정이 세고 부대 자리가 많아요.' : '');
   }
-  function money(n) { return Number(n).toLocaleString('en-US'); }
+  // 시설 설명: zones.js 의 대기실 글이 옛 규칙(칸당 2자리)이라 화면에서 임시로 덮는다 (core-dev 요청 목록)
+  function facText(k) {
+    var f = Z.FAC[k];
+    return f.kind === 'den' ? '칸당 부대 한 자리. 부대가 보이면 침입자가 다른 길이 있으면 피함. 바로 앞이 함정이면 기습 ×1.5' : f.st;
+  }
 
   // 제자리 갱신: target 의 자식들을 src 의 자식들과 맞춘다. 같은 종류 요소는 그대로 두고 속성·글자만 바꿔서,
   // 시트가 다시 튀어나오거나 버튼이 새로 생기지 않게 한다 (애니메이션·스크롤·누름 상태 유지).
@@ -170,16 +164,6 @@
     syncKids(target, tmp);
   }
 
-  // 대기 몬스터를 부족별로 묶음: [{ name, list(레벨 높은 순, 같으면 id 순) }] (부족 표 순서, 표에 없으면 뒤에)
-  var idleEach = false; // 대기 몬스터 보기: false = 부족별로 묶어서(누르면 그 부족의 가장 높은 레벨이 들어감), true = 하나씩. 화면을 떠났다 와도 기억
-  function groupIdle(idle) {
-    var by = {}, names = [], T = P.TRIBES || [];
-    idle.forEach(function (m) { if (!by[m.name]) { by[m.name] = []; names.push(m.name); } by[m.name].push(m); });
-    function ord(n) { for (var i = 0; i < T.length; i++) if (T[i].name === n) return i; return 999; }
-    names.sort(function (a, b) { return ord(a) - ord(b); });
-    return names.map(function (n) { return { name: n, list: by[n].sort(function (a, b) { return b.lv - a.lv || a.id - b.id; }) }; });
-  }
-
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
     return function (el) {
@@ -187,31 +171,31 @@
       var sel = null;      // 시트가 열린 구역 (없으면 시트 닫힘)
       var pick = null;     // 시트에서 고른 시설 (아직 안 지음, 미리보기 중)
 
-      el.appendChild(api.head('건설', 'home'));
+      el.appendChild(api.head('건설', 'field'));
       var sumBox = api.div('bsum');
       var questBox = api.div('');
-      var blockBox = api.div('');     // 납품이 막힌 이유 (목표는 찼는데 요구가 안 맞을 때만)
-      var grantBox = api.div('');     // 첫 건설 공사비 안내 (P.grantLeft가 없거나 0이면 비어 있음)
+      var noteBox = api.div('');      // 의뢰 예산을 다 썼을 때 안내
       var boardBox = api.div('zboard');
       var sheetBox = api.div('');
       el.appendChild(sumBox);
       el.appendChild(questBox);
-      el.appendChild(blockBox);
-      el.appendChild(grantBox);
+      el.appendChild(noteBox);
       el.appendChild(boardBox);
-      el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 금은 돌려받지 못해요. 몬스터 넣고 빼기는 공짜예요.'));
+      el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. ⚔는 그 구역의 전투력(함정·부대 점수 × 침입자가 지나는 비율)이라, 미끼로 길을 모으면 그 길의 ⚔가 커져요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 의뢰 예산은 돌려받지 못해요. 부대 넣고 빼기는 공짜예요.'));
       el.appendChild(sheetBox);
 
-      // 이 부지에 남은 첫 건설 공사비 (core 쪽 P.grantLeft. 아직 없으면 0으로 봄)
-      function grantLeft() { return P.grantLeft ? (P.grantLeft() || 0) : 0; }
+      function ppMap() {
+        var m = {}; P.powerInfo().parts.forEach(function (p) { m[p.z] = p; });
+        return m;
+      }
 
       function drawSummary() {
-        var s = P.siteSummary(), gl = grantLeft();
-        morphHtml(grantBox, gl > 0 ? '<div class="grantbar"><b>첫 건설 공사비 ' + money(gl) + '</b><span>이 부지에서만 써요. 안 쓰면 사라져요</span></div>' : '');
-        morphHtml(sumBox, '<div>자금<b>' + money(RUN.gold) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>건설 횟수<b>' + RUN.site.builds + '회</b></div>');
-        morphHtml(questBox, RUN.quest ? '<div class="card quest' + (RUN.quest.kind === 'main' ? ' main' : '') + '"><div class="qhead"><span class="chip accent">' + api.questTag(RUN.quest) +
-          '</span><b>' + RUN.quest.name + '</b></div>' + api.goalsHtml(RUN.quest, true) + demandNowHtml(RUN.quest) + '</div>' : '');
-        morphHtml(blockBox, blockerHtml());
+        var s = P.siteSummary(), q = RUN.quest, pr = P.questProgress();
+        morphHtml(sumBox, '<div>의뢰 예산<b>' + money(s.budget) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>전투력<b>' + s.power + '</b></div>');
+        morphHtml(questBox, q && pr ? '<div class="card quest"><div class="qhead"><span class="chip accent">' + api.questTag(q) + '</span><b>' + esc(q.name) + '</b></div>' +
+          '<div class="small-text">' + esc(pr.line) + '</div>' + (pr.complete && !pr.canDeliver ? '<div class="blocker">' + esc(pr.why) + '</div>' : '') +
+          (pr.complete && pr.canDeliver ? '<div class="small-text ready">의뢰 완료! 현장에서 [납품하기]를 누르세요</div>' : '') + '</div>' : '');
+        morphHtml(noteBox, s.budget <= 0 ? '<div class="grantbar"><b>의뢰 예산을 다 썼어요</b><span>지은 시설과 부대로 [다음 주]를 눌러 진행할 수 있어요. 부대를 대기실에 넣으면 전투력이 올라요</span></div>' : '');
       }
 
       function preview() { return sel && pick ? P.previewBuild(sel, pick) : null; }
@@ -219,77 +203,76 @@
       function drawBoard() {
         var p = preview();
         var zones = p && p.zones ? p.zones : RUN.site.zones, units = p && p.units ? p.units : RUN.site.units;
-        morphHtml(boardBox, boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null }));
+        morphHtml(boardBox, boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null, pp: ppMap() }));
         api.tutZones().forEach(function (z) {
           boardBox.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('tut-hl'); });
         });
       }
 
-      // 대기 중인 몬스터 고르기 칸. open = 아직 자리가 있나. 묶음 보기: 부족마다 한 칸 "슬라임 ×3 / Lv 5·5·4" (누르면 가장 높은 레벨을 넣음), 하나씩 보기: 개별 칸
+      // 대기 중인 부대 고르기 칸. open = 아직 자리가 있나
       function idleHtml(open) {
-        var idle = P.idleMonsters(), groups = groupIdle(idle), each = idleEach;
-        var h = '<div class="lbl lblrow"><span>' + esc(each ? ui('idleLabelEach', '대기 몬스터 — 하나씩 골라요') : ui('idleLabelGroup', '대기 몬스터 — 가장 높은 레벨부터 들어가요')) + '</span>' +
-          (idle.length > 1 ? '<button class="linkbtn" data-idlemode>' + esc(each ? ui('idleModeGroup', '묶어서 보기') : ui('idleModeEach', '하나씩 보기')) + '</button>' : '') + '</div>';
-        if (!each) {
-          h += '<div class="zslots">' + groups.map(function (g) {
-            var top = g.list[0];
-            return '<button class="grp" data-intribe="' + esc(g.name) + '"' + (open ? '' : ' disabled') + '><b>' + esc(g.name) + ' ×' + g.list.length + '</b><small>Lv ' +
-              g.list.map(function (m) { return m.lv; }).join('·') + '</small><small>가치 ' + Z.monValue(top) + '</small></button>';
-          }).join('') + '</div>';
-        } else {
-          h += groups.map(function (g) {
-            return '<div class="zsub">' + esc(g.name) + ' ×' + g.list.length + '</div><div class="zslots">' + g.list.map(function (m) {
-              return '<button data-in="' + m.id + '"' + (open ? '' : ' disabled') + '><b>' + esc(m.name) + '</b><small>Lv ' + m.lv + ' · 체' + m.hp + ' 공' + m.atk + '</small><small>가치 ' + Z.monValue(m) + '</small></button>';
-            }).join('') + '</div>';
-          }).join('');
-        }
-        return h;
+        var idle = P.idleUnits();
+        var h = '<div class="lbl">대기 중인 부대 — 눌러서 이 대기실에 넣어요 (친위대도 한 자리를 차지해요)</div>';
+        if (!idle.length) return h + '<div class="why">대기 중인 부대가 없어요. 군단 탭에서 조달하거나(의뢰 예산) 다른 대기실에서 빼세요.</div>';
+        return h + '<div class="zslots">' + idle.map(function (u) {
+          return '<button data-in="' + u.id + '"' + (open ? '' : ' disabled') + '><b>' + esc(u.name) + '</b><small>' + (u.kind === 'guard' ? '친위대' : u.count + '명') + ' · Lv ' + u.lv +
+            '</small><small>체' + fmtN(u.hp) + ' 공' + fmtN(u.atk) + '</small></button>';
+        }).join('') + '</div>';
       }
 
       function drawSheet() {
         if (!sel) { sheetBox.innerHTML = ''; return; }
         var z = sel, k = RUN.site.zones[z], f = Z.FAC[k], t = Z.zoneType(z);
-        var now = P.forecast().at[z] || 0;
+        var now = P.forecast().at[z] || 0, pp = ppMap()[z];
         var h = '<h3>' + Z.NAMES[z] + ' — ' + f.name + (t === 'room' ? ' (' + Z.sizeOf(z) + '칸)' : '') + '</h3>';
+        if (f.kind === 'fixed') {
+          var fd = (BD.FIXED_ZONES || {})[f.fixedId] || {};
+          h += '<div class="why"><b>고정 구역</b> — 의뢰가 정해 둔 곳이라 짓거나 바꿀 수 없어요.</div>' +
+            '<div class="why">' + esc(fd.look || '') + '</div><div class="why"><b>효과</b> ' + esc(f.st) + '</div>' +
+            '<div class="why">침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 이 구역에 <b>' + now + '명</b>이 와요.</div>' +
+            '<div class="zfoot"><div class="zact"><button class="btn" data-close>닫기</button></div></div>';
+          var sh0 = sheetBox.firstChild && sheetBox.firstChild.firstChild;
+          if (!sh0) { sheetBox.innerHTML = ''; sheetBox.appendChild(api.div('zsheetbg', '<div class="zsheet">' + h + '</div>')); } else morphHtml(sh0, h);
+          return;
+        }
         h += '<div class="why">' + zoneWhy(z) + '</div>';
-        if (t !== 'yard') h += '<div class="why">침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 이 구역에 <b>' + now + '명</b>이 와요.</div>';
+        if (t !== 'yard') h += '<div class="why">침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 이 구역에 <b>' + now + '명</b>이 와요.' +
+          (pp ? ' · 이 구역 전투력 <b>' + fmtN(pp.power) + '</b> (점수 ' + fmtN(pp.score) + ' × 통과 ' + Math.round(pp.w * 100) + '%)' : '') + '</div>';
         if (f.kind === 'den') {
           var us = RUN.site.units[z] || [], sl = Z.slotsOf(k, z);
-          h += '<div class="lbl">몬스터 배치 (' + us.length + '/' + sl + ') — 자리를 누르면 빼요</div><div class="zslots">';
+          h += '<div class="lbl">출진 부대 (' + us.length + '/' + sl + ') — 자리를 누르면 빼요</div><div class="zslots">';
           for (var i = 0; i < sl; i++) {
-            var m = us[i] !== undefined ? P.monById(us[i]) : null;
-            h += m ? '<button data-out="' + i + '"><b>' + m.name + '</b><small>Lv ' + m.lv + ' · 빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
+            var m = us[i] !== undefined ? P.unitById(us[i]) : null;
+            h += m ? '<button data-out="' + i + '"><b>' + esc(m.name) + '</b><small>' + (m.kind === 'guard' ? '친위대' : m.count + '명') + ' · Lv ' + m.lv + ' · 빼기</small></button>' : '<button class="emptyslot" disabled>빈 자리</button>';
           }
-          var idle = P.idleMonsters();
           h += '</div>' + idleHtml(us.length < sl);
-          if (!idle.length) h += '<div class="why">대기 중인 몬스터가 없어요</div>';
         }
         h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="zopts">';
-        Z.facFor(z).forEach(function (fk) {
-          var ff = Z.FAC[fk], base = Z.costOf(fk, z), cv = P.buildCost ? P.buildCost(fk, z) : base, vv = Z.valueOf(fk, z), cur = fk === k, have = RUN.gold + grantLeft(), poor = !cur && cv > have;
-          var costTxt = cv < base ? '금 <s>' + base + '</s> ' + cv : '금 ' + cv; // 건설 공방 할인 중이면 원래 가격에 줄을 그어 함께 보여 줌
+        var left = P.budgetLeft(), opts = Z.facFor(z);
+        if (!opts.length) h += '<div class="why">여기는 지을 수 있는 시설이 없어요.</div>';
+        opts.forEach(function (fk) {
+          var ff = Z.FAC[fk], base = Z.costOf(fk, z), cv = P.buildCost(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, poor = !cur && cv > left;
+          var costTxt = cv < base ? '예산 <s>' + base + '</s> ' + cv : '예산 ' + cv;
           h += '<button data-pick="' + fk + '" class="' + (cur ? 'cur' : '') + (pick === fk ? ' on' : '') + (poor ? ' poor' : '') + '"' + (cur ? ' disabled' : '') + '>' +
-            '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + ff.st + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
-            '<small>' + costTxt + (vv ? ' · 가치 ' + vv : '') + (poor ? ' · <span class="lack">금 ' + (cv - have) + ' 모자람</span>' : '') + '</small></button>';
+            '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + facText(fk) + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
+            '<small>' + costTxt + (vv ? ' · 가치 +' + vv : '') + (poor ? ' · <span class="lack">예산 ' + (cv - left) + ' 모자람</span>' : '') + '</small></button>';
         });
         h += '</div>';
         var p = preview();
         h += '<div class="zfoot">';
-        if (p) {
-          var pf = Z.FAC[pick], after = P.forecast(p.zones, p.units).at[z] || 0, dv = p.valueAfter - p.valueNow;
+        if (p && p.zones) {
+          var pf = Z.FAC[pick], after = P.forecast(p.zones, p.units).at[z] || 0, dv = p.valueAfter - p.valueNow, dp = p.powerAfter - p.powerNow;
           h += '<div class="zpreview"><b>미리보기: ' + pf.name + '</b>' +
-            (p.fromGrant > 0
-              ? '<div>비용 ' + p.cost + ' = 공사비 <b>' + money(p.fromGrant) + '</b>' + (p.fromGold > 0 ? ' + 금 <b>' + money(p.fromGold) + '</b>' : '') + '</div>' +
-                '<div>금 ' + money(RUN.gold) + ' → <b>' + money(RUN.gold - (p.fromGold || 0)) + '</b>' + ' · 공사비 ' + money(grantLeft()) + ' → <b>' + money(Math.max(0, grantLeft() - p.fromGrant)) + '</b></div>'
-              : '<div>금 ' + money(RUN.gold) + ' → <b>' + money(p.goldAfter) + '</b> (-' + (p.fromGold != null ? p.fromGold : p.cost) + ')</div>') +
-            (p.discount > 0 ? '<div class="discount">건설 공방 할인 -' + money(p.discount) + '</div>' : '') +
-            '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + (dv >= 0 ? '+' : '') + dv + ')</div>' +
+            (p.budgetAfter < 0 ? '<div>의뢰 예산 ' + money(left) + ' (비용 ' + p.cost + ')</div>' : '<div>의뢰 예산 ' + money(left) + ' → <b>' + money(p.budgetAfter) + '</b> (-' + p.cost + ')</div>') +
+            (p.discount > 0 ? '<div class="discount">할인 -' + money(p.discount) + '</div>' : '') +
+            '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + sign(dv) + ')</div>' +
+            '<div>전투력 ' + p.powerNow + ' → <b>' + p.powerAfter + '</b> (' + sign(dp) + ')</div>' +
             (t !== 'yard' ? '<div>이 구역에 오는 침입자 ' + now + '명 → <b>' + after + '명</b></div>' : '') +
-            (p.back ? '<div class="lack">든 몬스터 ' + p.back + '마리는 대기로 돌아가요</div>' : '') +
-            (p.why ? '<div class="lack">' + p.why + '</div>' : '<div class="dim">지은 뒤에는 금을 돌려받지 못해요</div>') + '</div>';
-        }
+            (p.back ? '<div class="lack">든 부대 ' + p.back + '개는 대기로 돌아가요</div>' : '') +
+            (p.why ? '<div class="lack">' + esc(p.why) + '</div>' : '<div class="dim">지은 뒤에는 의뢰 예산을 돌려받지 못해요</div>') + '</div>';
+        } else if (p && p.why) h += '<div class="zpreview"><div class="lack">' + esc(p.why) + '</div></div>';
         h += '<div class="zact"><button class="btn" data-close>닫기</button><button class="btn primary" data-build' + (p && p.ok ? '' : ' disabled') + '>' +
-          (p ? (p.ok ? '짓기 (' + (p.fromGrant > 0 ? '공사비 ' + p.fromGrant + (p.fromGold > 0 ? ' + 금 ' + p.fromGold : '') : '금 ' + p.cost) + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
+          (p ? (p.ok ? '짓기 (예산 ' + p.cost + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
         // 시트는 처음 열 때만 만든다 (등장 애니메이션도 그때만). 이미 열려 있으면 안의 바뀐 부분만 제자리에서 고친다.
         var sheet = sheetBox.firstChild && sheetBox.firstChild.firstChild;
         if (!sheet) {
@@ -316,16 +299,12 @@
         var r;
         if (b.hasAttribute('data-close')) { sel = null; pick = null; api.buzz('tap'); redraw(); return; }
         if (b.hasAttribute('data-pick')) { var fk = b.getAttribute('data-pick'); pick = pick === fk ? null : fk; api.buzz('tap'); redraw(); return; }
-        if (b.hasAttribute('data-idlemode')) { idleEach = !idleEach; api.buzz('tap'); redraw(); return; }
-        if (b.hasAttribute('data-in') || b.hasAttribute('data-out') || b.hasAttribute('data-intribe')) {
-          if (b.hasAttribute('data-intribe')) { // 묶음: 그 부족의 대기 몬스터 중 가장 레벨 높은 한 마리
-            var tn = b.getAttribute('data-intribe'), cand = groupIdle(P.idleMonsters()).filter(function (g) { return g.name === tn; })[0];
-            if (!cand) { redraw(); return; }
-            r = P.placeMonster(sel, cand.list[0].id);
-          } else r = b.hasAttribute('data-in') ? P.placeMonster(sel, +b.getAttribute('data-in')) : P.removeMonster(sel, +b.getAttribute('data-out'));
+        if (b.hasAttribute('data-in') || b.hasAttribute('data-out')) {
+          r = b.hasAttribute('data-in') ? P.placeUnit(sel, b.getAttribute('data-in')) : P.removeUnit(sel, +b.getAttribute('data-out'));
           if (!r.ok) { api.toast(r.msg); api.buzz('warn'); return; }
           api.buzz('tap');
-          if (!api.autoDeliver()) redraw();
+          api.stageToast(r.stages);
+          redraw();
           return;
         }
         if (b.hasAttribute('data-build')) {
@@ -333,10 +312,11 @@
           api.toast(r.msg);
           if (!r.ok) { api.buzz('warn'); redraw(); return; }
           api.buzz('good');
+          api.stageToast(r.stages);
           api.tutDone('zones'); // 첫 건설을 했으면 안내 끝
-          if (Z.FAC[pick].kind !== 'den') sel = null; // 대기실을 지었으면 시트를 열어 둬서 바로 몬스터를 넣게
+          if (Z.FAC[pick].kind !== 'den') sel = null; // 대기실을 지었으면 시트를 열어 둬서 바로 부대를 넣게
           pick = null;
-          if (!api.autoDeliver()) redraw();
+          redraw();
         }
       });
 
