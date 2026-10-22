@@ -8,6 +8,7 @@
 ## 1. 마계 전체 지도 (지역·세력)
 - 지역 개척: 숲·설원·화산·늪·마계 수도… 지역마다 부지 모양·던전 속성·모험가 출신이 다름
 - **신규 지역은 포탈로 연결**된다는 설정 (사용자)
+- 지역 마지막 메인 의뢰를 끝내면 다음 지역 포탈이 열림 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 다른 건설사들: 라이벌 하청사 3~4곳. 지역 점유율·의뢰 입찰 경쟁·인재 빼 가기
 - **라이벌 소장은 모두 마족** (인간은 주인공뿐, 사용자)
 - 건설사 연합·조합: 조합 회의 표결로 규칙 바꾸기
@@ -51,6 +52,9 @@
 - **포로 모험가**: 설득해 정보원·직원으로, 또는 **몸값을 받고 팔기** (사용자)
 - **현장에 포로 수용소(감옥)** (사용자)
 - **모험가 길드: 첩보 + 직접 방문** (주인공은 인간이라 드나들 수 있음, 사용자)
+- 모험가 순환: 살아 돌아간 모험가가 장비를 사서 다시 침입 → 이름 붙은 단골 모험단 [출처: refs/ref_kairosoft_dungeon_village.md]
+- 던전 명성이 오르면 더 많은·센 모험가가 몰려옴 (수입과 위험이 같이 오름) [출처: refs/ref_kairosoft_dungeon_village.md]
+- 모험가 길드 방문 때 단골 모험가 근황 보기 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 직원 고용: 비서·회계·설계사 (인간·마족)
 - 서원: 직원 교육·자격증 [출처: refs/ref_gabu_business_era.md]
 - 소장 직업(설계형·전투형 등) + 재능 트리 = 플레이어 능력 (LoK 마스터) [출처: refs/ref_mobile_dungeon_games.md]
@@ -81,6 +85,7 @@
 - 몬스터 도감: 부족·변이·희귀 색
 - 몬스터 합성: 같은 몬스터를 합쳐 상위로 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 업적·칭호
+- 회사 등급 별 1~5 → 이벤트·의뢰 칸 수 해금 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 대표 수치 하나로 성장 체감 (갑부의 "버는 속도" → 우리는 회사 평판·던전 가치 등) [출처: refs/ref_gabu_business_era.md]
 - 보스 침입자를 막으면 얻는 수집품 (갑부의 진귀한 짐승) [출처: refs/ref_gabu_business_era.md]
 - 언제나 떠 있는 목표 3개 (하나 끝내면 새로) [출처: refs/ref_fallout_shelter.md]
@@ -93,5 +98,5 @@
 | 2 ✅ | 갑부: 장사의 시대 (하단 탭: 관저·상가·문객·관문·교외·가방) | 하단 탭 × 입구 구조, 방치 경영 |
 | 3 ✅ | Legend of Keepers / Dungeon Maker: Dark Lord | 던전 경영 본류 (refs/ref_mobile_dungeon_games.md) |
 | 4 ✅ | 쿠키런: 킹덤 / 동물의 숲 | 마을·집 꾸미기, 캐릭터 호감도 |
-| 5 | Kairosoft 던전 마을 | 모험가가 드나드는 마을 경영 |
+| 5 ✅ | Kairosoft 던전 마을 | 모험가가 드나드는 마을 경영 |
 | 6 | Mount & Blade | 포로 몸값·영입 |
