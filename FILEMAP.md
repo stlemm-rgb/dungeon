@@ -37,7 +37,7 @@
 
 - `tools/autoplay.py` — 자동 진행 측정: 많은 턴을 돌려 오류 수, 걸린 시간, 세이브 크기를 출력한다.
   - `arg`, `main`
-- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, C1 대사 파일, 화면 비교.
+- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, D1 데모 핵심 규칙, C1 대사 파일, 화면 비교.
   - `main`
 - `tools/filemap.py` — 파일 지도 만들기: FILEMAP.md에 파일마다 한 줄 설명과 그 안의 함수 목록을 적는다.
   - `describe`, `functions`, `main`
@@ -50,6 +50,8 @@
 - `tools/shots.py` — 화면 검사: 390px·1280px 스크린샷을 tools/shots/ 기준 이미지와 비교하고, 가로 넘침을 잰다.
   - `read_png`, `write_png`, `crop_top`, `compare`, `main`
 - `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
+  - `main`
+- `tools/test_d1_core.py` — D1 데모 핵심 규칙 검사 (prototype/d1_demo): 예산·회사 금 분리, 가치/전투력 분리, 납품 기준 5단계·수동 납품, 2층 의뢰, 끈 기능, 저장 v6.
   - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`
