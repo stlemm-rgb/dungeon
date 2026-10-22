@@ -7,6 +7,8 @@
 
 ## 1. 마계 전체 지도 (지역·세력)
 - 지역 개척: 숲·설원·화산·늪·마계 수도… 지역마다 부지 모양·던전 속성·모험가 출신이 다름
+- 새 지역·새 의뢰를 빨리 여는 쪽이 이득이게 [출처: refs/ref_idle_miner_tycoon.md]
+- 첫 10분 안에 첫 납품 (오래 남는 사람 = 두 번째 갱도까지 간 사람) [출처: refs/ref_idle_miner_tycoon.md]
 - **신규 지역은 포탈로 연결**된다는 설정 (사용자)
 - 지역 마지막 메인 의뢰를 끝내면 다음 지역 포탈이 열림 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 다른 건설사들: 라이벌 하청사 3~4곳. 지역 점유율·의뢰 입찰 경쟁·인재 빼 가기
@@ -20,6 +22,7 @@
 - 숲 지점: 목재·약초 대신 모아 줌 (숲 아이템 파밍 대리)
 - 광산 지점: 광석 → 함정 재료, 보석 조각
 - 지점장 배치: 부대장·몬스터를 보내면 효율 상승(대신 전투 불참)
+- 층 담당 부대장·지점장 + 누르면 잠깐 부스트하는 스킬 [출처: refs/ref_idle_miner_tycoon.md]
 - 지점 사고: 가끔 습격 → 짧은 방어전이나 카드 한 장
 - 교역로: 지점끼리 이으면 운송 보너스
 - 탐험 보내기: 내보내면 시간이 지나며 재료를 주워 옴, 불러들이는 데도 시간 [출처: refs/ref_fallout_shelter.md]
@@ -85,6 +88,7 @@
 - 몬스터 도감: 부족·변이·희귀 색
 - 몬스터 합성: 같은 몬스터를 합쳐 상위로 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 업적·칭호
+- 납품할 때마다 회사 배율 영구 상승을 숫자로 (프레스티지) [출처: refs/ref_idle_miner_tycoon.md]
 - 회사 등급 별 1~5 → 이벤트·의뢰 칸 수 해금 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 대표 수치 하나로 성장 체감 (갑부의 "버는 속도" → 우리는 회사 평판·던전 가치 등) [출처: refs/ref_gabu_business_era.md]
 - 보스 침입자를 막으면 얻는 수집품 (갑부의 진귀한 짐승) [출처: refs/ref_gabu_business_era.md]
@@ -99,4 +103,9 @@
 | 3 ✅ | Legend of Keepers / Dungeon Maker: Dark Lord | 던전 경영 본류 (refs/ref_mobile_dungeon_games.md) |
 | 4 ✅ | 쿠키런: 킹덤 / 동물의 숲 | 마을·집 꾸미기, 캐릭터 호감도 |
 | 5 ✅ | Kairosoft 던전 마을 | 모험가가 드나드는 마을 경영 |
-| 6 | Mount & Blade | 포로 몸값·영입 |
+| ~~6~~ | ~~Mount & Blade~~ | 사용자 제외 (10-22) |
+| 7 ✅ | Idle Miner Tycoon | 세로 지하 갱도 층·매니저·프레스티지 |
+| 8 | Reigns | 좌우 카드 넘기기 |
+| 9 | 운빨존많겜 (Lucky Defense) | 세로 실시간 전투 보기·뽑기·합성 |
+| 10 | AFK 아레나 계열 | 방치 보상·성장 체감·하단 탭 표준 |
+| 반면교사 | Dungeon Keeper 모바일 (EA 2014) | 과금 대기로 망친 사례 |
