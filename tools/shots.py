@@ -19,6 +19,9 @@ SHOT_DIR = os.path.join(tc.TOOLS, "shots")
 OUT_DIR = os.path.join(SHOT_DIR, "out")
 DIFF_LIMIT = 0.0005     # 다른 점이 0.05%를 넘으면 실패 (같은 PC에서 3번 찍어 잰 흔들림은 0.000%, 버튼 하나 없애면 0.54%)
 CHANNEL_TOLERANCE = 24  # 글꼴 가장자리 흐림 정도의 차이는 같다고 봄
+# 헤드리스 Chrome이 가끔 창 맨 아래 몇 줄(약 7px)을 그리기 전에 찍어 흰 줄이 생긴다(매번 다른 장이 0.1~0.4% 실패하던 원인).
+# 창을 이만큼 더 크게 찍고 위쪽 폭 x 높이만 잘라 비교한다.
+EXTRA_H = 120
 
 CASES = [
     # 이름, 폭, 높이, 게임 주소 옵션
@@ -82,6 +85,27 @@ def read_png(path):
     return width, height, bpp, bytes(out)
 
 
+def write_png(path, width, height, bpp, pixels):
+    """8비트 RGB/RGBA 픽셀을 PNG로 쓴다 (필터 없음)."""
+    stride = width * bpp
+    raw = b"".join(b"\x00" + pixels[y * stride:(y + 1) * stride] for y in range(height))
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xffffffff)
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2 if bpp == 3 else 6, 0, 0, 0)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def crop_top(src, dst, width, height):
+    """src의 왼쪽 위 width x height만 잘라 dst로 쓴다."""
+    w, h, bpp, px = read_png(src)
+    if w < width or h < height:
+        raise RuntimeError("스크린샷이 너무 작음 %dx%d (필요 %dx%d)" % (w, h, width, height))
+    rows = b"".join(px[y * w * bpp:(y * w + width) * bpp] for y in range(height))
+    write_png(dst, width, height, bpp, rows)
+
+
 def compare(base_path, new_path):
     """다른 점 비율 (0~1). 크기가 다르면 1."""
     w1, h1, b1, px1 = read_png(base_path)
@@ -114,7 +138,10 @@ def main():
             problems.append("%s: 가로 넘침 scrollWidth %s > 폭 %s (넘친 요소: %s)"
                             % (name, info["scrollWidth"], info["innerWidth"], ", ".join(info["wideElements"])))
         out_png = os.path.join(OUT_DIR, name + ".png")
-        tc.screenshot(frame_query, out_png, (w, h))
+        raw_png = os.path.join(OUT_DIR, name + "_raw.png")
+        tc.screenshot(frame_query, raw_png, (w, h + EXTRA_H))
+        crop_top(raw_png, out_png, w, h)
+        os.remove(raw_png)
         base_png = os.path.join(SHOT_DIR, name + ".png")
         if update or not os.path.exists(base_png):
             shutil.copyfile(out_png, base_png)

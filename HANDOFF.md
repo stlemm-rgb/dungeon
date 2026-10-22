@@ -7,7 +7,7 @@
 ## 이어하기 (다른 PC에서 바로 할 것)
 1. `git pull` → `py tools/check_all.py` 통과 확인 (10개. 새 PC면 RUNBOOK "새 PC 준비")
    - Node.js가 없으면 `test_c1_core.py`·`test_lines.py`는 "통과로 건너뜀"이 정상. ego 브라우저는 집 PC에만 → 화면 확인은 헤드리스 Chrome.
-   - `shots.py`가 0.1~0.4% 차이로 가끔 실패(매번 다른 장) → 한 번 더 돌리면 통과. 기준 이미지 `--update` 하지 말 것.
+   - `shots.py` 가끔 실패는 10-22에 고침(창 아래 흰 줄 → 크게 찍고 잘라 비교). 이제 실패하면 진짜 화면 변화.
 2. **먼저 읽을 것**: `docs/GAME_STRUCTURE.md`(확정된 큰 틀, 가장 중요) → `docs/GAME_PLAN.md` 2026-10-22 절들 → `docs/CONTENT_IDEAS.md`(아이디어 창고, 출처 표시).
 3. **첫 일: 사용자 답 기다리는 총괄 제안 하나** — "카드와 관전의 시간 배분 시험"(아래). 사용자가 확인하면 `frontend`에 구현 맡김.
 

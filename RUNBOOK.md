@@ -38,7 +38,7 @@ git push                      # 원격 연결 후
 - 게임: `index.html`을 더블클릭 (file://로 열림, 설치·빌드 없음). 주소 옵션: `?seed=숫자`(저장 없을 때 새 게임 씨앗), `?nostorage=1`(저장 막힘 흉내)
 - 전체 검사 (커밋 전 필수): `python tools/check_all.py` — 하나라도 실패하면 커밋하지 않는다
   - **AI가 커밋할 때 주의**: `check_all.py | tail -1 && git commit` 처럼 파이프로 자르면 실패해도 종료 코드가 0이 되어 커밋이 진행된다 (2026-10-19 실제로 한 번 일어남). 출력은 파일로 받고 `check_all.py > log; [ $? -eq 0 ] && git commit ...` 처럼 **종료 코드로 판단**한다
-  - `shots.py`가 한 번 실패했다가 다시 돌리면 통과한 적이 있음 (헤드리스 Chrome 일시 문제로 보임). 실패하면 한 번 더 돌려 보고, 또 실패하면 원인을 찾는다
+  - `shots.py`가 가끔 0.1~0.4% 차이로 실패하던 원인 = 헤드리스 Chrome이 창 맨 아래 약 7px을 그리기 전에 찍어 흰 줄이 생김. 2026-10-22 고침: 창을 120px 더 크게 찍고 위쪽만 잘라 비교(20번 연속 통과). 그래도 실패하면 진짜 화면 변화로 보고 `tools/shots/out/` 이미지를 확인
   - Python 표준 라이브러리 + Chrome 또는 Edge만 필요 (Node.js·pip 불필요). 브라우저 경로가 다르면 `GAME_BROWSER` 환경 변수
   - Git Bash에서 `python`이 Microsoft Store 바로가기로 잡혀 아무것도 안 나오면 `py tools/check_all.py`
 - 정답지·기준 이미지 갱신 (일부러 바꿨을 때만): `python tools/golden.py --update`, `python tools/shots.py --update`
