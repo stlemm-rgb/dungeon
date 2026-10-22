@@ -2,9 +2,12 @@
  *
  *  ① 들어오면 멈춘 상태. "전투 시작"은 하단 탭의 가운데 "다음 주" 버튼과 같은 자리(api.bar = 탭 막대 자리에 배속 · 전투 시작 · 안내)
  *  ② 무리가 대기 장소(야외)에 등급 낮은 무리부터 차례로 등장, 아래 안내 줄 "D급 OO 10명 평균 레벨 N · 짐꾼 N명"
- *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (눌러서 닫기, 몇 초 뒤 저절로)
+ *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (카드 전용 화면, 눌러서 닫기, 몇 초 뒤 저절로)
  *  ④ 10명 = 1분대가 작은 얼굴 도트로 실제 구역 판을 따라 이동. 함정·대기실 몬스터가 작동
- *  ⑤ 가장 앞선 분대 진행도 15·30·45·60%에서 이벤트 카드 (위·아래·왼쪽·오른쪽으로 끌기, 칸을 눌러도 됨). 떠 있는 동안 0.3배
+ *  ⑤ 가장 앞선 분대 진행도 15·30·45·60%에서 이벤트 카드 = 화면 전체를 덮는 카드 전용 화면 (위 3/4 그림 자리, 아래 1/4 제목·설명·효과).
+ *     위·아래·왼쪽·오른쪽으로 끌면 그 가장자리 글이 커지고 색이 바뀜 (가장자리 글을 눌러도 됨). 떠 있는 동안 전투는 완전히 멈추고
+ *     시간 초과도 없다 (고를 때까지 기다림). 그림은 나중에 외부 파일이 들어옴: 그림 자리에 data-art="카드의 art 키"
+ *  - 화면 배치: 맨 위 한 줄(시간·진행바·처치·금·보석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 아래 한 줄 안내 + 버튼 줄(api.bar)
  *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표 -> 홈
  *  - 배속 1·2·3·5와 배속 때 카드 수(0~4장)는 RUN.prefs에 저장해 다음 전투도 그대로 (P.setBattleSpeed·P.setCardCount).
  *    1배속이면 카드 4지점 모두. 배속을 한 번이라도 켜면(전투 시작 전 포함) 꺼도 그 전투 카드는 고른 N장까지, 먼저 닿는 지점부터
@@ -14,7 +17,7 @@
  *  - 저장 지점 = 전투 시작 + 이벤트 카드를 고른 순간 (P.saveBattle에 전투 계산 상태를 통째로). 새로고침하면 마지막 저장 지점부터
  *    일시정지 상태로 이어지고, 고른 카드는 바꿀 수 없다. 배속·카드 수는 바꿀 때마다 저장
  *  - 튜토리얼 말풍선(api.tutStart): 첫 전투 화면(battle) · 첫 이벤트 카드(card) · 첫 결과표(result). 안 켜져 있으면 아무 일도 안 일어난다.
- *    card 안내가 떠 있는 동안에는 그 카드의 제한 시간만 멈춘다 (전투 속도는 원래대로 0.3배)
+ *    카드 전용 화면에서는 말풍선(#tut)이 카드 화면 위(z-index)에 떠 있고, 카드 화면은 말풍선 높이만큼 아래를 비워 가리지 않게 한다
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드)
  */
 (function () {
@@ -32,7 +35,6 @@
     var div = api.div, buzz = api.buzz, fxRandom = api.fxRandom;
     function tutStart(id, target) { if (api.tutStart) api.tutStart(id, { target: target }); }
     function tutDone(id) { if (api.tutDone) api.tutDone(id); }
-    function tutActive(id) { return !!(api.tutActive && api.tutActive(id)); }
 
     return function (el) {
       Z = window.ZONES || Z; // 판이 바뀌었을 수 있으니 화면을 만들 때마다 다시 잡는다
@@ -63,30 +65,67 @@
       }
       var top = plan.groups[plan.groups.length - 1];
 
+      // 맨 위 한 줄: 시간 · 진행바 · 처치 · 금 · 보석 · 보물방 · 퇴각. 가운데 판은 남는 높이를 채우고, 아래는 한 줄 안내
+      function stat(cls, label) { return '<span class="bt-st ' + cls + '"><small>' + label + '</small><b></b></span>'; }
       el.innerHTML =
-        '<div class="head"><h2>' + plan.week + '주째 전투 ' + (plan.surge ? '<span class="chip bt-surge">대량 출현</span>' : '<span class="chip">일반 침입</span>') + '</h2>' +
-        '<span class="chip bt-wallet"></span></div>' +
-        '<div class="bt-top"><span class="bt-time">1:00</span><div class="bt-prog"><i></i>' +
-        BD.CARD_AT.map(function (a) { return '<b style="left:' + a + '%"></b>'; }).join('') + '</div><span class="bt-pct">0%</span></div>' +
+        '<div class="bt-top' + (plan.surge ? ' surge' : '') + '">' + (plan.surge ? '<span class="bt-surgechip">대량</span>' : '') +
+        '<span class="bt-time">1:00</span><div class="bt-prog"><i></i>' +
+        BD.CARD_AT.map(function (a) { return '<b style="left:' + a + '%"></b>'; }).join('') + '<span class="bt-pct">0%</span></div>' +
+        stat('kill', '처치') + stat('gold', '금') + stat('gem', '보석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
         '<div class="zboard bt-board">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units }) + '</div>' +
-        '<div class="bt-score dim"></div>' +
-        '<div class="bt-low"><div class="bt-log"></div><div class="bt-slot"></div></div>';
+        '<div class="bt-log"></div>';
 
-      // 아래 막대: 하단 탭 막대 자리에 [배속] [전투 시작] [안내]. 전투 시작이 홈의 가운데 "다음 주" 탭과 같은 좌표·크기에 온다
+      // 아래 막대: 하단 탭 막대 자리에 [배속] [카드] [전투 시작] [짧은 안내]. 전투 시작이 홈의 가운데 "다음 주" 탭과 같은 좌표·크기에 온다
       var bar = api.bar();
       bar.innerHTML = '<button class="bt-speed" type="button">배속 ×1</button>' +
         '<button class="bt-cards" type="button">카드 전부</button>' +
         '<button class="tab-main bt-start" type="button">전투 시작 ▶</button>' +
-        '<span class="bt-note">전투 중에는 다른 화면으로 못 가요</span>';
+        '<span class="bt-note">전투 중 이동 불가</span>';
 
       var board = el.querySelector('.bt-board'), wrap = board.querySelector('.zwrap');
+      board.style.setProperty('--rows', Z.MAP.length); // 판 세로 칸 수: 칸이 남는 높이를 나눠 가진다 (shell.css .bt-board)
       var layer = div('bt-layer'); wrap.appendChild(layer);
       var fxLayer = div('bt-layer'); wrap.appendChild(fxLayer);
-      var logEl = el.querySelector('.bt-log'), slot = el.querySelector('.bt-slot');
+      var logEl = el.querySelector('.bt-log');
       var timeEl = el.querySelector('.bt-time'), progEl = el.querySelector('.bt-prog i'), pctEl = el.querySelector('.bt-pct');
-      var scoreEl = el.querySelector('.bt-score'), walletEl = el.querySelector('.bt-wallet');
+      var killEl = el.querySelector('.bt-st.kill b'), goldEl = el.querySelector('.bt-st.gold b'), gemEl = el.querySelector('.bt-st.gem b');
+      var reachEl = el.querySelector('.bt-st.reach b'), fleeEl = el.querySelector('.bt-st.flee b');
       var speedBtn = bar.querySelector('.bt-speed'), cardsBtn = bar.querySelector('.bt-cards'), startBtn = bar.querySelector('.bt-start');
-      walletEl.textContent = '금 ' + money(RUN.gold) + ' · 보석 ' + RUN.gems;
+
+      // ---------- 카드 전용 화면 (이벤트 카드 · 침입자 카드 공통 바탕) ----------
+      // 화면 전체(폭은 휴대폰 폭까지)를 덮는 어두운 화면. 튜토리얼 말풍선(#tut)은 이 화면보다 위에 있고, 그 높이(+하단 막대)만큼 아래를 비워 가리지 않는다
+      var tutEl = document.getElementById('tut'), tabsEl = api.bar();
+      var ov = null, ovBusy = 0; // ov = 지금 떠 있는 전용 화면, ovBusy = 사라지는 중인 화면 수 (끝나기 전엔 다음 카드를 안 띄움)
+      api.onLeave(function () { removeNow(ov); ov = null; });
+      function removeNow(o) { if (o && o.parentNode) o.parentNode.removeChild(o); }
+      function openOverlay(kind, html) {
+        removeNow(ov);
+        ov = div('bt-ov ' + kind, html);
+        document.body.appendChild(ov);
+        ov.animate([{ opacity: 0 }, { opacity: 1 }], { duration: MOTION.dur.fade, easing: MOTION.ease.out });
+        fitOverlay();
+        return ov;
+      }
+      function fitOverlay() { // 말풍선이 떠 있으면 그 높이 + 하단 막대 높이만큼 비움
+        if (!ov) return;
+        var h = tutEl && !tutEl.hidden ? tutEl.offsetHeight + tabsEl.offsetHeight : 0;
+        if (ov.getAttribute('data-tut') !== String(h)) { ov.setAttribute('data-tut', h); ov.style.setProperty('--tut-h', h + 'px'); }
+      }
+      function dismissOverlay(o, ms) { // 부드럽게 사라진 뒤 치움 (애니메이션이 안 흐르는 환경에서도 치워지게 타이머도 둠)
+        if (!o) return;
+        if (o === ov) ov = null;
+        o.style.pointerEvents = 'none'; ovBusy++;
+        var gone = false;
+        function fin() { if (gone) return; gone = true; removeNow(o); ovBusy--; }
+        var a = o.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: MOTION.ease.out, fill: 'forwards' });
+        a.onfinish = fin; setTimeout(fin, ms + 120);
+      }
+      // 카드 한 장 모양: 위 3/4 그림 자리(data-art 로 나중에 그림을 끼움) + 아래 1/4 제목 → 설명 2줄 → 효과
+      function cardHtml(o) {
+        return '<div class="bt-ovcard">' +
+          '<div class="bt-art" data-art="' + o.art + '"><span class="bt-artname">' + o.artName + '</span>' + (o.tag ? '<span class="bt-tag">' + o.tag + '</span>' : '') + '</div>' +
+          '<div class="bt-ctext"><b class="bt-ctitle">' + o.title + '</b><p class="bt-cdesc">' + o.desc + '</p><div class="bt-cfx">' + o.fx + '</div></div></div>';
+      }
 
       // ---------- 작은 도구 ----------
       function log(text, cls) {
@@ -108,8 +147,8 @@
       }
       function drawScore() {
         var r = SIM.result(S);
-        scoreEl.innerHTML = '처치 <b>' + r.kills + '</b>/' + r.total + ' · 보물방 <b>' + r.reached + '</b>분대 · 퇴각 ' + r.retreated +
-          ' · 금 +' + money(r.gold) + ' · 보석 +' + Math.floor(r.gems);
+        killEl.textContent = r.kills + '/' + r.total; goldEl.textContent = '+' + money(r.gold); gemEl.textContent = '+' + Math.floor(r.gems);
+        reachEl.textContent = r.reached; fleeEl.textContent = r.retreated;
         var left = Math.max(0, BD.TIME_LIMIT - S.t), sec = Math.ceil(left);
         timeEl.textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
         timeEl.classList.toggle('low', U.phase === 'fight' && left < 10);
@@ -196,19 +235,20 @@
       // ---------- ③ 침입자 카드 (비서) ----------
       function showSecretary(g) {
         var c = S.icard;
-        var box = div('bt-sec',
-          '<div class="portrait">비서<br>도트</div><div class="bt-sectext"><small>' + BD.SECRETARY + '</small>' +
-          '소장님, 마지막 무리 <b>' + g.grade + '급 ' + g.name + '</b> 등장! 특성: <b>' + c.tag + '</b>' +
-          '<div class="bt-secfx">' + c.text + '</div><span class="bt-ok">효과 확정 · 눌러서 진입</span></div>');
-        slot.innerHTML = ''; slot.appendChild(box); slot.classList.add('on');
-        box.animate([{ transform: 'translateY(-60px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
+        var o = openOverlay('sec', '<div class="bt-ovmid">' + cardHtml({
+          art: c.art || BD.SECRETARY_ART, artName: BD.SECRETARY, tag: BD.SECRETARY + ' · 침입 보고', title: c.tag,
+          desc: '소장님, 마지막 무리 <b>' + g.grade + '급 ' + g.name + '</b> 등장! 침입자 특성이 확정됐어요.', fx: c.text
+        }) + '</div><div class="bt-ovhint">눌러서 침입 시작</div><div class="bt-sectimer"><i></i></div>');
+        secBar = o.querySelector('.bt-sectimer i');
+        o.querySelector('.bt-ovcard').animate([{ transform: 'translateY(-60px) scale(.92)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
         U.secT = 0;
-        box.addEventListener('click', closeSecretary);
+        o.addEventListener('click', closeSecretary);
         buzz('warn');
       }
+      var secBar = null;
       function closeSecretary() {
         if (U.phase !== 'icard') return;
-        slot.innerHTML = ''; slot.classList.remove('on');
+        dismissOverlay(ov, MOTION.dur.fade); secBar = null;
         log('침입자 카드 확정: ' + S.icard.tag + ' (' + S.icard.text + ')', 'icard');
         log('침입 시작! 10명씩 분대로 들어옵니다', 'good');
         U.phase = 'fight';
@@ -225,33 +265,45 @@
           U.granted++;
           U.queue.push(at);
         }
-        if (!U.card && U.queue.length) spawnCard(U.queue.shift());
+        if (!U.card && !ovBusy && U.queue.length) spawnCard(U.queue.shift());
       }
+      // 이벤트 카드 전용 화면: 큰 카드 한 장 + 화면 가장자리 네 곳에 방향별 선택 글. 전투는 멈춘다 (frame 에서 U.card 가 있으면 계산을 건너뜀)
+      var HINT = '← ↑ → ↓ 밀어서 고르세요';
       function spawnCard(at) {
         var data = BD.EVENT_CARDS[plan.order[U.cardNo++ % plan.order.length]];
-        var card = { data: data, state: 'idle', age: 0, dragging: false, dx: 0, dy: 0, at: at };
-        var c = div('bt-card',
-          '<div class="bt-timer"><i></i></div><span class="bt-tag">진행도 ' + at + '%</span>' +
-          BD.DIRS.map(function (d) { return '<div class="bt-c ' + d + '" data-dir="' + d + '"><em>' + BD.DIR_MARK[d] + '</em><span>' + data[d].text + '</span></div>'; }).join('') +
-          '<b class="bt-title">' + data.title + '</b>');
-        card.el = c; card.bar = c.querySelector('.bt-timer i');
-        slot.innerHTML = ''; slot.appendChild(c); slot.classList.add('on');
+        var card = { data: data, state: 'idle', dragging: false, dx: 0, dy: 0, at: at };
+        var edges = BD.DIRS.map(function (d) {
+          return '<div class="bt-ovedge ' + d + '" data-dir="' + d + '"><em>' + BD.DIR_MARK[d] + '</em><div class="tx"><b>' + BD.DIR_LABEL[d] + '</b><span>' + data[d].text + '</span></div></div>';
+        }).join('');
+        var o = openOverlay('ev', edges + '<div class="bt-ovmid">' + cardHtml({
+          art: data.art, artName: data.artName, tag: '진행도 ' + at + '%', title: data.title, desc: data.desc, fx: HINT }) + '</div>');
+        card.el = o.querySelector('.bt-ovcard'); card.fx = o.querySelector('.bt-cfx'); card.ov = o;
         U.card = card; U.cardsShown++;
-        c.animate([{ transform: 'translateY(-200px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
+        card.el.animate([{ transform: 'translateY(-160px) scale(.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
+        // 가장자리 글을 눌러도 그 방향으로 고른다
+        o.querySelectorAll('.bt-ovedge').forEach(function (eg) {
+          eg.addEventListener('click', function () { resolveCard(eg.getAttribute('data-dir')); });
+        });
         attachDrag(card);
         buzz('tap');
-        tutStart('card', '.bt-card');
+        tutStart('card', '.bt-ovcard');
       }
-      function endCard() { U.card = null; setHot(null, null); slot.classList.remove('on'); tutDone('card'); }
+      function endCard() { U.card = null; setHot(null, null); tutDone('card'); }
+      // 끄는 방향(hot)·놓으면 고르는 거리까지 끈 방향(armed)을 전용 화면에 표시 (가장자리 글이 커지고 색이 바뀜, 카드 아래 효과 칸에 그 방향 효과)
       function setHot(hot, armed) {
-        if (hot) el.setAttribute('data-hot', hot); else el.removeAttribute('data-hot');
-        if (armed) el.setAttribute('data-armed', armed); else el.removeAttribute('data-armed');
+        var o = U.card ? U.card.ov : ov;
+        if (!o) return;
+        if (hot) o.setAttribute('data-hot', hot); else o.removeAttribute('data-hot');
+        if (armed) o.setAttribute('data-armed', armed); else o.removeAttribute('data-armed');
+        if (U.card && U.card.fx) U.card.fx.textContent = hot ? BD.DIR_MARK[hot] + ' ' + BD.DIR_LABEL[hot] + ': ' + U.card.data[hot].text : HINT;
       }
       function resolveCard(dir) {
         var card = U.card;
         if (!card || card.state !== 'idle') return;
         card.state = 'done'; U.cardsUsed++; card.el.classList.add('done');
         var side = card.data[dir];
+        card.ov.setAttribute('data-chosen', dir);
+        var fly = card.ov;
         endCard();
         var cev = SIM.applyCard(S, side);
         U.picks.push({ at: card.at, id: card.data.id, dir: dir });
@@ -262,24 +314,16 @@
           { duration: MOTION.dur.fx, easing: MOTION.ease.shake });
         buzz('good');
         var ux = dir === 'left' ? -1 : dir === 'right' ? 1 : 0, uy = dir === 'up' ? -1 : dir === 'down' ? 1 : 0;
-        var a = card.el.animate([
+        // 고른 쪽으로 날아가는 연출 (카드가 날아가는 동안 전용 화면도 같이 사라진 뒤 치워지고, 그때부터 다음 카드가 뜰 수 있다)
+        card.el.animate([
           { transform: tf(card.dx, card.dy, card.dx * 0.05), opacity: 1 },
           { transform: tf(card.dx - 16 * ux, card.dy - 16 * uy, 0), opacity: 1, offset: 0.2, easing: MOTION.ease.out },
           { transform: tf(ux * 460, uy * 460, ux * 10), opacity: 0.1 }
         ], { duration: MOTION.dur.panel, fill: 'forwards' });
-        slot.appendChild(card.el);
-        a.onfinish = function () { if (card.el.parentNode) card.el.parentNode.removeChild(card.el); };
-      }
-      function expireCard() {
-        var card = U.card; card.state = 'expired'; card.el.classList.add('done');
-        endCard();
-        log('카드를 놓쳤어요', 'dim');
-        slot.appendChild(card.el);
-        var a = card.el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MOTION.dur.fade, fill: 'forwards' });
-        a.onfinish = function () { if (card.el.parentNode) card.el.parentNode.removeChild(card.el); };
+        dismissOverlay(fly, MOTION.dur.panel);
       }
       function attachDrag(card) {
-        var c = card.el, sx = 0, sy = 0, pid = null, armed = null, startDir = null;
+        var c = card.el, sx = 0, sy = 0, pid = null, armed = null;
         function dirs(dx, dy) {
           var T = MOTION.swipe.threshold, ax = Math.abs(dx), ay = Math.abs(dy), hot = null, arm = null;
           var d = ax > ay ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
@@ -291,8 +335,6 @@
           if (card.state !== 'idle' || pid !== null) return;
           c.getAnimations().forEach(function (a) { a.finish(); });
           pid = e.pointerId; sx = e.clientX; sy = e.clientY; card.dragging = true; armed = null;
-          var sd = e.target.closest ? e.target.closest('[data-dir]') : null;
-          startDir = sd ? sd.getAttribute('data-dir') : null;
           try { c.setPointerCapture(pid); } catch (err) { /* 무시 */ }
           c.classList.add('drag');
           e.preventDefault();
@@ -311,8 +353,7 @@
           pid = null; card.dragging = false;
           c.classList.remove('drag');
           var arm = armed; armed = null;
-          var moved = Math.abs(card.dx) + Math.abs(card.dy);
-          if (!cancelled && !arm && moved < 8 && startDir) arm = startDir; // 칸을 눌러도 고를 수 있음
+          // (가장자리 글을 눌러 고르는 건 spawnCard 의 클릭 처리)
           if (!cancelled && arm && card.state === 'idle') { c.style.transform = ''; resolveCard(arm); return; }
           setHot(null, null);
           var from = c.style.transform || tf(0, 0, 0);
@@ -329,7 +370,8 @@
       function blockerLine() { return window.ZONEVIEW && window.ZONEVIEW.blockerHtml ? window.ZONEVIEW.blockerHtml() : ''; }
       function finish() {
         U.phase = 'result';
-        if (U.card) { var cc = U.card; endCard(); if (cc.el.parentNode) cc.el.parentNode.removeChild(cc.el); }
+        if (U.card) { endCard(); }
+        removeNow(ov); ov = null;
         startBtn.disabled = true; speedBtn.disabled = true; cardsBtn.disabled = true;
         var rep = api.finishBattle(SIM.result(S));
         if (!rep) { api.go('home', false); return; }
@@ -415,20 +457,17 @@
           if (U.appearT <= 0 && U.appearIdx < plan.groups.length) { appearNext(); U.appearT = BD.APPEAR_GAP; }
         } else if (U.phase === 'icard') {
           U.secT += real;
+          if (secBar) secBar.style.width = Math.max(0, 100 - U.secT / BD.SECRETARY_LIFE * 100) + '%';
+          fitOverlay();
           if (U.secT >= BD.SECRETARY_LIFE) closeSecretary();
         } else if (U.phase === 'fight' && !U.paused) {
-          var card = U.card;
-          if (card && card.state === 'idle') {
-            if (!card.dragging && !tutActive('card')) card.age += real; // 튜토리얼 안내가 떠 있는 동안은 카드 시간 멈춤
-            var left = Math.max(0, 1 - card.age / BD.CARD_LIFE);
-            card.bar.style.width = (left * 100) + '%';
-            card.bar.classList.toggle('low', left < 0.3);
-            if (card.age >= BD.CARD_LIFE) expireCard();
+          // 카드 전용 화면이 떠 있는 동안 전투는 완전히 멈춘다 (시간 초과도 없이 고를 때까지 기다림. 카드가 끝나면 이어서)
+          if (U.card) fitOverlay();
+          else {
+            // 배속에서도 계산이 건너뛰지 않게 작게 나눠 진행
+            var dt = real * BD.SPEEDS[U.speedIdx], n = Math.ceil(dt / 0.05);
+            for (var i = 0; i < n && !S.done; i++) show(SIM.step(S, dt / n));
           }
-          var spd = BD.SPEEDS[U.speedIdx] * (U.card ? BD.CARD_SLOW : 1);
-          // 배속에서도 계산이 건너뛰지 않게 작게 나눠 진행
-          var dt = real * spd, n = Math.ceil(dt / 0.05);
-          for (var i = 0; i < n && !S.done; i++) show(SIM.step(S, dt / n));
           checkCards();
           paint();
           if (S.done) finish();

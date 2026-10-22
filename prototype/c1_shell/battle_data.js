@@ -13,8 +13,8 @@ window.BATTLE_DATA = {
   TIME_LIMIT: 60,            // 게임 초. 지나면 남은 적은 퇴각
   SPEEDS: [1, 2, 3, 5],      // 배속. 1배가 아니면 그 전투 이벤트 카드는 1장만
   CARD_AT: [15, 30, 45, 60], // 진행도(%)
-  CARD_SLOW: 0.3,            // 카드가 떠 있는 동안 전투 속도
-  CARD_LIFE: 6,              // 실제 초. 안 고르면 사라짐
+  CARD_SLOW: 0.3,            // (안 씀) 예전: 카드가 떠 있는 동안 전투 속도. 지금은 카드 전용 화면이 뜨면 전투가 완전히 멈춘다
+  CARD_LIFE: 6,              // (안 씀) 예전: 안 고르면 사라짐. 지금은 고를 때까지 기다린다
   APPEAR_GAP: 0.9,           // 실제 초: 무리 등장 간격
   SECRETARY_LIFE: 4,         // 실제 초: 침입자 카드가 저절로 닫히기까지 (눌러도 닫힘)
   SQUAD_GAP: 1.6,            // 게임 초: 분대 진입 간격
@@ -75,6 +75,7 @@ window.BATTLE_DATA = {
     { id: 'armor', tag: '두꺼운 갑옷', text: '침입자 방어 +30% · 이동 -10%', fx: { def: 0.30, speed: -0.10 } }
   ],
   SECRETARY: '비서',
+  SECRETARY_ART: 'secretary', // 침입자 카드 그림 키 (카드 전용 화면 그림 자리의 data-art. 실제 그림 파일은 나중에 외부에서 들어옴)
 
   // 던전 속성 (의뢰마다 1개, 첫 버전은 "주된 피해 종류"만. GAME_PLAN "새 의뢰를 받는 주", 토론 C6). 모두 임시
   // fx는 침입자 카드 fx와 같은 모양: 그 부지의 모든 전투에서 침입자 카드 효과에 더해진다 (battle_sim.js)
@@ -92,28 +93,30 @@ window.BATTLE_DATA = {
   // kind: trapDmg(함정 피해 +v) · trapRate(함정 발동 확률 +v) · monAtk(몬스터 공격 +v) · slow(침입자 이동 -v) · weak(침입자 받는 피해 +v)
   //       revive(once: 쓰러진 몬스터 모두 일으키고 체력 회복) · quake(once: 모든 침입자 체력 -v) · guard(once: 보물방 1회 무적, 처음 닿는 분대 퇴각)
   //       freeze(once: 모든 침입자 v초 멈춤)
+  // 표시용: art = 그림 키(카드 전용 화면 그림 자리의 data-art), artName = 그림 자리에 보이는 이름, desc = 설명 2줄
   EVENT_CARDS: [
-    { id: 'e1', title: '함정 정비공이 도착했다',
+    { id: 'e1', art: 'trap_mechanic', artName: '함정 정비공', desc: '잔뜩 긴장한 정비공이 도구함을 들고 달려왔다.', title: '함정 정비공이 도착했다',
       up: { text: '함정 피해 +50%', kind: 'trapDmg', v: 0.5 }, down: { text: '함정 발동 +30%', kind: 'trapRate', v: 0.3 },
       left: { text: '몬스터 공격 +25%', kind: 'monAtk', v: 0.25 }, right: { text: '침입자 이동 -20%', kind: 'slow', v: 0.2 } },
-    { id: 'e2', title: '몬스터들이 흥분했다',
+    { id: 'e2', art: 'excited_monsters', artName: '흥분한 몬스터', desc: '던전 깊은 곳에서 포효가 울린다. 몬스터들의 눈이 번뜩인다.', title: '몬스터들이 흥분했다',
       up: { text: '몬스터 공격 +50%', kind: 'monAtk', v: 0.5 }, down: { text: '쓰러진 몬스터 부활 (1회)', kind: 'revive', once: true },
       left: { text: '함정 피해 +30%', kind: 'trapDmg', v: 0.3 }, right: { text: '침입자 받는 피해 +15%', kind: 'weak', v: 0.15 } },
-    { id: 'e3', title: '천장에 금이 갔다',
+    { id: 'e3', art: 'ceiling_crack', artName: '갈라진 천장', desc: '쿵, 하고 먼지가 떨어진다. 천장이 오래 버티진 못할 것 같다.', title: '천장에 금이 갔다',
       up: { text: '천장 붕괴: 전원 체력 -40% (1회)', kind: 'quake', v: 0.4, once: true }, down: { text: '침입자 이동 -30%', kind: 'slow', v: 0.3 },
       left: { text: '함정 발동 +40%', kind: 'trapRate', v: 0.4 }, right: { text: '몬스터 공격 +30%', kind: 'monAtk', v: 0.3 } },
-    { id: 'e4', title: '보물방 앞이 소란하다',
+    { id: 'e4', art: 'treasure_commotion', artName: '보물방 앞', desc: '보물방 문 앞에서 수상한 소리가 난다. 서둘러 손을 써야 한다.', title: '보물방 앞이 소란하다',
       up: { text: '보물방 1회 무적', kind: 'guard', once: true }, down: { text: '침입자 받는 피해 +25%', kind: 'weak', v: 0.25 },
       left: { text: '함정 피해 +40%', kind: 'trapDmg', v: 0.4 }, right: { text: '침입자 이동 -25%', kind: 'slow', v: 0.25 } },
-    { id: 'e5', title: '독안개가 피어오른다',
+    { id: 'e5', art: 'poison_fog', artName: '독안개', desc: '복도에 보랏빛 안개가 퍼진다. 숨을 쉬기 어려워 보인다.', title: '독안개가 피어오른다',
       up: { text: '침입자 받는 피해 +30%', kind: 'weak', v: 0.3 }, down: { text: '함정 피해 +60%', kind: 'trapDmg', v: 0.6 },
       left: { text: '침입자 6초 멈춤 (1회)', kind: 'freeze', v: 6, once: true }, right: { text: '몬스터 공격 +40%', kind: 'monAtk', v: 0.4 } },
-    { id: 'e6', title: '부대장이 지휘를 맡았다',
+    { id: 'e6', art: 'squad_leader', artName: '부대장', desc: '부대장이 직접 나서서 몬스터들의 자리를 잡아 준다.', title: '부대장이 지휘를 맡았다',
       up: { text: '몬스터 공격 +60%', kind: 'monAtk', v: 0.6 }, down: { text: '함정 발동 +50%', kind: 'trapRate', v: 0.5 },
       left: { text: '침입자 이동 -35%', kind: 'slow', v: 0.35 }, right: { text: '쓰러진 몬스터 부활 (1회)', kind: 'revive', once: true } }
   ],
   DIRS: ['up', 'down', 'left', 'right'],
   DIR_MARK: { up: '↑', down: '↓', left: '←', right: '→' },
+  DIR_LABEL: { up: '지휘', down: '보호', left: '시설', right: '부대' }, // 카드 전용 화면 가장자리 글의 분야 이름 (분야 고정, 토론 결과). 효과 내용은 카드 데이터 그대로
 
   // 결과표 "이번 수입으로 할 수 있는 강화" (가짜 문구 포함)
   GEM_UPGRADE: { name: '몬스터 강화', cost: 5 } // 보석 5개당 (아직 준비 중)

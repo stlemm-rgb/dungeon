@@ -117,7 +117,7 @@ a { color: inherit; }
 #tabs.inbattle .bt-cards { font-size: 13px; }
 #tabs.inbattle .bt-cards.off { color: var(--dim); opacity: .6; font-weight: normal; } /* 1배속: 카드 제한 없음이라 흐리게 */
 #tabs.inbattle .bt-speed:disabled, #tabs.inbattle .bt-cards:disabled { opacity: .5; cursor: default; }
-#tabs.inbattle .bt-note { flex: 2; min-width: 0; align-self: center; padding: 0; color: var(--dim); font-size: 11px; line-height: 1.3; text-align: center; }
+#tabs.inbattle .bt-note { flex: 2; min-width: 0; align-self: center; padding: 0 4px; color: var(--dim); font-size: 11px; line-height: 1.3; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 공통 조각 */
 .head { display: flex; align-items: center; gap: 8px; min-height: 36px; }
@@ -322,27 +322,33 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .toast { background: var(--text); color: var(--bg); padding: 9px 12px; border-radius: 8px; font-weight: bold; font-size: 13px; text-align: center; animation: toast-in var(--dur-fade) var(--ease-out); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
-/* 전투 (battle.js): 구역 판 위 분대 도트 + 아래 안내 줄 / 카드 자리 + 홈과 같은 아래 버튼 줄 */
-.bt-screen { position: relative; gap: 6px; padding-bottom: 0; }
-.bt-screen .head { min-height: 30px; }
-.bt-screen .head h2 { font-size: 16px; display: flex; align-items: center; gap: 6px; }
-.bt-surge { background: var(--danger); border-color: var(--danger); color: var(--text); font-weight: bold; }
-.bt-wallet { flex: none; }
-.bt-top { display: flex; align-items: center; gap: 8px; flex: none; }
-.bt-time { flex: none; width: 44px; font-weight: bold; font-size: 16px; font-variant-numeric: tabular-nums; }
+/* 전투 (battle.js): 맨 위 한 줄(시간·진행바·처치·금·보석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 한 줄 안내 / 홈과 같은 아래 버튼 줄.
+   카드는 화면 전체를 덮는 전용 화면(.bt-ov, 아래쪽) */
+.bt-screen { position: relative; gap: 6px; padding: 6px 10px 6px; }
+.bt-top { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+.bt-surgechip { flex: none; padding: 1px 6px; border-radius: 99px; background: var(--danger); color: var(--text); font-size: 10px; font-weight: bold; }
+.bt-time { flex: none; font-weight: bold; font-size: 15px; font-variant-numeric: tabular-nums; }
 .bt-time.low { color: var(--danger); }
-.bt-prog { position: relative; flex: 1; height: 10px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); }
-.bt-prog i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--danger); }
-.bt-prog b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--accent); }
-.bt-pct { flex: none; width: 36px; text-align: right; font-size: 12px; font-weight: bold; }
-.bt-score { font-size: 11.5px; flex: none; text-align: center; }
-.bt-score b { color: var(--text); }
+.bt-prog { position: relative; flex: 1 1 0; min-width: 44px; height: 16px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.bt-prog i { display: block; height: 100%; width: 0; background: var(--danger); }
+.bt-prog b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); }
+.bt-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); }
+.bt-st { flex: none; display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.bt-st small { font-size: 9px; color: var(--dim); }
+.bt-st b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.bt-st.gold b { color: var(--accent); } .bt-st.gem b { color: var(--dir-right); }
+.bt-st.sub b { font-size: 11px; color: var(--dim); } .bt-st.sub small { font-size: 8.5px; }
 
-.bt-board { position: relative; }
-.bt-board .zc { aspect-ratio: calc(var(--za, 1.25) * 1.212); cursor: default; font-size: 10px; }
+/* 판: 남는 높이를 나눠 가진다 (너무 길게 늘어나지 않게 폭의 1.75배까지, 너무 짧아지면 화면이 스크롤) */
+.bt-screen .bt-board { position: relative; flex: 1 1 auto; min-height: calc(min(100vw, 390px) * 1.05); max-height: calc(min(100vw, 390px) * 1.9); display: flex; flex-direction: column; }
+body[data-screen="battle"] #view { display: flex; flex-direction: column; } /* 전투 화면이 보이는 높이를 다 쓰게 (판이 남는 높이를 채움) */
+body[data-screen="battle"] .bt-screen { flex: 1 0 auto; min-height: 0; }
+.bt-board .zwrap { flex: 1 1 0; min-height: 0; }
+.bt-board .zgrid { height: 100%; grid-template-rows: repeat(var(--rows, 7), minmax(0, 1fr)); }
+.bt-board .zc { aspect-ratio: auto; min-height: 0; cursor: default; font-size: 10px; }
 .bt-board .zc .fn { font-size: 10.5px; }
 .bt-board .zc .zn { font-size: 8px; }
-.bt-board .zyard { height: 30px; cursor: default; align-items: flex-start; padding-top: 1px; font-size: 10px; }
+.bt-board .zyard { flex: none; height: 24px; cursor: default; padding-top: 0; font-size: 10px; }
 .bt-board .zc.bt-hit { animation: bt-hit var(--dur-fx) var(--ease-out); }
 .bt-board .zc.bt-boost { animation: bt-boost var(--dur-fx) var(--ease-out); }
 @keyframes bt-hit { 0% { background: var(--dir-left); } 100% { } }
@@ -350,13 +356,13 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .bt-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 3; }
 
 /* 분대 = 작은 얼굴 도트 (등급별 색) */
-.bt-sq { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--foe); border: 2px solid var(--bg); }
+.bt-sq { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: var(--foe); border: 2px solid var(--bg); }
 .bt-sq[hidden] { display: none; }
-.bt-sq::before, .bt-sq::after { content: ""; position: absolute; top: 4px; width: 3px; height: 3px; border-radius: 50%; background: var(--bg); }
-.bt-sq::before { left: 3px; } .bt-sq::after { right: 3px; }
+.bt-sq::before, .bt-sq::after { content: ""; position: absolute; top: 5px; width: 3px; height: 3px; border-radius: 50%; background: var(--bg); }
+.bt-sq::before { left: 4px; } .bt-sq::after { right: 4px; }
 .bt-sq[data-g="D"] { background: var(--grade-d); } .bt-sq[data-g="C"] { background: var(--grade-c); } .bt-sq[data-g="B"] { background: var(--grade-b); }
 .bt-sq[data-g="A"] { background: var(--grade-a); } .bt-sq[data-g="S"] { background: var(--grade-s); }
-.bt-sq b { position: absolute; left: 50%; top: 11px; transform: translateX(-50%); font-size: 8px; line-height: 9px; color: var(--text); text-shadow: 0 0 2px var(--bg); }
+.bt-sq b { position: absolute; left: 50%; top: 13px; transform: translateX(-50%); font-size: 8px; line-height: 9px; color: var(--text); text-shadow: 0 0 2px var(--bg); }
 .bt-sq.wait { opacity: .75; }
 .bt-sq.fight { animation: bt-fight calc(var(--dur-fx) * .6) ease-in-out infinite alternate; }
 .bt-sq.frozen { box-shadow: 0 0 0 3px var(--dir-right); }
@@ -381,49 +387,71 @@ body.reduce .bt-sq.fight { animation: none; }
 .bt-float.big { font-size: 14px; color: var(--danger); }
 @keyframes bt-float { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.6); } 20% { opacity: 1; transform: translate(-50%, -60%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -160%); } }
 
-/* 아래: 안내 줄 (등장·사건) + 그 위에 뜨는 카드 자리 */
-.bt-low { position: relative; flex: 1; min-height: 176px; }
-.bt-log { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-.bt-line { font-size: 12px; line-height: 1.35; }
-.bt-line.appear { padding: 3px 6px; border-radius: 6px; background: var(--panel-2); }
+/* 아래: 한 줄 안내 (등장·사건. 가장 최근 줄이 맨 아래에 보이고 위는 잘림) */
+.bt-log { flex: none; height: 40px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 3px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.bt-log .bt-line:not(:last-child) { display: none; } /* 한 줄 안내: 가장 최근 것만 (길면 2줄까지) */
+.bt-line { flex: none; font-size: 12px; line-height: 1.3; }
+.bt-line.appear { padding: 0 6px; border-radius: 6px; background: var(--panel-2); }
 .bt-line.bad { color: var(--danger); } .bt-line.good { color: var(--ready); } .bt-line.card { color: var(--dir-up); font-weight: bold; }
 .bt-line.icard { color: var(--accent); font-weight: bold; }
 .bt-g { display: inline-block; min-width: 18px; text-align: center; border-radius: 4px; font-weight: bold; color: var(--bg); background: var(--foe); }
 .bt-g[data-g="D"] { background: var(--grade-d); } .bt-g[data-g="C"] { background: var(--grade-c); } .bt-g[data-g="B"] { background: var(--grade-b); }
 .bt-g[data-g="A"] { background: var(--grade-a); } .bt-g[data-g="S"] { background: var(--grade-s); }
-.bt-slot { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 5; }
-.bt-slot.on { display: flex; }
 
-/* 침입자 카드 (비서) */
-.bt-sec { width: 100%; height: 100%; display: flex; gap: 10px; align-items: center; padding: 10px; background: var(--panel-2); border: 2px solid var(--danger); border-radius: 12px; cursor: pointer; }
-.bt-sec .portrait { width: 56px; height: 56px; }
-.bt-sectext { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; }
-.bt-sectext small { display: block; color: var(--dim); font-size: 11px; }
-.bt-secfx { margin: 6px 0 4px; padding: 5px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: bold; }
-.bt-ok { font-size: 11px; color: var(--dim); }
+/* 카드 전용 화면 (이벤트 카드 .ev · 침입자 카드 .sec): 화면 전체(폭은 휴대폰 폭까지)를 덮고 뒤의 전투는 멈춘다.
+   말풍선(#tut)은 이 화면보다 위(z-index 55)에 있고, --tut-h(말풍선 + 하단 막대 높이)만큼 아래를 비운다 */
+.bt-ov { position: fixed; top: 0; bottom: 0; left: max(0px, calc(50% - 195px)); width: min(100%, 390px); z-index: 50; overflow: hidden;
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; grid-template-rows: 78px minmax(0, 1fr) 78px; padding: 0 8px var(--tut-h, 0px);
+  background: var(--scrim); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); touch-action: none; user-select: none; -webkit-user-select: none; }
+.bt-ovmid { grid-column: 2; grid-row: 2; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
+/* 가장자리 선택 글: 끄는 방향이 커지고 색이 바뀐다 (hot = 끄는 중, armed = 놓으면 고르는 거리까지, chosen = 고른 뒤 날아가는 동안) */
+.bt-ovedge { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px; border-radius: 12px; color: var(--dim); text-align: center; cursor: pointer;
+  transition: transform var(--dur-tap) var(--ease-out), color var(--dur-tap), background var(--dur-tap); min-width: 0; }
+.bt-ovedge em { flex: none; font-style: normal; font-size: 24px; line-height: 1; }
+.bt-ovedge .tx { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.bt-ovedge b { font-size: 13px; }
+.bt-ovedge span { font-size: 11.5px; line-height: 1.25; font-weight: bold; word-break: keep-all; overflow-wrap: break-word; }
+.bt-ovedge.up { grid-column: 1 / 4; grid-row: 1; } .bt-ovedge.down { grid-column: 1 / 4; grid-row: 3; }
+.bt-ovedge.left { grid-column: 1; grid-row: 2; flex-direction: column; align-self: center; padding: 14px 2px; }
+.bt-ovedge.right { grid-column: 3; grid-row: 2; flex-direction: column; align-self: center; padding: 14px 2px; }
+.bt-ovedge.up em { color: var(--dir-up); } .bt-ovedge.down em { color: var(--ready); } .bt-ovedge.left em { color: var(--dir-left); } .bt-ovedge.right em { color: var(--dir-right); }
+.bt-ov[data-hot="up"] .bt-ovedge.up, .bt-ov[data-hot="down"] .bt-ovedge.down, .bt-ov[data-hot="left"] .bt-ovedge.left, .bt-ov[data-hot="right"] .bt-ovedge.right
+  { color: var(--accent); background: var(--accent-soft); transform: scale(1.1); z-index: 2; }
+.bt-ov[data-armed="up"] .bt-ovedge.up, .bt-ov[data-armed="down"] .bt-ovedge.down, .bt-ov[data-armed="left"] .bt-ovedge.left, .bt-ov[data-armed="right"] .bt-ovedge.right,
+.bt-ov[data-chosen="up"] .bt-ovedge.up, .bt-ov[data-chosen="down"] .bt-ovedge.down, .bt-ov[data-chosen="left"] .bt-ovedge.left, .bt-ov[data-chosen="right"] .bt-ovedge.right
+  { color: var(--ready); background: var(--ready-soft); transform: scale(1.2); z-index: 2; }
+.bt-ov[data-armed] .bt-ovcard { border-color: var(--ready); }
 
-/* 이벤트 카드: 위·아래·왼쪽·오른쪽 효과가 카드 네 변에 보인다 */
-.bt-card { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: 92px minmax(0, 1fr) 92px; grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas: "up up up" "left mid right" "down down down"; gap: 4px; padding: 14px 6px 6px; background: var(--panel-2); border: 2px solid var(--accent);
-  border-radius: 12px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
-.bt-card.drag { cursor: grabbing; }
-.bt-card.done { pointer-events: none; }
-.bt-timer { position: absolute; left: 8px; right: 8px; top: 5px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
-.bt-timer i { display: block; height: 100%; width: 100%; background: var(--accent); }
-.bt-timer i.low { background: var(--danger); }
-.bt-tag { position: absolute; right: 8px; top: -9px; padding: 0 8px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: bold; }
-.bt-title { grid-area: mid; align-self: center; text-align: center; font-size: 13px; line-height: 1.3; color: var(--accent); }
-.bt-c { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 5px 4px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel);
-  font-size: 11.5px; line-height: 1.25; text-align: center; font-weight: bold; }
-.bt-c em { font-style: normal; font-size: 15px; flex: none; }
-.bt-c.up { grid-area: up; } .bt-c.down { grid-area: down; }
-.bt-c.left { grid-area: left; flex-direction: column; } .bt-c.right { grid-area: right; flex-direction: column; }
-.bt-c.up em { color: var(--dir-up); } .bt-c.down em { color: var(--ready); } .bt-c.left em { color: var(--dir-left); } .bt-c.right em { color: var(--dir-right); }
-.bt-screen[data-hot="up"] .bt-c.up, .bt-screen[data-hot="down"] .bt-c.down, .bt-screen[data-hot="left"] .bt-c.left, .bt-screen[data-hot="right"] .bt-c.right
-  { border-color: var(--accent); background: var(--accent-soft); }
-.bt-screen[data-armed="up"] .bt-c.up, .bt-screen[data-armed="down"] .bt-c.down, .bt-screen[data-armed="left"] .bt-c.left, .bt-screen[data-armed="right"] .bt-c.right
-  { border-color: var(--ready); background: var(--ready-soft); color: var(--ready); }
-.bt-screen[data-armed] .bt-card { border-color: var(--ready); }
+/* 카드 한 장: 위 3/4 = 그림 자리(data-art), 아래 1/4 = 제목 → 설명 2줄 → 효과 */
+.bt-ovcard { position: relative; width: 100%; aspect-ratio: 5 / 8; max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 2px solid var(--accent); border-radius: 14px; box-shadow: 0 10px 30px var(--scrim); touch-action: none; cursor: grab; }
+.bt-ovcard.drag { cursor: grabbing; }
+.bt-ovcard.done { pointer-events: none; }
+.bt-ov.sec .bt-ovcard { border-color: var(--danger); cursor: pointer; }
+.bt-art { position: relative; flex: 3 1 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(165deg, var(--zone-den), var(--zone-lure) 60%, var(--zone-boss)); }
+.bt-art[data-art="secretary"] { background: linear-gradient(165deg, var(--zone-trap), var(--zone-lure) 60%, var(--zone-den)); }
+.bt-artname { padding: 4px 14px; border: 2px dashed var(--line-strong); border-radius: 10px; background: var(--stage-slot); color: var(--text); font-size: 15px; font-weight: bold; }
+.bt-art::after { content: "그림 자리"; color: var(--dim); font-size: 10px; }
+.bt-tag { position: absolute; right: 8px; top: 8px; padding: 1px 9px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: bold; }
+.bt-ov.sec .bt-tag { background: var(--danger); color: var(--text); }
+.bt-ctext { flex: 1 1 0; min-height: 108px; padding: 6px 10px 8px; display: flex; flex-direction: column; justify-content: center; gap: 3px; text-align: center;
+  background: var(--panel-2); border-top: 2px solid var(--accent); }
+.bt-ov.sec .bt-ctext { border-top-color: var(--danger); }
+.bt-ctitle { font-size: 17px; line-height: 1.2; color: var(--accent); }
+.bt-cdesc { margin: 0; font-size: 11.5px; line-height: 1.3; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: keep-all; overflow-wrap: break-word; }
+.bt-cdesc b { color: var(--text); }
+.bt-cfx { display: flex; align-items: center; justify-content: center; height: 34px; padding: 0 6px; border-radius: 6px; background: var(--accent-soft); color: var(--text); font-size: 12px; font-weight: bold; line-height: 1.25; overflow: hidden; }
+.bt-ov.ev[data-hot] .bt-cfx { color: var(--accent); }
+.bt-ov.sec .bt-cfx { color: var(--accent); }
+.bt-ovhint { grid-column: 1 / 4; grid-row: 3; align-self: center; text-align: center; color: var(--text); font-size: 14px; font-weight: bold; }
+.bt-sectimer { grid-column: 1 / 4; grid-row: 3; align-self: end; margin: 0 28px 14px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bt-sectimer i { display: block; height: 100%; width: 100%; background: var(--danger); }
+@media (max-height: 700px) {
+  .bt-ov { grid-template-rows: 62px minmax(0, 1fr) 62px; }
+  .bt-ctitle { font-size: 15px; }
+  .bt-ctext { min-height: 100px; }
+}
 
 /* 아래 막대(배속 · 전투 시작 · 안내)는 파일 맨 위쪽 "하단 탭" 규칙(#tabs.inbattle)에 있다 */
 
@@ -612,7 +640,7 @@ body.reduce .questbtn .qdot, body.reduce .idlebtn { animation: none; }
 .pop.idle .idlecap { padding: 4px 8px; border-radius: 6px; background: var(--accent-soft); border: 1px solid var(--accent); font-size: 12px; }
 
 /* ---- 튜토리얼: 은발 마왕 말풍선 (탭 막대 바로 위에 끼어 들어감) + 강조 ---- */
-#tut { flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px 8px 10px; border-top: 2px solid var(--accent); background: var(--panel);
+#tut { position: relative; z-index: 55; /* 카드 전용 화면(.bt-ov, 50) 위에도 보이게 */ flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px 8px 10px; border-top: 2px solid var(--accent); background: var(--panel);
   animation: tut-in var(--dur-sheet) var(--ease-out); }
 #tut[hidden] { display: none; }
 @keyframes tut-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
