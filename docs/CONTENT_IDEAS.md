@@ -53,6 +53,7 @@
 - 떠돌이 상인: 한정 시간 희귀 상인
 - 경매장: 포로 모험가 장비, 희귀 재료
 - 암시장: 위험하지만 싼 물건(가끔 가짜)
+- 인앱으로 여는 것은 모두 플레이로도 열림을 상점에 명시 (DM 호평 요인) [출처: refs/ref_dungeon_maker_deep.md]
 - ~~은행·투자~~ (사용자 삭제)
 
 ## 5. 사람·관계
@@ -72,11 +73,15 @@
 
 ## 6. 현장 (던전) 모습
 - 손해가 있는 시설: 상점(돈 + 지나간 적 강화)·여관(돈 + 적 회복) [출처: refs/ref_nest_dragon_deep.md]
+- 나쁜 방(제단): 이벤트로 억지로 생기는 침입자 유리 방 → 치우는 재미 [출처: refs/ref_dungeon_maker_deep.md]
+- 남는 시설 카드는 다른 시설 강화 재료로 [출처: refs/ref_dungeon_maker_deep.md]
+- 보는 전투에 손으로 끼어드는 버튼: 소장·부대장 스킬(마나처럼 차오름) [출처: refs/ref_dungeon_maker_deep.md]
 - 시설 조합 보너스: 특정 시설끼리 붙이면 다른 효과 [출처: refs/ref_nest_dragon_deep.md]
 - 몬스터 행동방침(입구 쪽·안쪽·교대)·퇴각방침을 한 번 정하면 전투는 자동 [출처: refs/ref_nest_dragon_deep.md]
 - 시설 해금 조건 "누적 지출 + 현재 보유" [출처: refs/ref_nest_dragon_deep.md]
 - **지도보다 지하로 파고 들어가는 느낌. 층별로 구역이 나뉨** (사용자)
 - **몬스터 출진 (사용자 10-22, 둥지짓는 드래곤 요소)**: 대기실마다 일일이 배치하지 않고, **'출진' 칸에서 몬스터를 1·2·3층에 출진**시킴 → 전투에서 **부상당한 몬스터는 퇴각**, 남은 몬스터들이 그 층의 방을 **배회**하며 싸움 (둥드 행동방침의 배회·퇴각방침과 같은 결) [출처: refs/ref_nest_dragon_deep.md]
+  - 정함(사용자 10-22): 몬스터는 **몬스터 대기실 칸만 배회**, **함정 칸에는 함정만** / 퇴각한 몬스터는 **다음 주까지 쉼** / **층마다 출진 인원 한도** 있음
 - 층을 하나씩 파 내려가며 구역이 열림, 깊을수록 위험·보상 큼 [출처: refs/ref_fallout_shelter.md]
 - 같은 시설을 옆에 붙이면 합쳐져 큰 시설 [출처: refs/ref_fallout_shelter.md]
 - 몬스터·부대장 능력치와 구역 궁합: 맞게 배치하면 효율 [출처: refs/ref_fallout_shelter.md]
@@ -95,6 +100,9 @@
 - 매주 운명 카드: 이번 주 "전투 / 사건"을 고름 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 의뢰 고르기 화면: 현판형 의뢰 + 구성 미리보기 + 보상 (LoK 미션 지도) [출처: refs/ref_mobile_dungeon_games.md]
 - 진행 칸 종류에 휴식·상점·정예 (DM) [출처: refs/ref_mobile_dungeon_games.md]
+- 의뢰 안의 주기와 보스 주: N주마다 정예·보스 침입, 그 전 주는 휴식·강화 주 [출처: refs/ref_dungeon_maker_deep.md]
+- 매주 카드 3장 중 1장(전투·정예·휴식·상인·이벤트·보물), 싸우지 않고 넘기는 주가 있음 [출처: refs/ref_dungeon_maker_deep.md]
+- 명확한 숫자 목표 (DM의 "100일"처럼: 작품 100개·평판 100 등) [출처: refs/ref_dungeon_maker_deep.md]
 - 건설 대회: 마계 건축 박람회, 주제별 순위
 - 탑·심연: 끝없이 내려가는 도전 던전 (친위대만)
 - 계절 축제: 기간 한정
@@ -111,6 +119,7 @@
 - 카드 도감: 본 카드가 쌓이고 새 카드가 해금됨 (납품해도 남음) [출처: refs/ref_reigns.md]
 - 몬스터 합성: 같은 몬스터를 합쳐 상위로 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 합성 결과는 무작위 상위 (무엇이 나올지 두근거림) [출처: refs/ref_lucky_defense.md]
+- 몬스터 알 = 3마리 중 1마리 고르기 / 몬스터 희생 → 소장·공방 강화 [출처: refs/ref_dungeon_maker_deep.md]
 - 업적·칭호
 - 납품할 때마다 회사 배율 영구 상승을 숫자로 (프레스티지) [출처: refs/ref_idle_miner_tycoon.md]
 - 회사 등급 별 1~5 → 이벤트·의뢰 칸 수 해금 [출처: refs/ref_kairosoft_dungeon_village.md]
@@ -134,4 +143,5 @@
 | 9 ✅ | 운빨존많겜 (Lucky Defense) | 세로 실시간 전투 보기·뽑기·합성 |
 | 10 ✅ | AFK 아레나 계열 | 방치 보상·성장 체감·하단 탭 표준 |
 | 심층 ✅ | 둥지짓는 드래곤 (巣作りドラゴン, 성인 요소 제외) | 컨셉·분위기·설정·시스템 심층 (refs/ref_nest_dragon_deep.md) |
+| 심층 ✅ | Dungeon Maker: Dark Lord (전체) | 한국 인디 성공작 전체 분석 (refs/ref_dungeon_maker_deep.md) |
 | 반면교사 | Dungeon Keeper 모바일 (EA 2014) | 과금 대기로 망친 사례 |
