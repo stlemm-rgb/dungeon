@@ -42,12 +42,14 @@
 - ~~은행·투자~~ (사용자 삭제)
 
 ## 5. 사람·관계
-- 의뢰인 호감도: 단골 등급 → 특별 의뢰
+- 의뢰인별 판을 바꾸는 고유 규칙 (DM 마왕 9명) [출처: refs/ref_mobile_dungeon_games.md]
+- 몬스터 부족 사기: 떨어지면 파업 (LoK) [출처: refs/ref_mobile_dungeon_games.md]
 - **포로 모험가**: 설득해 정보원·직원으로, 또는 **몸값을 받고 팔기** (사용자)
 - **현장에 포로 수용소(감옥)** (사용자)
 - **모험가 길드: 첩보 + 직접 방문** (주인공은 인간이라 드나들 수 있음, 사용자)
 - 직원 고용: 비서·회계·설계사 (인간·마족)
 - 서원: 직원 교육·자격증 [출처: refs/ref_gabu_business_era.md]
+- 소장 직업(설계형·전투형 등) + 재능 트리 = 플레이어 능력 (LoK 마스터) [출처: refs/ref_mobile_dungeon_games.md]
 - 라이벌 소장(마족)과 만날 때마다 쌓이는 이야기
 
 ## 6. 현장 (던전) 모습
@@ -58,6 +60,9 @@
 
 ## 7. 도전·이벤트
 - 전설 용사 습격 (주간 도전)
+- 매주 운명 카드: 이번 주 "전투 / 사건"을 고름 (DM) [출처: refs/ref_mobile_dungeon_games.md]
+- 의뢰 고르기 화면: 현판형 의뢰 + 구성 미리보기 + 보상 (LoK 미션 지도) [출처: refs/ref_mobile_dungeon_games.md]
+- 진행 칸 종류에 휴식·상점·정예 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 건설 대회: 마계 건축 박람회, 주제별 순위
 - 탑·심연: 끝없이 내려가는 도전 던전 (친위대만)
 - 계절 축제: 기간 한정
@@ -70,6 +75,7 @@
 - 작품집: 납품한 던전, 세트 보너스, 증축 투자 (확정, GAME_PLAN)
 - 모험가 도감: 약 50종 + 사이드 스토리
 - 몬스터 도감: 부족·변이·희귀 색
+- 몬스터 합성: 같은 몬스터를 합쳐 상위로 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 업적·칭호
 - 대표 수치 하나로 성장 체감 (갑부의 "버는 속도" → 우리는 회사 평판·던전 가치 등) [출처: refs/ref_gabu_business_era.md]
 - 보스 침입자를 막으면 얻는 수집품 (갑부의 진귀한 짐승) [출처: refs/ref_gabu_business_era.md]
@@ -81,7 +87,7 @@
 | --- | --- | --- |
 | 1 ✅ | Fallout Shelter | 지하 층별 단면 현장, 방치 생산, 주민 배치 |
 | 2 ✅ | 갑부: 장사의 시대 (하단 탭: 관저·상가·문객·관문·교외·가방) | 하단 탭 × 입구 구조, 방치 경영 |
-| 3 | Legend of Keepers / Dungeon Maker: Dark Lord | 던전 경영 본류 (refs/ref_mobile_dungeon_games.md) |
+| 3 ✅ | Legend of Keepers / Dungeon Maker: Dark Lord | 던전 경영 본류 (refs/ref_mobile_dungeon_games.md) |
 | 4 | 쿠키런: 킹덤 / 동물의 숲 | 마을·집 꾸미기, 캐릭터 호감도 |
 | 5 | Kairosoft 던전 마을 | 모험가가 드나드는 마을 경영 |
 | 6 | Mount & Blade | 포로 몸값·영입 |

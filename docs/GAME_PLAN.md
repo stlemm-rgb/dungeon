@@ -141,7 +141,7 @@
 - [x] 배속 설정 (10-21 사용자): **다음 전투에도 기억.** 배속을 켜면 그 전투에 나올 **카드 수를 플레이어가 고름** (고를 수 있는 범위는 나중에)
 - [ ] 플레이어 능력·플레이어 시설(공방)의 목록과 효과
 - [x] 모바일 세션 단위 (10-21 확정, 총괄 제안 ⑤): 한 번 켜면 의뢰 1개(5~10분), 방치 보상은 공방 생산만
-- [ ] **레퍼런스 확인** (10-21 사용자): Legend of Keepers·Dungeon Maker: Dark Lord의 스토어 스크린샷으로 세로 화면 여부·화면 배치·건설/성장 구조를 보고 `refs/ref_mobile_dungeon_games.md`에 적기. Legend of Keepers와의 차별점 한 줄 정리
+- [x] **레퍼런스 확인** (10-21 사용자, 10-22 총괄이 스토어로 확인: 둘 다 가로 화면, refs/ref_mobile_dungeon_games.md): Legend of Keepers·Dungeon Maker: Dark Lord의 스토어 스크린샷으로 세로 화면 여부·화면 배치·건설/성장 구조를 보고 `refs/ref_mobile_dungeon_games.md`에 적기. Legend of Keepers와의 차별점 한 줄 정리
 
 ### 짐꾼과 재화
 | 항목 | 결정 |
