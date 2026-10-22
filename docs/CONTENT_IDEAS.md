@@ -7,6 +7,8 @@
 > AFK 아레나도 같은 구조(도시·숲 그림 위 건물 입구) = 업계 표준. 입구는 진행으로 하나씩 열림 [출처: refs/ref_afk_arena.md]
 
 ## 1. 마계 전체 지도 (지역·세력)
+- 톤: **"시스템은 진지, 이야기는 웃기게"** — 약자 주인공(마계 유일의 인간)의 허세·생활 코미디 [출처: refs/ref_nest_dragon_deep.md]
+- 마계도 몰락·빚·하청이 있는 "사정 있는 세계", 침입자 쪽(왕국·길드)에도 사정 [출처: refs/ref_nest_dragon_deep.md]
 - 지역 개척: 숲·설원·화산·늪·마계 수도… 지역마다 부지 모양·던전 속성·모험가 출신이 다름
 - 새 지역·새 의뢰를 빨리 여는 쪽이 이득이게 [출처: refs/ref_idle_miner_tycoon.md]
 - 첫 10분 안에 첫 납품 (오래 남는 사람 = 두 번째 갱도까지 간 사람) [출처: refs/ref_idle_miner_tycoon.md]
@@ -58,6 +60,7 @@
 - 몬스터 부족 사기: 떨어지면 파업 (LoK) [출처: refs/ref_mobile_dungeon_games.md]
 - **포로 모험가**: 설득해 정보원·직원으로, 또는 **몸값을 받고 팔기** (사용자)
 - **현장에 포로 수용소(감옥)** (사용자)
+- 돈 버는 길 셋: 의뢰 대금 · 침입자 전리품 · 포로 몸값 (둥지짓는 드래곤과 같음) [출처: refs/ref_nest_dragon_deep.md]
 - **모험가 길드: 첩보 + 직접 방문** (주인공은 인간이라 드나들 수 있음, 사용자)
 - 모험가 순환: 살아 돌아간 모험가가 장비를 사서 다시 침입 → 이름 붙은 단골 모험단 [출처: refs/ref_kairosoft_dungeon_village.md]
 - 던전 명성이 오르면 더 많은·센 모험가가 몰려옴 (수입과 위험이 같이 오름) [출처: refs/ref_kairosoft_dungeon_village.md]
@@ -68,6 +71,10 @@
 - 라이벌 소장(마족)과 만날 때마다 쌓이는 이야기
 
 ## 6. 현장 (던전) 모습
+- 손해가 있는 시설: 상점(돈 + 지나간 적 강화)·여관(돈 + 적 회복) [출처: refs/ref_nest_dragon_deep.md]
+- 시설 조합 보너스: 특정 시설끼리 붙이면 다른 효과 [출처: refs/ref_nest_dragon_deep.md]
+- 몬스터 행동방침(입구 쪽·안쪽·교대)·퇴각방침을 한 번 정하면 전투는 자동 [출처: refs/ref_nest_dragon_deep.md]
+- 시설 해금 조건 "누적 지출 + 현재 보유" [출처: refs/ref_nest_dragon_deep.md]
 - **지도보다 지하로 파고 들어가는 느낌. 층별로 구역이 나뉨** (사용자)
 - 층을 하나씩 파 내려가며 구역이 열림, 깊을수록 위험·보상 큼 [출처: refs/ref_fallout_shelter.md]
 - 같은 시설을 옆에 붙이면 합쳐져 큰 시설 [출처: refs/ref_fallout_shelter.md]
@@ -82,6 +89,8 @@
 
 ## 7. 도전·이벤트
 - 전설 용사 습격 (주간 도전)
+- 천적 침입자: 마족 슬레이어 같은 특수 인간 (전설 등급, 등장 연출) [출처: refs/ref_nest_dragon_deep.md]
+- 의뢰인의 던전 평가 방문: 납품 전에 와서 훈수·평가 [출처: refs/ref_nest_dragon_deep.md]
 - 매주 운명 카드: 이번 주 "전투 / 사건"을 고름 (DM) [출처: refs/ref_mobile_dungeon_games.md]
 - 의뢰 고르기 화면: 현판형 의뢰 + 구성 미리보기 + 보상 (LoK 미션 지도) [출처: refs/ref_mobile_dungeon_games.md]
 - 진행 칸 종류에 휴식·상점·정예 (DM) [출처: refs/ref_mobile_dungeon_games.md]
@@ -123,4 +132,5 @@
 | 8 ✅ | Reigns | 좌우 카드 넘기기 |
 | 9 ✅ | 운빨존많겜 (Lucky Defense) | 세로 실시간 전투 보기·뽑기·합성 |
 | 10 ✅ | AFK 아레나 계열 | 방치 보상·성장 체감·하단 탭 표준 |
+| 심층 ✅ | 둥지짓는 드래곤 (巣作りドラゴン, 성인 요소 제외) | 컨셉·분위기·설정·시스템 심층 (refs/ref_nest_dragon_deep.md) |
 | 반면교사 | Dungeon Keeper 모바일 (EA 2014) | 과금 대기로 망친 사례 |
