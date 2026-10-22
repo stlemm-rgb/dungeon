@@ -26,6 +26,7 @@ const problems = [];
 function ok(c, msg) { if (!c) problems.push(msg); }
 let FAKE_NOW = null;   // 숫자면 progress.js가 부팅(load) 때 읽는 Date.now()를 이 값으로
 class FakeDate extends Date { static now() { return FAKE_NOW !== null ? FAKE_NOW : super.now(); } }
+function noDisarm(RR) { if (RR.plan && RR.plan.card === 'disarm') RR.plan.card = 'paladin'; }
 function boot() {
   const sb = { console, Math, JSON, Date: FakeDate, Object, Array, String, Number };
   sb.window = sb;
@@ -187,6 +188,7 @@ let wsSample = null;
   // 전투: 함정 피해에 반영, 전투 중 강화 막힘
   PP.buildZone('LB', 'den'); PP.placeMonster('LB', sl.id);
   ok(PP.startBattle().ok, '공방 전투 시작');
+  noDisarm(RR);   // 무작위로 '함정 해체꾼'(발동 -90%)이 걸리면 함정 검사가 가끔 실패하므로 고정
   ok(!PP.upgradeTribe('슬라임').ok && !PP.upgradeWorkshop('lab').ok && RR.tribes['슬라임'] === 2, '전투 중 강화 막힘');
   const o = { plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById };
   let SS = WW.BSIM.create(o), trapEv = null, restoredOk = true;
@@ -386,6 +388,7 @@ let tutSample = null;
   ok(PP.tutorialSeen('build_trap') === true && PP.tutorialSeen('') === false, 'tutorialSeen');
   // 전투: 함정이 실제로 발동, 모든 분대가 CB를 지남
   ok(PP.startBattle().ok, '튜토리얼 전투 시작');
+  noDisarm(RR);   // 무작위로 '함정 해체꾼'(발동 -90%)이 걸리면 함정 검사가 가끔 실패하므로 고정
   const o = { plan: RR.plan, zones: RR.site.zones, units: RR.site.units, monById: PP.monById };
   let SS = WW.BSIM.create(o), traps = 0;
   for (let i = 0; i < 3000 && !SS.done; i++) WW.BSIM.step(SS, 0.1).forEach(e => { if (e.type === 'trap' && e.z === 'CB') traps++; });
