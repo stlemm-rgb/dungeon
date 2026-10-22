@@ -8,14 +8,18 @@
  *     던전 전투력 = B안: Σ(인계할 현장 부대 점수 U × 통과 비율 w) + Σ(함정 점수 T × w). 친위대·부대장·카드 제외 (powerOf)
  *  4) 납품 기준 5단계 (의뢰 데이터 stages): 단계마다 가치+전투력(+2층 전투력) 묶은 기준선. 순서대로 채우면 단계가 오르고(questUpdate, 한 번만 보상)
  *     5단계 = "의뢰 완료". 납품은 deliver()를 불러야 함(자동 납품 없음). 납품 직전에 지금 값으로 5단계를 다시 확인
- *  5) 의뢰 = 데모 고정 목록(BATTLE_DATA.QUESTS): 1층 의뢰(은발 마왕) -> 회사 레벨 2부터 2층 의뢰. 2층은 3단계에 열림(층 실제 구현은 2차)
+ *  5) 의뢰 = 데모 고정 목록(BATTLE_DATA.QUESTS): 1층 의뢰(은발 마왕) -> 회사 레벨 2부터 2층 의뢰. 2층은 3단계에 열림 (+ 추가 예산).
+ *     다 납품하면 settle -> leaveSettle() -> phase 'demoEnd' (데모 끝)
+ *  10) 2차: 세로 층 (zones.js useSite: 2층 구역 id는 '2E'·'2H'..., 열리면 1층 B = 계단) · 층별 출진 (site.deploy, 층마다 한도, 기본 자동 편성,
+ *     출진한 부대는 그 층 대기실에 나눠 섬 = arrange) · 퇴각(다음 주 쉼)·사망(큰 피해 때만, 첫 의뢰 없음, 친위대 불사)·전멸 무료 보충 ·
+ *     카드 위기(battle_sim.js 'crisis' 사건, 전투당 최대 2장) · 의뢰인 주간 지원금 · 주소 옵션 ?seed=
  *     회사 레벨(RUN.company) = 전투·단계·납품으로 쌓는 경험치형. 침입자 강함이 옛 명성 대신 참조
  *  6) 부대 = 같은 부족 몇 명 묶음 (RUN.site.squads, 현장마다 새로, 납품 때 의뢰인에게 인계). 친위대(RUN.guards)만 이름 있는 개체, 다음 현장 동행.
  *     능력치는 statOf(unit, key) 한곳: 기본 × 레벨 + 강화 + 장비 + 인챈트 (장비·인챈트는 빈 자리 0). 경험치 = 출진·참여 단위
  *  7) 고정 구역: 의뢰마다(quest.fixed), 짓기·바꾸기를 로직에서 거부
  *  8) 데모에서 끈 기능(BATTLE_DATA.DEMO_OFF): 광고 뽑기·광고/예고 대량 출현·일일/주간 업무·방치 보상·공방 — 지급 경로에서 거부
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만. 전투 안의 무작위는 plan.seed로 battle_sim.js가 굴림. 연출용 무작위는 shell.js fxRandom
- * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest)
+ * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest) · demoEnd = 데모 끝
  */
 (function () {
   'use strict';
@@ -59,21 +63,29 @@
   // ---------- 상태: RUN 하나 (객체 자체는 바뀌지 않고 안의 값만 바뀐다) ----------
   var RUN = {};
 
-  // 새 현장. q = 의뢰(없으면 의뢰 고르기 전 빈 현장). 판을 끼운 뒤(useBoard) 시설을 만든다
-  //  zones 구역별 시설 · fixed 고정 구역 { 구역: FIXED_ZONES id } · units 대기실 { 구역: [부대·친위대 id] } · squads 현장 부대 ·
-  //  budget 남은 의뢰 예산 · budgetStart 처음 예산 · spent 쓴 예산 · builds 예산을 쓴 건설 수 · value·power 저장 때 맞춰 둠 · floorsOpen 열린 층 수
+  // 새 현장. q = 의뢰(없으면 의뢰 고르기 전 빈 현장). 배치를 끼운 뒤(useSite: 판 + 층 수 + 열린 층) 시설을 만든다
+  //  zones 구역별 시설 (모든 층, 2층 구역 id는 '2E'·'2H'처럼 층 번호가 붙음) · fixed 고정 구역 { 구역: FIXED_ZONES id } ·
+  //  floors 의뢰 층 수 · floorsOpen 열린 층 수 · deploy 층별 출진 { '1': [부대·친위대 id], '2': [...] } (층마다 출진 한도) ·
+  //  pins 예전 placeUnit으로 고른 대기실 { id: 구역 } · auto 기본 자동 편성 켬 · rest 쉬는 부대 { id: 쉬는 주 } ·
+  //  units 대기실 배치 { 구역: [id] } (deploy에서 계산해 저장, 읽기 전용) · squads 현장 부대 ·
+  //  budget 남은 의뢰 예산 · budgetStart 처음 예산 · budgetAdded 단계 보상으로 늘어난 예산 · spent 쓴 예산 · builds 예산을 쓴 건설 수 · value·power 저장 때 맞춰 둠
   function freshSite(q) {
-    var b = ZONES.useBoard(q && q.board || ZONES.DEFAULT_BOARD);
+    var floors = q && q.floors > 1 ? q.floors | 0 : 1;
+    var b = ZONES.useSite(q && q.board || ZONES.DEFAULT_BOARD, floors, 1);
     var fixed = {}; Object.keys(q && q.fixed || {}).forEach(function (z) { fixed[z] = q.fixed[z]; });
     var zones = ZONES.defaultZones(fixed);
     Object.keys(fixed).forEach(function (z) { if (zones[z] !== ZONES.fixedFac(fixed[z])) delete fixed[z]; }); // 판에 없는 구역은 버림
     var site = { board: b, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
-      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, spent: 0, builds: 0, value: 0, power: 0, floorsOpen: 1 };
+      floors: floors, floorsOpen: 1, deploy: freshDeploy(floors), pins: {}, auto: true, rest: {},
+      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0 };
     if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (예산 0이어도 진행 가능)
       site.squads.push(newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true));
     }
     return site;
   }
+  function freshDeploy(floors) { var d = {}; for (var n = 1; n <= floors; n++) d[n] = []; return d; }
+  // 지금 현장의 판·층 배치를 ZONES에 끼운다 (불러오기·새 현장·층 열림 때)
+  function useSiteLayout() { var s = RUN.site; ZONES.useSite(s.board, s.floors || 1, s.floorsOpen || 1); }
   // 부대 하나: id 's'+번호, tribe 부족 id, count 인원, lv·exp 숙련도, free 무료 기본 부대인가
   function newSquad(site, tribe, count, free) {
     var sq = { id: 's' + site.nextSquadNo++, tribe: tribe, count: count, lv: squadStartLv(), exp: 0, free: !!free };
@@ -85,9 +97,16 @@
     return t[Math.min(t.length - 1, Math.max(0, lv - 1))];
   }
 
+  // 주소 옵션 ?seed=숫자: 새 게임 씨앗 고정 (저장이 없을 때·reset 때. 재현 검사용). 없거나 숫자가 아니면 null
+  function urlSeed() {
+    try {
+      var m = /[?&]seed=(-?\d+)/.exec(window.location && window.location.search || '');
+      return m ? parseInt(m[1], 10) | 0 : null;
+    } catch (e) { return null; }
+  }
   function freshRun() {
     return {
-      v: VERSION, seed: (Date.now() ^ 0x5bd1e995) | 0,
+      v: VERSION, seed: urlSeed() !== null ? urlSeed() : (Date.now() ^ 0x5bd1e995) | 0,
       week: 1, gold: BD.START.gold, gems: BD.START.gems, company: { lv: 1, exp: 0 },
       phase: 'choose', quest: null, offers: null, report: null,
       qid: 1, siteNo: 0, doneQuests: [],
@@ -138,7 +157,7 @@
     if (!Array.isArray(RUN.works)) RUN.works = [];
     if (!isObj(RUN.stats)) RUN.stats = { battles: 0, delivers: 0 };
     RUN.stats.battles = Math.max(0, RUN.stats.battles | 0); RUN.stats.delivers = Math.max(0, RUN.stats.delivers | 0);
-    if (['choose', 'play', 'settle'].indexOf(RUN.phase) < 0) RUN.phase = 'choose';
+    if (['choose', 'play', 'settle', 'demoEnd'].indexOf(RUN.phase) < 0) RUN.phase = 'choose';
     if (RUN.battling && (!RUN.bsave || typeof RUN.bsave !== 'object')) RUN.bsave = freshBattleSave();
     if (!RUN.battling) { RUN.battling = false; RUN.bsave = null; }
     var pf = isObj(RUN.prefs) ? RUN.prefs : (RUN.prefs = freshPrefs());
@@ -181,22 +200,40 @@
     if (!isObj(RUN.site) || !isObj(RUN.site.zones)) RUN.site = freshSite(RUN.phase === 'choose' ? null : RUN.quest);
     var st = RUN.site;
     if (!ZONES.hasBoard(st.board)) st.board = ZONES.DEFAULT_BOARD;
-    ZONES.useBoard(st.board);
+    st.floors = Math.max(1, Math.min(3, (st.floors | 0) || (RUN.quest && RUN.quest.floors) || 1));
+    st.floorsOpen = Math.max(1, Math.min(st.floors, st.floorsOpen | 0));
+    useSiteLayout();
+    var dz = ZONES.defaultZones({});   // 빠진 구역(예: 1차 저장의 2층)은 기본 시설로
+    Object.keys(dz).forEach(function (z) { if (!ZONES.FAC[st.zones[z]] || ZONES.facFor(z).concat([dz[z]]).indexOf(st.zones[z]) < 0 && !ZONES.isFixedFac(st.zones[z])) st.zones[z] = dz[z]; });
+    Object.keys(st.zones).forEach(function (z) { if (!(z in dz)) delete st.zones[z]; });
     if (!isObj(st.fixed)) st.fixed = {};
-    Object.keys(st.fixed).forEach(function (z) { st.zones[z] = ZONES.fixedFac(st.fixed[z]); });   // 고정 구역은 늘 그대로
+    Object.keys(st.fixed).forEach(function (z) { if (z in dz && ZONES.FAC[ZONES.fixedFac(st.fixed[z])]) st.zones[z] = ZONES.fixedFac(st.fixed[z]); else delete st.fixed[z]; });   // 고정 구역은 늘 그대로
+    Object.keys(st.zones).forEach(function (z) { if (ZONES.isFixedFac(st.zones[z]) && !st.fixed[z]) st.zones[z] = dz[z]; });
     if (!Array.isArray(st.squads)) st.squads = [];
     st.squads = st.squads.filter(function (s) { return isObj(s) && typeof s.id === 'string' && tribeData(s.tribe); });
     st.squads.forEach(function (s) { s.count = Math.max(0, Math.min(BD.MON_SQUAD.cap, s.count | 0)); s.free = s.free === true; fixLevel(s); });
     if (typeof st.nextSquadNo !== 'number') st.nextSquadNo = st.squads.length + 1;
-    ['budget', 'budgetStart', 'spent', 'builds'].forEach(function (k) { st[k] = nonNeg(st[k]); });
-    st.floorsOpen = Math.max(1, st.floorsOpen | 0);
-    if (!isObj(st.units)) st.units = {};
-    var seen = {};
-    Object.keys(st.units).forEach(function (z) {
-      var k = st.zones[z], slots = k ? ZONES.slotsOf(k, z) : 0;
-      var list = (Array.isArray(st.units[z]) ? st.units[z] : []).filter(function (id) { var ok = !seen[id] && !!rawUnit(id); seen[id] = true; return ok; }).slice(0, slots);
-      if (list.length) st.units[z] = list; else delete st.units[z];
-    });
+    ['budget', 'budgetStart', 'budgetAdded', 'spent', 'builds'].forEach(function (k) { st[k] = nonNeg(st[k]); });
+    st.auto = st.auto !== false;
+    if (!isObj(st.rest)) st.rest = {};
+    Object.keys(st.rest).forEach(function (id) { if (!rawUnit(id) || typeof st.rest[id] !== 'number' || st.rest[id] < RUN.week) delete st.rest[id]; });
+    if (!isObj(st.pins)) st.pins = {};
+    // 층별 출진: 없으면(1차 저장) 대기실 배치(units)에서 옮긴다. 중복·없는 부대·잠긴 층은 버림 (한도는 arrange가 맞춤)
+    if (!isObj(st.deploy)) {
+      st.deploy = freshDeploy(st.floors);
+      if (isObj(st.units)) Object.keys(st.units).forEach(function (z) {
+        (Array.isArray(st.units[z]) ? st.units[z] : []).forEach(function (id) { var n = ZONES.floorOf(z); if (n) { st.deploy[n].push(id); st.pins[id] = z; } });
+      });
+    }
+    var seen = {}, dep = freshDeploy(st.floors);
+    for (var n = 1; n <= st.floors; n++) {
+      dep[n] = (Array.isArray(st.deploy[n]) ? st.deploy[n] : []).filter(function (id) {
+        var u = rawUnit(id), ok = !!u && !seen[id] && n <= st.floorsOpen; seen[id] = true; return ok;
+      });
+    }
+    st.deploy = dep;
+    Object.keys(st.pins).forEach(function (id) { if (!seen[id] || typeof st.pins[id] !== 'string') delete st.pins[id]; });
+    arrange();
     // 튜토리얼
     var tu = RUN.tutorial;
     if (!isObj(tu)) tu = RUN.tutorial = { on: false, seen: {} };
@@ -289,9 +326,11 @@
   function unitView(u) {
     if (!u) return null;
     var t = tribeData(u.tribe), g = isGuard(u), st = statsOf(u);
+    var rest = isResting(u.id);
     return { id: u.id, kind: g ? 'guard' : 'squad', tribe: t.id, tribeName: t.name, name: g ? u.name : t.name + ' 부대',
       count: g ? 1 : u.count, cap: g ? 1 : BD.MON_SQUAD.cap, lv: u.lv, exp: u.exp, need: levelNeed(u.lv),
-      hp: st.hp, atk: st.atk, def: st.def, free: !!u.free, placed: placedZone(u.id) };
+      hp: st.hp, atk: st.atk, def: st.def, free: !!u.free, placed: placedZone(u.id),
+      floor: deployedFloor(u.id), resting: rest, restWeek: rest ? RUN.site.rest[u.id] : 0 };
   }
   function unitById(id) { return unitView(rawUnit(id)); }
   function placedZone(id) {
@@ -301,15 +340,136 @@
   }
   function squads() { return (RUN.site ? RUN.site.squads : []).map(unitView); }
   function guards() { return RUN.guards.map(unitView); }
+  // 출진 중인 부대·친위대 id (모든 층)
   function usedIds() {
-    var used = {};
-    Object.keys(RUN.site.units).forEach(function (z) { RUN.site.units[z].forEach(function (id) { used[id] = true; }); });
+    var used = {}, d = RUN.site && RUN.site.deploy || {};
+    Object.keys(d).forEach(function (n) { d[n].forEach(function (id) { used[id] = true; }); });
     return used;
   }
-  // 대기실에 안 든 부대·친위대 (보기 목록)
+  // 출진 안 한 부대·친위대 (보기 목록. 쉬는 부대도 resting으로 보임)
   function idleUnits() {
     var used = usedIds();
     return RUN.site.squads.concat(RUN.guards).filter(function (u) { return !used[u.id] && (isGuard(u) || u.count > 0); }).map(unitView);
+  }
+
+  // ---------- 층별 출진 (2차) ----------
+  //  부대·친위대를 층에 출진시킨다 (site.deploy). 층마다 출진 한도 = min(FLOOR_CAP[층], 그 층 대기실 자리 합). 친위대도 한 칸 차지. 중복 출진 없음.
+  //  출진한 부대는 그 층의 대기실 구역들에 나눠 선다 (arrange: 침입자가 많이 오는 대기실부터, 덜 찬 곳으로. placeUnit으로 고른 곳(pins)이 먼저).
+  //  기본 자동 편성(site.auto, 처음 켬): 빈 칸이 있으면 쉬지 않는 부대를 전투력 큰 순으로 채운다 (부대 먼저, 그다음 친위대). 손으로 바꾸면 꺼짐
+  //  쉬는 부대(site.rest): 퇴각한 다음 주 전투에 안 나감 (자리는 그대로, 전투력에는 셈). 그 주가 지나면 저절로 풀림
+  function deployedFloor(id) {
+    var d = RUN.site && RUN.site.deploy || {};
+    for (var n in d) { if (d[n].indexOf(id) >= 0) return +n; }
+    return 0;
+  }
+  function isResting(id) { var r = RUN.site && RUN.site.rest; return !!(r && typeof r[id] === 'number' && r[id] >= RUN.week); }
+  function floorCapData(n) { var t = BD.FLOOR_CAP || {}; return t[n] !== undefined ? t[n] : t[1] || 3; }
+  // n층 출진 한도 (zones 기준). 잠긴 층은 0
+  function floorCap(n, zones) {
+    if (!RUN.site || n > RUN.site.floorsOpen) return 0;
+    return Math.min(floorCapData(n), ZONES.denSlots(zones || RUN.site.zones, n));
+  }
+  // 편성 계산 (상태를 바꾸지 않음): 한도 맞추기 -> (auto면) 빈 칸 채우기 -> 대기실에 나눠 서기.
+  //  돌려주는 값 { deploy, units, back(한도가 줄어 대기로 돌아간 수) }
+  function formation(zones, deploy, pins, auto) {
+    var st = RUN.site, dep = {}, back = 0, used = {};
+    for (var n = 1; n <= st.floors; n++) {
+      var cap = floorCap(n, zones), list = (deploy[n] || []).filter(function (id) {
+        var u = rawUnit(id), ok = !!u && !used[id] && (isGuard(u) || u.count > 0); used[id] = true; return ok;
+      });
+      back += Math.max(0, list.length - cap);
+      dep[n] = list.slice(0, cap);
+      list.slice(cap).forEach(function (id) { delete used[id]; });
+    }
+    if (auto) {
+      var cand = st.squads.filter(function (s) { return !used[s.id] && s.count > 0 && !isResting(s.id); })
+        .sort(function (a, b) { return squadScore(b) - squadScore(a); })
+        .concat(RUN.guards.filter(function (g) { return !used[g.id] && !isResting(g.id); }).sort(function (a, b) { return b.lv - a.lv; }));
+      cand.forEach(function (u) {
+        var best = 0, room = 0;
+        for (var n = 1; n <= st.floorsOpen; n++) { var r = floorCap(n, zones) - dep[n].length; if (r > room) { room = r; best = n; } }
+        if (best) { dep[best].push(u.id); used[u.id] = true; }
+      });
+    }
+    // 대기실에 나눠 서기
+    var units = {}, w = null;
+    for (var f = 1; f <= st.floors; f++) {
+      if (!dep[f].length) continue;
+      w = w || ZONES.passRatios(zones, {});
+      var dens = ZONES.densOf(zones, f);
+      dens.sort(function (a, b) { return (w[b] || 0) - (w[a] || 0); });   // 안정 정렬: 같으면 길 순서
+      var free = {}; dens.forEach(function (z) { free[z] = ZONES.slotsOf(zones[z], z); units[z] = []; });
+      var rest = [];
+      dep[f].forEach(function (id) { var z = pins && pins[id]; if (z && free[z] > 0) { units[z].push(id); free[z]--; } else rest.push(id); });
+      rest.forEach(function (id) {
+        var pick = null;
+        dens.forEach(function (z) { if (free[z] > 0 && (!pick || units[z].length < units[pick].length)) pick = z; });
+        if (pick) { units[pick].push(id); free[pick]--; }
+      });
+      dens.forEach(function (z) { if (!units[z].length) delete units[z]; });
+    }
+    return { deploy: dep, units: units, back: back };
+  }
+  // 지금 현장 편성 다시 맞추기 (site.deploy·site.units). 바뀐 뒤마다 부른다
+  function arrange() {
+    var st = RUN.site;
+    if (!st || !st.deploy) return;
+    var fm = formation(st.zones, st.deploy, st.pins, st.auto && RUN.phase === 'play');
+    st.deploy = fm.deploy; st.units = fm.units;
+    var on = usedIds();
+    Object.keys(st.pins).forEach(function (id) { if (!on[id] || placedZone(id) !== st.pins[id]) delete st.pins[id]; });
+  }
+  // 층 보기: { n, open, cap(지금 한도), capMax(데이터 한도), slots(대기실 자리), dens[구역], units[보기], fighting(이번 주 싸울 수), lockAt(열리는 단계) }
+  function floorInfo(n) {
+    var st = RUN.site;
+    if (!st || n < 1 || n > st.floors) return null;
+    var open = n <= st.floorsOpen, list = (st.deploy[n] || []).map(unitById);
+    var lockAt = 0, q = RUN.quest;
+    if (!open && q) q.stages.forEach(function (s, i) { if (!lockAt && s.opens >= n) lockAt = i + 1; });
+    return { n: n, open: open, cap: floorCap(n), capMax: floorCapData(n), slots: ZONES.denSlots(st.zones, n), dens: ZONES.densOf(st.zones, n),
+      units: list, fighting: list.filter(function (u) { return !u.resting; }).length, lockAt: lockAt, power: open ? floorPower(n) : 0 };
+  }
+  function floorsInfo() { var o = []; for (var n = 1; n <= (RUN.site ? RUN.site.floors : 0); n++) o.push(floorInfo(n)); return o; }
+  // 층에 출진 (공짜). 다른 층에 있던 부대면 옮긴다 (중복 출진 없음). 손으로 바꾸면 자동 편성 꺼짐
+  function sortieUnit(id, floor) {
+    var why = canEdit();
+    if (why) return { ok: false, msg: why };
+    var st = RUN.site, n = floor | 0, u = rawUnit(id);
+    if (!u || (!isGuard(u) && u.count <= 0)) return { ok: false, msg: '출진할 수 없는 부대' };
+    if (n < 1 || n > st.floors) return { ok: false, msg: '없는 층이에요' };
+    if (n > st.floorsOpen) return { ok: false, msg: n + '층은 아직 잠겨 있어요' };
+    if (isResting(id)) return { ok: false, msg: unitView(u).name + '은(는) 쉬는 중이에요 (다음 주 복귀)' };
+    var from = deployedFloor(id);
+    if (from === n) return { ok: false, msg: '이미 ' + n + '층에 출진 중이에요' };
+    var cap = floorCap(n);
+    if (!cap) return { ok: false, msg: n + '층에 몬스터 대기실이 없어요' };
+    if (st.deploy[n].length >= cap) return { ok: false, msg: n + '층 출진 한도(' + cap + ')가 찼어요' };
+    if (from) st.deploy[from] = st.deploy[from].filter(function (x) { return x !== id; });
+    delete st.pins[id];
+    st.deploy[n].push(id);
+    st.auto = false;
+    var stages = afterChange();
+    return { ok: true, msg: unitView(u).name + ' ' + n + '층 출진' + (from ? ' (' + from + '층에서 옮김)' : ''), stages: stages };
+  }
+  // 출진 해제 (대기로)
+  function withdrawUnit(id) {
+    var why = canEdit();
+    if (why) return { ok: false, msg: why };
+    var st = RUN.site, from = deployedFloor(id), u = rawUnit(id);
+    if (!from) return { ok: false, msg: '출진 중이 아니에요' };
+    st.deploy[from] = st.deploy[from].filter(function (x) { return x !== id; });
+    delete st.pins[id];
+    st.auto = false;
+    var stages = afterChange();
+    return { ok: true, msg: (u ? unitView(u).name : '부대') + ' 대기로', stages: stages };
+  }
+  // 기본 자동 편성 켜기·끄기 (켜면 바로 빈 칸을 채움)
+  function setAutoDeploy(on) {
+    var why = canEdit();
+    if (why) return { ok: false, msg: why };
+    RUN.site.auto = !!on;
+    var stages = afterChange();
+    return { ok: true, msg: on ? '자동 편성 켬' : '자동 편성 끔', stages: stages };
   }
 
   // ---------- 던전 가치·전투력 ----------
@@ -329,26 +489,29 @@
     });
     return o;
   }
-  // 던전 전투력 B안 (+ 구역별 조각). floor = 층 (지금은 1층뿐. 2층 전투력은 2차에서)
+  // 던전 전투력 B안 (+ 구역별 조각 + 층별 합). 통과 비율은 층마다 그 층 입구 기준 (zones.js passRatios). 열린 층만
+  //  units = 대기실 배치 (출진 한도 안의 편성. 쉬는 부대도 인계 편성이라 셈). 친위대는 뺀다
   function powerParts(zones, units) {
-    var hand = handoverUnits(units), w = ZONES.passRatios(zones, hand), parts = [], total = 0;
+    var hand = handoverUnits(units), w = ZONES.passRatios(zones, hand), parts = [], total = 0, fl = {};
     Object.keys(zones).forEach(function (z) {
-      var f = ZONES.FAC[zones[z]];
-      if (!f || z === 'Y' || !ZONES.CELLS[z]) return;
+      var f = ZONES.FAC[zones[z]], n = ZONES.floorOf(z);
+      if (!f || z === 'Y' || !ZONES.CELLS[z] || !ZONES.floorOpen(n)) return;
       var r = w[z] || 0, score = 0;
       if (f.kind === 'trap') score = ZONES.trapScore(z, workshopEffect('lab'));
       else if (f.kind === 'den') (hand[z] || []).forEach(function (id) { score += squadScore(rawUnit(id)); });
       else return;
       if (!score) return;
-      parts.push({ z: z, kind: f.kind, score: Math.round(score * 10) / 10, w: Math.round(r * 1000) / 1000, power: Math.round(score * r * 10) / 10 });
-      total += score * r;
+      parts.push({ z: z, floor: n, kind: f.kind, score: Math.round(score * 10) / 10, w: Math.round(r * 1000) / 1000, power: Math.round(score * r * 10) / 10 });
+      total += score * r; fl[n] = (fl[n] || 0) + score * r;
     });
-    return { total: Math.floor(total + 1e-6), parts: parts };
+    var floors = {}; Object.keys(fl).forEach(function (n) { floors[n] = Math.floor(fl[n] + 1e-6); });
+    return { total: Math.floor(total + 1e-6), parts: parts, floors: floors };
   }
   function powerOf(zones, units) { return powerParts(zones, units).total; }
   function sitePower() { return powerOf(RUN.site.zones, RUN.site.units); }
   function powerInfo() { return powerParts(RUN.site.zones, RUN.site.units); }
-  function floorPower(floor) { return floor === 1 ? sitePower() : 0; }   // 2층 이상은 2차 (지금은 0)
+  // n층 전투력 (그 층 입구 기준 통과 비율). 잠긴 층은 0
+  function floorPower(floor) { return powerParts(RUN.site.zones, RUN.site.units).floors[floor] || 0; }
   // 침입자 강함에 쓰는 위협 점수 = 가치 + 전투력
   function threatOf() { return siteValue() + sitePower(); }
 
@@ -377,13 +540,13 @@
       id: RUN.qid++, key: d.key, kind: 'normal', grade: '', name: d.name, tutorial: d.key === BD.QUESTS[0].key,
       client: { name: d.client.name, kind: d.client.kind }, attr: attrView(d.attr), floors: d.floors, board: d.board,
       fixed: JSON.parse(JSON.stringify(d.fixed || {})), budget: d.budget, reward: JSON.parse(JSON.stringify(d.reward)),
-      stages: JSON.parse(JSON.stringify(d.stages)), stage: 0, stageWeeks: [], startWeek: 0
+      stages: JSON.parse(JSON.stringify(d.stages)), stage: 0, stageWeeks: [], startWeek: 0, noDeath: !!d.noDeath
     };
   }
   // 후보: 데모 의뢰 중 회사 레벨이 되고 아직 안 끝낸 것 (순서대로). 한 번 만들면 저장 (새로고침해도 같음). 다 끝냈으면 []
   function offerQuests() {
     if (RUN.offers && RUN.offers.length) return RUN.offers;
-    if (RUN.phase === 'play') return [];
+    if (RUN.phase === 'play' || RUN.phase === 'demoEnd') return [];
     var list = BD.QUESTS.filter(function (d) { return d.minCompanyLv <= RUN.company.lv && RUN.doneQuests.indexOf(d.key) < 0; }).map(makeQuest);
     RUN.offers = list;
     save();
@@ -398,7 +561,8 @@
   // ---------- 납품 기준 ----------
   function curValues() { return { value: siteValue(), power: sitePower(), floor2: floorPower(2) }; }
   function meets(stg, cur) { return cur.value >= stg.value && cur.power >= stg.power && (!stg.floor2 || cur.floor2 >= stg.floor2); }
-  // 단계 올리기: 지금 값이 다음 단계를 채우면 순서대로 올림 (한 번만, 회사 경험치 + 층 열림). 새로 오른 단계 번호 목록
+  // 단계 올리기: 지금 값이 다음 단계를 채우면 순서대로 올림 (한 번만, 회사 경험치 + 층 열림 + 추가 예산). 새로 오른 단계 번호 목록
+  //  층이 열리면 배치를 다시 끼우고(계단 연결, 보물방이 아래층으로) 편성도 다시 맞춘다
   function questUpdate() {
     var q = RUN.quest, out = [];
     if (RUN.phase !== 'play' || !q) return out;
@@ -407,7 +571,13 @@
       var stg = q.stages[q.stage];
       q.stage++; q.stageWeeks.push(RUN.week); out.push(q.stage);
       addCompanyExp(BD.COMPANY.gain.stage);
-      if (stg.opens) RUN.site.floorsOpen = Math.max(RUN.site.floorsOpen, stg.opens);
+      if (stg.budget > 0) { RUN.site.budget += stg.budget; RUN.site.budgetAdded += stg.budget; }
+      if (stg.opens > RUN.site.floorsOpen) {
+        RUN.site.floorsOpen = Math.min(RUN.site.floors, stg.opens);
+        useSiteLayout();
+        arrange();
+        cur = curValues();
+      }
     }
     return out;
   }
@@ -432,7 +602,7 @@
       stage: q.stage, total: total, complete: complete, canDeliver: !why, why: why, cur: cur,
       next: nx ? { stage: q.stage + 1, value: nx.value, power: nx.power, floor2: nx.floor2 || 0, opens: nx.opens || 0 } : null,
       floors: q.floors, floorsOpen: RUN.site.floorsOpen, floorLock: lock, line: line,
-      budget: budgetLeft(), budgetStart: RUN.site.budgetStart
+      budget: budgetLeft(), budgetStart: RUN.site.budgetStart, budgetAdded: RUN.site.budgetAdded || 0
     };
   }
   function checkQuest() { var p = questProgress(); return !!(p && p.canDeliver); }
@@ -473,11 +643,13 @@
         RUN.guards.push(makeGuard(s));
       });
       RUN.report = null;
+      RUN.tutorial.on = false;   // 정산 안내를 본 뒤 새 의뢰를 고르는 순간 튜토리얼 끝
     }
     found.startWeek = RUN.week;
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
     RUN.siteNo++;
-    RUN.site = freshSite(found);   // 판도 여기서 바꿔 끼운다
+    RUN.site = freshSite(found);   // 판·층 배치도 여기서 바꿔 끼운다
+    arrange();
     questUpdate();
     ensurePlan();
     save();
@@ -511,8 +683,7 @@
     rep.work = work; rep.worksEffectNew = !hadEffect && worksBonus() > 0;
     RUN.doneQuests.push(q.key);
     RUN.stats.delivers++;
-    choreAdd('deliver');
-    RUN.tutorial.on = false;
+    choreAdd('deliver');   // 튜토리얼은 여기서 끄지 않는다 (정산 화면 'deliver' 안내가 떠야 함). 다음 의뢰를 고를 때(pickQuest)·데모 끝(leaveSettle) 때 끔
     // 인계 표 (화면 표시용 글): 남는 것 · 의뢰인에게 넘어가는 것
     rep.carry = ['회사 금 ' + comma(RUN.gold), '보석 ' + comma(RUN.gems), '회사 레벨 ' + RUN.company.lv, '친위대 (최대 ' + BD.GUARD.max + ', 다음 현장 동행)', '작품집 ' + RUN.works.length + '점'];
     var tb = Object.keys(RUN.tribes).filter(function (n) { return RUN.tribes[n] > 0; }).map(function (n) { return tribeData(n).name + ' +' + RUN.tribes[n]; });
@@ -524,7 +695,24 @@
     RUN.report = rep; RUN.quest = null; RUN.phase = 'settle'; RUN.plan = null;
     RUN.offers = null;
     offerQuests();   // 같은 화면에서 고를 다음 의뢰 후보 (안에서 저장). 데모 의뢰를 다 끝냈으면 []
+    rep.demoEnd = !RUN.offers.length;   // true면 다음 의뢰가 없음 -> 정산 화면을 닫을 때 leaveSettle()
     return rep;
+  }
+  // ---------- 데모 끝 ----------
+  // 데모 의뢰를 다 납품하면 settle 화면에 고를 의뢰가 없다. leaveSettle()로 phase 'demoEnd'(데모 끝)로 넘어간다.
+  //  demoEnd: 진행 중 의뢰 없음, 다음 주·건설·출진 불가 (canEdit·startBattle이 거절), 회사·군단·작품집은 볼 수 있음. 새 게임은 reset()
+  function demoState() {
+    var noMore = !BD.QUESTS.some(function (d) { return RUN.doneQuests.indexOf(d.key) < 0; });
+    var end = RUN.phase === 'demoEnd' || (RUN.phase === 'settle' && noMore);
+    return { end: end, phase: RUN.phase, canLeave: RUN.phase === 'settle' && noMore,
+      msg: end ? '데모는 여기까지예요. 플레이해 주셔서 고마워요!' : '' };
+  }
+  function leaveSettle() {
+    var d = demoState();
+    if (!d.canLeave) return { ok: false, msg: RUN.phase === 'settle' ? '다음 의뢰를 골라 주세요' : '정산 중이 아니에요', phase: RUN.phase };
+    RUN.phase = 'demoEnd'; RUN.offers = null; RUN.tutorial.on = false;
+    save();
+    return { ok: true, msg: d.msg, phase: RUN.phase };
   }
 
   // ---------- 편집 공통 ----------
@@ -536,20 +724,20 @@
     return '';
   }
   function budgetLeft() { return RUN.site && RUN.site.budget > 0 ? RUN.site.budget : 0; }
-  function afterChange() { var st = questUpdate(); ensurePlan(); save(); return st; }
+  function afterChange() { arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
 
   // ---------- 건설 (의뢰 예산만) ----------
   // 구역 z를 시설 k로 지으면: 비용·가치·전투력 변화·막히는 이유. 미리보기 (아무것도 바꾸지 않음)
+  //  units = 지은 뒤의 대기실 배치 (출진 한도가 줄면 back명이 대기로, 자동 편성이 켜져 있으면 빈 칸이 채워진 모습). floor = 그 구역의 층
   function previewBuild(z, k) {
     if (RUN.site && RUN.site.fixed && RUN.site.fixed[z]) return { ok: false, why: '고정 구역이라 바꿀 수 없어요', fixed: true };
-    var f = ZONES.FAC[k];
+    var f = ZONES.FAC[k], fl = ZONES.floorOf(z);
     if (!f || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) return { ok: false, why: '지을 수 없는 시설' };
+    if (!ZONES.floorOpen(fl)) return { ok: false, why: fl + '층은 아직 잠겨 있어요', floor: fl, locked: true };
     var cur = RUN.site.zones[z], bc = buildCostInfo(k, z), cost = bc.cost;
     var zones2 = {}; Object.keys(RUN.site.zones).forEach(function (q) { zones2[q] = RUN.site.zones[q]; });
     zones2[z] = k;
-    var units2 = {}; Object.keys(RUN.site.units).forEach(function (q) { units2[q] = RUN.site.units[q].slice(); });
-    var slots = ZONES.slotsOf(k, z), back = 0;
-    if (units2[z]) { back = Math.max(0, units2[z].length - slots); units2[z] = units2[z].slice(0, slots); if (!units2[z].length) delete units2[z]; }
+    var fm = formation(zones2, RUN.site.deploy, RUN.site.pins, RUN.site.auto), units2 = fm.units, back = fm.back;
     var why = canEdit();
     if (!why && cur === k) why = '이미 이 시설이에요';
     if (!why && cost > budgetLeft()) why = '의뢰 예산 ' + (cost - budgetLeft()) + ' 모자람';
@@ -557,7 +745,7 @@
       ok: !why, why: why, cost: cost, baseCost: bc.base, discount: bc.discount, counts: cost > 0,
       budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
       powerNow: sitePower(), powerAfter: powerOf(zones2, units2),
-      back: back, zones: zones2, units: units2, from: cur
+      back: back, zones: zones2, units: units2, from: cur, floor: fl
     };
   }
   function buildZone(z, k) {
@@ -565,15 +753,16 @@
     if (!p.ok) return { ok: false, msg: p.why };
     RUN.site.budget -= p.cost;      // 의뢰 예산만 (회사 금 안 씀, 환불 없음)
     RUN.site.spent += p.cost;
-    RUN.site.zones[z] = k;
-    RUN.site.units = p.units;
+    RUN.site.zones[z] = k;          // 편성(한도·대기실 나눠 서기)은 afterChange -> arrange가 맞춤
     if (p.counts) { RUN.site.builds++; choreAdd('build'); }
     var stages = afterChange();
     var dv = p.valueAfter - p.valueNow;
     return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (예산 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')', stages: stages };
   }
+  // 건설비: 시설 비용 × 층 배율(BATTLE_DATA.FLOOR_BUILD_MUL, 깊은 층이 비쌈) - 공방 할인(데모에서 꺼짐)
   function buildCostInfo(k, z) {
-    var base = ZONES.costOf(k, z), rate = workshopEffect('build');
+    var mul = (BD.FLOOR_BUILD_MUL || {})[ZONES.floorOf(z)] || 1;
+    var base = Math.round(ZONES.costOf(k, z) * mul), rate = workshopEffect('build');
     var discount = Math.min(base, Math.round(base * rate));
     return { base: base, discount: discount, cost: base - discount };
   }
@@ -619,29 +808,29 @@
     return { ok: true, msg: tribeData(s.tribe).name + ' 부대 보충 (예산 -' + inf.cost + ', ' + s.count + '/' + BD.MON_SQUAD.cap + '명)', stages: stages };
   }
 
-  // ---------- 대기실 배치 (공짜) ----------
+  // ---------- 대기실 배치 (예전 방식, 호환) ----------
+  // placeUnit(z, id) = 그 대기실의 층에 출진 + 그 대기실을 고름(pins). removeUnit(z, i) = 그 자리 부대 출진 해제. 둘 다 자동 편성을 끔
   function placeUnit(z, id) {
     var why = canEdit();
     if (why) return { ok: false, msg: why };
-    var k = RUN.site.zones[z], slots = k ? ZONES.slotsOf(k, z) : 0, us = RUN.site.units[z] || [];
+    var st = RUN.site, k = st.zones[z], slots = k ? ZONES.slotsOf(k, z) : 0, us = st.units[z] || [], n = ZONES.floorOf(z);
     if (!slots) return { ok: false, msg: '몬스터 대기실이 아니에요' };
+    if (!ZONES.floorOpen(n)) return { ok: false, msg: n + '층은 아직 잠겨 있어요' };
     if (us.length >= slots) return { ok: false, msg: '자리가 없어요' };
     var u = rawUnit(id);
     if (!u || usedIds()[id] || (!isGuard(u) && u.count <= 0)) return { ok: false, msg: '넣을 수 없는 부대' };
-    RUN.site.units[z] = us.concat([id]);
+    if (isResting(id)) return { ok: false, msg: unitView(u).name + '은(는) 쉬는 중이에요 (다음 주 복귀)' };
+    if (st.deploy[n].length >= floorCap(n)) return { ok: false, msg: n + '층 출진 한도(' + floorCap(n) + ')가 찼어요' };
+    st.deploy[n].push(id); st.pins[id] = z; st.auto = false;
     var stages = afterChange();
     return { ok: true, msg: unitView(u).name + ' 출진', stages: stages };
   }
   function removeUnit(z, index) {
-    var why = canEdit();
+    var why = canEdit(), us = RUN.site.units[z] || [];
     if (why) return { ok: false, msg: why };
-    var us = RUN.site.units[z] || [];
     if (us[index] === undefined) return { ok: false, msg: '뺄 부대가 없어요' };
-    var u = unitById(us[index]);
-    RUN.site.units[z] = us.slice(0, index).concat(us.slice(index + 1));
-    if (!RUN.site.units[z].length) delete RUN.site.units[z];
-    afterChange();
-    return { ok: true, msg: (u ? u.name : '부대') + ' 대기로' };
+    var r = withdrawUnit(us[index]);
+    return { ok: r.ok, msg: r.msg };
   }
   // 문 위 숫자 미리 보기
   function forecast(zones, units) { return ZONES.forecast(zones || RUN.site.zones, units || RUN.site.units, ZONES.PREVIEW_INVADERS); }
@@ -705,11 +894,16 @@
     save();
     return { ok: true, msg: '광고 보상: 이번 주 모험가 대량 출현!' };
   }
-  // 이벤트 카드 규칙 (B안 위기 때만 최대 2장. 위기 감지는 2차): { mode, maxPerBattle, crisisProgress }
-  function cardRule() { var c = BD.CARD_RULE; return { mode: c.mode, maxPerBattle: c.maxPerBattle, crisisProgress: c.crisisProgress }; }
+  // 이벤트 카드 규칙 (B안: 위기 때만, 전투 한 번(= 한 주)에 최대 maxPerBattle장). 위기 감지는 battle_sim.js (사건 'crisis').
+  //  { mode, maxPerBattle, crisisProgress(보물방 근접으로 치는 진행도 %), kinds[{ id, label, text }] }. 배속·재접속과 상관없이 같은 제한 (횟수는 전투 상태 S 안에 저장됨)
+  function cardRule() {
+    var c = BD.CARD_RULE;
+    return { mode: c.mode, maxPerBattle: c.maxPerBattle, crisisProgress: c.crisisProgress,
+      kinds: (c.kinds || []).map(function (k) { return { id: k.id, label: k.label, text: k.text }; }) };
+  }
 
   // ---------- 다음 주 = 이번 주 전투 시작 ----------
-  // 언제든 진행 가능 (예산 0·건설 0이어도. 무료 기본 부대)
+  // 언제든 진행 가능 (의뢰 예산 0·건설 0이어도. 무료 기본 부대). msgs = 알림 (막지 않음): 싸울 부대가 없음 · 쉬는 부대
   function startBattle() {
     if (RUN.phase !== 'play') return { ok: false, msgs: ['진행 중인 의뢰가 없어요'] };
     if (RUN.battling) return { ok: true, plan: RUN.plan, msgs: [] };
@@ -717,7 +911,14 @@
     RUN.battling = true;
     RUN.bsave = freshBattleSave();
     save();
-    return { ok: true, plan: RUN.plan, msgs: [] };
+    return { ok: true, plan: RUN.plan, msgs: battleNotes() };
+  }
+  function battleNotes() {
+    var out = [], used = usedIds(), resting = [], fighting = 0;
+    Object.keys(used).forEach(function (id) { if (isResting(id)) resting.push(unitById(id).name); else fighting++; });
+    if (!fighting) out.push(ZONES.summary(RUN.site.zones, {}, null).den ? '출진한 부대가 없어요 (현장에서 층에 출진시킬 수 있어요)' : '몬스터 대기실이 없어서 부대가 싸울 자리가 없어요 (대기실을 지으면 기본 부대가 자동으로 출진해요)');
+    if (resting.length) out.push('쉬는 부대: ' + resting.join(', ') + ' (이번 주 전투에 안 나가요)');
+    return out;
   }
   function battlePlan() { return RUN.battling ? RUN.plan : null; }
   function battleSave() { return RUN.battling ? RUN.bsave : null; }
@@ -736,21 +937,30 @@
     RUN.prefs.cards = Math.max(0, Math.min(BD.CARD_AT.length, n | 0));
     save();
   }
-  // 전투 입력 (battle.js가 BSIM.create에 그대로 넘김)
-  function battleInput(plan) { return { plan: plan || RUN.plan, zones: RUN.site.zones, units: RUN.site.units, unitById: unitById }; }
+  // 전투 입력 (battle.js가 BSIM.create에 그대로 넘김). units = 대기실 배치에서 쉬는 부대를 뺀 것 (이번 주 싸우는 부대만). goal = 보물방 구역
+  function battleInput(plan) {
+    var us = {};
+    Object.keys(RUN.site.units).forEach(function (z) {
+      var l = RUN.site.units[z].filter(function (id) { return !isResting(id); });
+      if (l.length) us[z] = l;
+    });
+    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal() };
+  }
 
   // ---------- 전투 결과 반영 ----------
-  // res = battle_sim.js result { kills, porterKills, total, squads, gold, gems(소수), exp, reached, retreated, timeout, loot, damage, deployed, fought }
+  // res = battle_sim.js result { kills, porterKills, total, squads, gold, gems(소수), exp, reached, retreated, timeout, loot, damage, deployed, fought, monRetreat, crises }
   //  회사 금 += 이번 전투 금 - 약탈(이번 전투 금 안에서만). 수리비 없음(D1). 경험치 = 출진 deploy + 실제로 싸웠으면 fight (현장 부대는 작품집 효과 +%)
+  //  퇴각(monRetreat): 다음 주 쉼. 큰 피해로 퇴각한 부대만 쓰러진 인원마다 사망 확률 (첫 의뢰 noDeath는 없음, 친위대 불사). 숙련도·레벨은 그대로.
+  //  인원이 0이 된 부대(전멸)는 다음 주에 기본 인원 무료 보충
   function applyBattle(res) {
     if (RUN.phase !== 'play' || !RUN.battling) return null;
-    var msgs = [], p = RUN.plan;
+    var msgs = [], p = RUN.plan, st = RUN.site;
     var goldBefore = RUN.gold, gemsBefore = RUN.gems, compBefore = company();
     var gold = Math.max(0, Math.round(res.gold || 0)), gems = Math.max(0, Math.floor(res.gems || 0));
     var loot = Math.min(Math.max(0, Math.round(res.loot || 0)), gold);   // 약탈은 이번 전투에서 번 금 안에서만
     RUN.gold += gold - loot;
     RUN.gems += gems;
-    var deployed = Array.isArray(res.deployed) ? res.deployed : Object.keys(usedIds());
+    var deployed = Array.isArray(res.deployed) ? res.deployed : Object.keys(usedIds()).filter(function (id) { return !isResting(id); });
     var fought = Array.isArray(res.fought) ? res.fought : [];
     var gains = [], bonus = worksBonus();
     deployed.forEach(function (id) {
@@ -762,21 +972,59 @@
       addExp(u, n, msgs);
       gains.push({ id: id, name: unitView(u).name, exp: n, lvBefore: lv0, lvAfter: u.lv });
     });
+    // 퇴각·사망
+    var R = BD.RETREAT, safe = !!(RUN.quest && RUN.quest.noDeath), retreats = [], deaths = 0, wiped = [];
+    (Array.isArray(res.monRetreat) ? res.monRetreat : []).forEach(function (m) {
+      var u = m && rawUnit(m.id);
+      if (!u || retreats.some(function (x) { return x.id === u.id; })) return;
+      var g = isGuard(u), down = Math.max(0, Math.min(g ? 1 : u.count, m.down | 0)), died = 0;
+      if (!g && !safe && m.big) {
+        for (var i = 0; i < down; i++) { if (rnd() < R.deathChance) died++; }
+        u.count -= died; deaths += died;
+      }
+      st.rest[u.id] = RUN.week + 1;   // 다음 주 전투에 안 나감 (자리는 그대로)
+      var r = { id: u.id, name: unitView(u).name, kind: g ? 'guard' : 'squad', big: !!m.big, down: down, died: died, wiped: !g && u.count <= 0, refill: 0 };
+      if (r.wiped) wiped.push(u);
+      retreats.push(r);
+    });
     addCompanyExp(BD.COMPANY.gain.battle);
     RUN.stats.battles++;
     var defended = res.reached === 0;  // 퇴각한 적은 보물방 침입으로 치지 않는다
     choreAdd('battle'); if (defended) choreAdd('defend');
+    if (!OFF.surge && p.surge && RUN.week >= RUN.surgeWeek) RUN.surgeWeek = RUN.week + BD.SURGE_GAP[0] + rint(BD.SURGE_GAP[1] - BD.SURGE_GAP[0] + 1);
+    RUN.week++;
+    // 새 주: 지난 쉼 풀기 · 전멸 부대 기본 인원 무료 보충 (숙련도 그대로)
+    Object.keys(st.rest).forEach(function (id) { if (st.rest[id] < RUN.week) delete st.rest[id]; });
+    wiped.forEach(function (u) {
+      u.count = BD.MON_SQUAD.start;
+      retreats.forEach(function (r) { if (r.id === u.id) r.refill = u.count; });
+    });
+    // 의뢰인 주간 지원금 (BATTLE_DATA.WEEKLY_BUDGET): 예산을 부대에 다 써서 가치 기준을 못 채우고 막히는 일을 막는 안전판
+    var budgetGain = Math.max(0, BD.WEEKLY_BUDGET | 0);
+    if (budgetGain) { st.budget += budgetGain; st.budgetAdded += budgetGain; }
+    arrange();
     var stages = questUpdate();
     var rep = {
-      week: RUN.week, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
+      budgetGain: budgetGain, budgetAfter: budgetLeft(),
+      week: RUN.week - 1, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
       gold: gold, gems: gems, exp: res.exp | 0, reached: res.reached, squads: res.squads, retreated: res.retreated, timeout: !!res.timeout,
       loot: loot, repair: 0, goldBefore: goldBefore, goldAfter: RUN.gold, gemsBefore: gemsBefore, gemsAfter: RUN.gems,
       defended: defended, levelMsgs: msgs.slice(0, 4), expGains: gains, stages: stages,
+      retreats: retreats, deaths: deaths, noDeath: safe, crises: res.crises | 0,
       companyBefore: compBefore, companyAfter: company(), progress: questProgress()
     };
     rep.hint = gems > 0 ? '보석 +' + gems + ' (지금 ' + RUN.gems + '개): 군단에서 부족 보석 강화에 쓸 수 있어요' : '';
-    if (!OFF.surge && p.surge && RUN.week >= RUN.surgeWeek) RUN.surgeWeek = RUN.week + BD.SURGE_GAP[0] + rint(BD.SURGE_GAP[1] - BD.SURGE_GAP[0] + 1);
-    RUN.week++;
+    // 쓰러짐·퇴각·사망을 나눈 목록 (화면 결과표용). down = 체력 0이 됐던 인원(사망 아니면 전투 뒤 회복) · retreated = 퇴각해 다음 주 쉼 · died = 실제 사망
+    var downMap = isObj(res.monDown) ? res.monDown : {};
+    retreats.forEach(function (r) { if (r.down && !downMap[r.id]) downMap[r.id] = r.down; });
+    rep.casualties = {
+      down: Object.keys(downMap).filter(function (id) { return rawUnit(id); }).map(function (id) { return { id: id, name: unitView(rawUnit(id)).name, n: downMap[id] | 0 }; }),
+      retreated: retreats.map(function (r) { return { id: r.id, name: r.name, kind: r.kind, big: r.big }; }),
+      died: retreats.filter(function (r) { return r.died; }).map(function (r) { return { id: r.id, name: r.name, n: r.died, wiped: r.wiped, refill: r.refill }; })
+    };
+    rep.restMsgs = retreats.map(function (r) {
+      return r.name + ' 퇴각 -> 다음 주 쉼' + (r.died ? ' · ' + r.died + '명 사망' : '') + (r.wiped ? ' · 전멸, 기본 ' + r.refill + '명 무료 보충' : '') + (r.kind === 'guard' ? ' (친위대는 죽지 않아요)' : '');
+    });
     RUN.battling = false; RUN.bsave = null; RUN.plan = null; RUN.lastBattle = rep;
     ensurePlan();
     save();
@@ -786,7 +1034,7 @@
   // ---------- 해금 (경험 중심, GAME_STRUCTURE 5절) ----------
   function unlocks() {
     return { corps: RUN.stats.battles > 0, guards: RUN.stats.delivers > 0, works: RUN.works.length > 0,
-      floor2: !!(RUN.site && RUN.site.floorsOpen >= 2), secondQuest: RUN.company.lv >= (BD.QUESTS[1] ? BD.QUESTS[1].minCompanyLv : 99) };
+      floor2: !!(RUN.site && RUN.site.floorsOpen >= 2), secondQuest: RUN.company.lv >= (BD.QUESTS[1] ? BD.QUESTS[1].minCompanyLv : 99), demoEnd: RUN.phase === 'demoEnd' };
   }
 
   // ---------- 공방 (데모에서 꺼짐) ----------
@@ -954,9 +1202,12 @@
     statParts: function (id, key) { var u = rawUnit(id); return u ? statParts(u, key) : null; },
     procureInfo: procureInfo, procureSquad: procureSquad, refillInfo: refillInfo, refillSquad: refillSquad,
     placeUnit: placeUnit, removeUnit: removeUnit, levelNeed: levelNeed, monGrade: monGrade,
+    // 층별 출진 (2차)
+    floorInfo: floorInfo, floorsInfo: floorsInfo, floorPower: floorPower, sortieUnit: sortieUnit, withdrawUnit: withdrawUnit, setAutoDeploy: setAutoDeploy,
+    isResting: isResting, battleNotes: battleNotes,
     tribeInfo: tribeInfo, upgradeTribe: upgradeTribe,
     // 회사·작품집·해금
-    company: company, worksInfo: worksInfo, unlocks: unlocks,
+    company: company, worksInfo: worksInfo, unlocks: unlocks, demoState: demoState, leaveSettle: leaveSettle,
     // 전투
     planInfo: planInfo, isSurgeWeek: isSurgeWeek, surgeIn: surgeIn, watchAd: watchAd, cardRule: cardRule,
     startBattle: startBattle, battlePlan: battlePlan, battleInput: battleInput, battleSave: battleSave, saveBattle: saveBattle,
