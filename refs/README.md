@@ -5,6 +5,15 @@ AI에게는 "그때 그거처럼" 대신 "refs/파일이름 참고해서"라고 
 
 | 파일 | 종류 | 내용 |
 | --- | --- | --- |
+| `codex_demo_scope_2026-10-23.md` | 검수 기록 | 데모 범위: C1에서 그대로·고쳐·새로·없앨 것, 핵심/화면 파일 나누기, 저장 v6 (데모 구현 때 기준) |
+| `review_c1_bugs_codex_2026-10-23.md` | 검수 기록 | C1 코드 버그 점검 7건 (1·2·4 고침) |
+| `review_doc_consistency_codex_2026-10-23.md` | 검수 기록 | 기획 문서끼리 다른 말·용어 통일·데모 전 빈칸 |
+| `draft_quests.md` | 초안 창고 | 의뢰 문구 20개 (의뢰인·제목·내용·속성·고정 구역) |
+| `draft_invader_groups.md` | 초안 창고 | 침입자 무리 이름 등급별 + 출신·원소·한 줄 소개 |
+| `draft_fixed_zones.md` | 초안 창고 | 고정 구역 후보 10개 (데모 추천: 얼어붙은 하역장) |
+| `draft_tribes.md` | 초안 창고 | 부족 8개 + 친위대 대장 (데모 추천: 돌등껍질족·불씨도마뱀족) |
+| `draft_news_cards.md` | 초안 창고 | 작품집 소식 카드 30개 |
+| `draft_tab_texts.md` | 초안 창고 | 직급 칭호 12단계·준비 중 문구·🔒 열림 조건 |
 | `ref_fallout_shelter.md` | 참고 게임 | Fallout Shelter: 지하 층별 단면·방치 탐험·방 합치기 |
 | `ref_gabu_business_era.md` | 참고 게임 | 갑부: 장사의 시대: 하단 탭 × 현판형 입구, 대표 수치 하나 |
 | `ref_housing_affinity.md` | 참고 게임 | 쿠키런: 킹덤·포켓 캠프: 간결한 집 꾸미기·좋아하는 가구 호감도 |
