@@ -71,8 +71,9 @@ ok(S.done, '전투 끝남');
 let res = W.BSIM.result(S);
 // 약탈 한도: 이번 전투 금 안에서만 (약탈 요청을 크게 부풀려 확인)
 res.loot = 99999; res.damage = 0;
-let gBefore = R.gold, rep = P.applyBattle(res);
+let gBefore = R.gold, qgBefore = R.quest.prog.gold, rep = P.applyBattle(res);
 ok(rep.loot === rep.gold && R.gold === gBefore, '약탈 한도 = 이번 전투 금: loot ' + rep.loot + ' gold ' + rep.gold + ' ' + gBefore + '->' + R.gold);
+ok(R.quest.prog.gold === qgBefore, '금 목표 = 약탈 뒤 금: ' + qgBefore + '->' + R.quest.prog.gold);
 // 납품: 목표 채우고 레벨 올려 두기
 R.quest.goals.forEach(g => { R.quest.prog[g.type] = g.target; });
 R.monsters[0].lv = 12; R.monsters[0].hp = 999; R.monsters[0].exp = 3;

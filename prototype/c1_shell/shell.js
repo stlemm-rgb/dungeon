@@ -1085,6 +1085,7 @@
     if (e.target.closest && e.target.closest('.tut-skip')) {
       try { P.skipTutorial(); } catch (err) { /* 무시 */ }
       tut.off = true; tutEnd(false); buzz('tap');
+      if (lastName === 'contract') render(); // 튜토리얼 의뢰 후보가 버려졌으니 일반 후보로 다시 그림
       return;
     }
     if (e.target.closest && e.target.closest('.tut-bubble')) tutNext();
@@ -1142,10 +1143,10 @@
     var to = name;
     if (!SCREENS[to]) to = 'home';
     if (RUN.phase === 'settle') to = 'result';                         // 납품 직후엔 정산부터
+    else if (RUN.phase === 'play' && RUN.battling) to = 'battle';      // 전투를 시작했으면 끝날 때까지 전투 화면 (다른 보정보다 먼저)
     else if (to === 'result') to = 'home';
     else if (RUN.phase === 'choose' && (to === 'build' || to === 'battle')) to = 'contract'; // 의뢰 없이 건설·전투 불가
     else if (RUN.phase === 'play' && to === 'contract') to = 'home';
-    else if (RUN.phase === 'play' && RUN.battling) to = 'battle';                 // 전투를 시작했으면 끝날 때까지 전투 화면
     else if (to === 'battle' && !(RUN.phase === 'play' && RUN.battling)) to = 'home'; // 다음 주를 눌러야만 전투
     else if (bootCheck && to === 'home' && RUN.phase === 'choose') to = 'contract'; // 켜자마자 의뢰가 없으면 바로 고르게
     bootCheck = false;

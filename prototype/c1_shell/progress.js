@@ -761,7 +761,7 @@
     }
     var defended = res.reached === 0;  // 퇴각한 적은 보물방 침입으로 치지 않는다 (사용자 확인)
     var q = RUN.quest;
-    q.prog.gold += gold; q.prog.gems += gems; q.prog.exp += exp; if (defended) q.prog.defends++;
+    q.prog.gold += gold - loot; q.prog.gems += gems; q.prog.exp += exp; if (defended) q.prog.defends++;
     choreAdd('battle'); if (defended) choreAdd('defend');
     var rep = {
       week: RUN.week, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
