@@ -8,10 +8,10 @@
  *     화면 전체를 덮는 카드 전용 화면 (위 3/4 그림 자리, 아래 1/4 제목·설명·효과). 아래 막대의 [카드 N장 남음]은 BSIM.crisisLeft(S).
  *     위·아래·왼쪽·오른쪽으로 끌면 그 가장자리 글이 커지고 색이 바뀜 (가장자리 글을 눌러도 됨). 떠 있는 동안 전투는 완전히 멈추고
  *     시간 초과도 없다 (고를 때까지 기다림). 그림은 나중에 외부 파일이 들어옴: 그림 자리에 data-art="카드의 art 키"
- *  - 화면 배치: 맨 위 한 줄(시간·진행바·처치·금·보석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 아래 한 줄 안내 + 버튼 줄(api.bar)
+ *  - 화면 배치: 맨 위 한 줄(시간·진행바·처치·금·신석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 아래 한 줄 안내 + 버튼 줄(api.bar)
  *  - 판 = ZONES.stackMap()(열린 층을 위아래로 쌓음, 층 사이 한 줄 = 계단, 좌표가 분대·대기실 좌표와 같음). 2층이 열리면 줄이 늘어 칸을 줄이고(.tall) 구역 이름은 숨긴다.
  *    아직 잠긴 층은 판 아래에 🔒 한 줄로만 알린다 (전투는 열린 층까지)
- *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표(회사 금·의뢰인 지원금·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 현장으로
+ *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표(회사 금·의뢰인 마석 보급·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 현장으로
  *     두 번째 현장 첫 전투 결과표에는 "데모 끝까지 왔어요" 한 줄 (계속 진행 가능)
  *  - D1: 전투 입력은 P.battleInput(plan) 그대로 (부대 인원만큼 싸우는 개체). 대기실 부대는 부대마다 한 줄, 인원 수만큼 점 (친위대는 큰 점).
  *    얼어붙은 하역장(chill 사건)을 지난 분대는 느려지고 얼음 테두리로 보인다. 아군 퇴각(mretreat 사건): 그 부대 점이 커졌다 흐려지고 "퇴각" 글자 (S.dens[z][i].out 이면 흐리게)
@@ -76,12 +76,12 @@
       function crisisInfo(kind) { return (cr.kinds || []).filter(function (k) { return k.id === kind; })[0] || { id: kind, label: '위기', text: '위기가 닥쳤어요!' }; }
       function lockWhy(n) { var f = P.floorInfo(n); return f && f.lockAt ? '납품 기준 ' + f.lockAt + '단계 달성 시 열림' : '이 의뢰에서는 열리지 않아요'; }
 
-      // 맨 위 한 줄: 시간 · 진행바 · 처치 · 금 · 보석 · 보물방 · 퇴각. 가운데 판은 남는 높이를 채우고, 아래는 한 줄 안내
+      // 맨 위 한 줄: 시간 · 진행바 · 처치 · 금 · 신석 · 보물방 · 퇴각. 가운데 판은 남는 높이를 채우고, 아래는 한 줄 안내
       function stat(cls, label) { return '<span class="bt-st ' + cls + '"><small>' + label + '</small><b></b></span>'; }
       el.innerHTML =
         '<div class="bt-top' + (plan.surge ? ' surge' : '') + '">' + (plan.surge ? '<span class="bt-surgechip">대량</span>' : '') +
         '<span class="bt-time">1:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
-        stat('kill', '처치') + stat('gold', '금') + stat('gem', '보석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
+        stat('kill', '처치') + stat('gold', '금') + stat('gem', '신석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
         '<div class="zboard bt-board' + (ROWS > 7 ? ' tall' : '') + '">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, stack: true, rows: ROWS }) + '</div>' +
         ((Z.FLOORS || 1) > (Z.OPEN || 1) ? '<div class="bt-locked">🔒 지하 ' + (Z.OPEN + 1) + '층 · ' + lockWhy(Z.OPEN + 1) + '</div>' : '') +
         '<div class="bt-log"></div>';
@@ -439,12 +439,12 @@
         var ok = rep.defended, pr = rep.progress, cas = rep.casualties || { down: [], retreated: [], died: [] }, q = RUN.quest;
         var rows = [
           ['처치', rep.kills + ' / ' + rep.total + '명 (짐꾼 ' + rep.porterKills + ')'],
-          ['얻은 금', '+' + money(rep.gold)], ['얻은 보석', '+' + rep.gems],
+          ['얻은 금', '+' + money(rep.gold)], ['얻은 신석', '+' + rep.gems],
           ['보물방 도달', rep.reached + ' / ' + rep.squads + '분대'],
           ['침입자 퇴각', rep.retreated + '분대' + (rep.timeout ? ' (1분 지남)' : '')],
           ['약탈된 금', rep.loot ? '-' + money(rep.loot) : '0'],
           ['회사 금', money(rep.goldBefore) + ' → <b>' + money(rep.goldAfter) + '</b>'],
-          ['보석', rep.gemsBefore + ' → <b>' + rep.gemsAfter + '</b>'],
+          ['신석', rep.gemsBefore + ' → <b>' + rep.gemsAfter + '</b>'],
           ['회사 레벨', coText(rep.companyBefore) + ' → <b>' + coText(rep.companyAfter) + '</b>'],
           ['위기 카드', U.cardsUsed + '장 사용 (위기 ' + (rep.crises || 0) + '번 · 최대 ' + cardMax + '장)']
         ];
@@ -481,7 +481,7 @@
           '<div class="card bt-resbox"><h3 class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '방어 성공!' : '보물방 침입 ' + rep.reached + '분대') + '</h3>' +
           '<div class="dim small-text bt-ressub">' + rep.week + '주째 일반 침입' + (ok ? ' · 보물방 방어 +1회' : '') + '</div>' +
           rows.map(function (r) { return '<div class="stat"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('') +
-          '<div class="stat bt-grant"><span>의뢰인 주간 지원금</span><b>의뢰 예산 +' + (rep.budgetGain || 0) + ' → ' + money(rep.budgetAfter || 0) + '</b></div>' +
+          '<div class="stat bt-grant"><span>의뢰인 마석 보급</span><b>마석 +' + (rep.budgetGain || 0) + ' → ' + money(rep.budgetAfter || 0) + '</b></div>' +
           '<div class="bt-sub">출진 부대 · 경험치</div>' + unitRows +
           '<div class="bt-sub">아군 피해' + (rep.noDeath ? ' <span class="dim">(이 의뢰는 사망 없음)</span>' : '') + '</div><div class="bt-group">' + hurtRows + '</div>' + restBox +
           (rep.levelMsgs.length ? '<div class="small-text bt-lv">' + rep.levelMsgs.join('<br>') + '</div>' : '') +

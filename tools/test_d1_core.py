@@ -76,7 +76,7 @@ ok(P.refillSquad(sEmber.id).ok && sEmber.count === BD.MON_SQUAD.start + 1 && R.g
 // 예산 바닥: 회사 금이 많아도 거절
 R.site.budget = 5;
 let r = P.buildZone('LB', 'trap');
-ok(!r.ok && r.msg.indexOf('예산') >= 0 && R.gold === g0 && P.budgetLeft() === 5, '예산 부족이면 거절 (회사 금으로 안 냄): ' + r.msg);
+ok(!r.ok && r.msg.indexOf('마석') >= 0 && R.gold === g0 && P.budgetLeft() === 5, '예산 부족이면 거절 (회사 금으로 안 냄): ' + r.msg);
 ok(!P.procureSquad('stone').ok && R.gold === g0, '예산 부족 조달 거절');
 R.site.budget = 0;
 ok(P.startBattle().ok, '예산 0이어도 다음 주 진행');

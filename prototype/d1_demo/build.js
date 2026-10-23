@@ -2,10 +2,10 @@
  *
  * 구조 (shell.js의 SCREEN_PLUGINS 방식, battle.js와 같음)
  *  - 규칙은 zones.js(판·시설·이동), 상태와 바꾸는 함수는 progress.js (API.md: previewBuild·buildZone·powerInfo·floorInfo). 여기는 보여 주고 누름만 받는다.
- *  - 흐름: (2층 의뢰면 위에서 1층 · 2층 고르기) 구역 누르기 -> 시트가 열림 -> 시설 고르기(미리보기: 의뢰 예산·가치·전투력 전후, 판에 흐리게 미리 보임) -> 짓기.
+ *  - 흐름: (2층 의뢰면 위에서 1층 · 2층 고르기) 구역 누르기 -> 시트가 열림 -> 시설 고르기(미리보기: 마석·가치·전투력 전후, 판에 흐리게 미리 보임) -> 짓기.
  *    몬스터 대기실 시트는 시설만 바꾸고, 부대는 [출진] 화면에서 정한다 (안내 + 바로가기 버튼).
  *  - 층: 1층 판(ZONES.floorMap(1))과 아래층 작은 판(floorMap(2))을 따로 그린다. 잠긴 층은 어둡게 + 🔒 + 열림 조건. 층이 열리면 1층 맨 아래는 계단, 보물방은 2층 맨 아래.
- *  - 돈: 건설·부대 조달은 의뢰 예산(회사 금 아님). 모자라면 "예산 N 모자람". 쓴 예산은 돌려받지 못한다. 예산 0이어도 다음 주는 진행된다.
+ *  - 돈: 건설·부대 조달은 마석(회사 금 아님). 모자라면 "마석 N 모자람". 쓴 마석은 돌려받지 못한다. 마석 0이어도 다음 주는 진행된다.
  *  - 가치 = 지어 둔 시설 점수, 전투력 = 함정 점수 + 인계할 부대 점수를 침입자가 그 층 입구 기준으로 지나는 비율로 곱한 것 (API.md). 구역마다 전투력(powerInfo)을 판 위에 작게 보여 준다 (⚔).
  *  - 고정 구역(의뢰가 정함, 예: 얼어붙은 하역장)은 🔒로 보이고 못 짓고 못 바꾼다.
  *  - 문 위 숫자 = 침입자 20명이 오면 그 길로 지나갈 인원 (zones.js forecast).
@@ -204,7 +204,7 @@
       var sumBox = api.div('bsum');
       var floorPowBox = api.div('small-text dim bfloors');
       var questBox = api.div('');
-      var noteBox = api.div('');      // 의뢰 예산을 다 썼을 때 안내
+      var noteBox = api.div('');      // 마석을 다 썼을 때 안내
       var tabBox = api.div('seg floortabs');
       var boardBox = api.div('zboard');
       var sheetBox = api.div('');
@@ -214,7 +214,7 @@
       el.appendChild(noteBox);
       if (floors > 1) el.appendChild(tabBox);
       el.appendChild(boardBox);
-      el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. ⚔는 그 구역의 전투력(함정·부대 점수 × 침입자가 그 층 입구에서 이 구역을 지나는 비율)이라, 미끼로 길을 모으면 그 길의 ⚔가 커져요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 의뢰 예산은 돌려받지 못해요. 부대는 [출진] 화면에서 정해요 (공짜).'));
+      el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. ⚔는 그 구역의 전투력(함정·부대 점수 × 침입자가 그 층 입구에서 이 구역을 지나는 비율)이라, 미끼로 길을 모으면 그 길의 ⚔가 커져요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 마석은 돌려받지 못해요. 부대는 [출진] 화면에서 정해요 (공짜).'));
       el.appendChild(sheetBox);
 
       function ppMap() {
@@ -228,12 +228,12 @@
 
       function drawSummary() {
         var s = P.siteSummary(), q = RUN.quest, pr = P.questProgress();
-        morphHtml(sumBox, '<div>의뢰 예산<b>' + money(s.budget) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>전투력<b>' + s.power + '</b></div>');
+        morphHtml(sumBox, '<div>마석<b>' + money(s.budget) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>전투력<b>' + s.power + '</b></div>');
         morphHtml(floorPowBox, P.floorsInfo().map(function (f) { return f.open ? f.n + '층 ⚔ ' + f.power : '🔒 ' + f.n + '층'; }).join(' · ') + ' <span>(전투력은 층마다 그 층 입구 기준)</span>');
         morphHtml(questBox, q && pr ? '<div class="card quest"><div class="qhead"><span class="chip accent">' + api.questTag(q) + '</span><b>' + esc(q.name) + '</b></div>' +
           '<div class="small-text">' + esc(pr.line) + '</div>' + (pr.complete && !pr.canDeliver ? '<div class="blocker">' + esc(pr.why) + '</div>' : '') +
           (pr.complete && pr.canDeliver ? '<div class="small-text ready">의뢰 완료! 현장에서 [납품하기]를 누르세요</div>' : '') + '</div>' : '');
-        morphHtml(noteBox, s.budget <= 0 ? '<div class="grantbar"><b>의뢰 예산을 다 썼어요</b><span>지은 시설과 부대로 [다음 주]를 눌러 진행할 수 있어요. 전투마다 의뢰인이 예산을 조금 더 줘요. 출진에서 부대를 정하면 전투력이 올라요</span></div>' : '');
+        morphHtml(noteBox, s.budget <= 0 ? '<div class="grantbar"><b>마석을 다 썼어요</b><span>지은 시설과 부대로 [다음 주]를 눌러 진행할 수 있어요. 전투마다 의뢰인이 마석을 조금 더 줘요. 출진에서 부대를 정하면 전투력이 올라요</span></div>' : '');
         morphHtml(tabBox, P.floorsInfo().map(function (f) {
           return '<button data-fl="' + f.n + '"' + (f.n === fl ? ' class="on"' : '') + '>' + (f.open ? '' : '🔒 ') + f.n + '층' + (f.open ? ' <small>⚔ ' + f.power + '</small>' : '') + '</button>';
         }).join(''));
@@ -285,10 +285,10 @@
         if (!opts.length) h += '<div class="why">여기는 지을 수 있는 시설이 없어요.</div>';
         opts.forEach(function (fk) {
           var ff = Z.FAC[fk], raw = Z.costOf(fk, z), cv = P.buildCost(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, poor = !cur && cv > left;
-          var costTxt = '예산 ' + cv + (Z.floorOf(z) > 1 && raw !== cv ? ' <small>(' + Z.floorOf(z) + '층 건설비)</small>' : '');
+          var costTxt = '마석 ' + cv + (Z.floorOf(z) > 1 && raw !== cv ? ' <small>(' + Z.floorOf(z) + '층 건설비)</small>' : '');
           h += '<button data-pick="' + fk + '" class="' + (cur ? 'cur' : '') + (pick === fk ? ' on' : '') + (poor ? ' poor' : '') + '"' + (cur ? ' disabled' : '') + '>' +
             '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + facText(fk) + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
-            '<small>' + costTxt + (vv ? ' · 가치 +' + vv : '') + (poor ? ' · <span class="lack">예산 ' + (cv - left) + ' 모자람</span>' : '') + '</small></button>';
+            '<small>' + costTxt + (vv ? ' · 가치 +' + vv : '') + (poor ? ' · <span class="lack">마석 ' + (cv - left) + ' 모자람</span>' : '') + '</small></button>';
         });
         h += '</div>';
         var p = preview();
@@ -296,16 +296,16 @@
         if (p && p.zones) {
           var pf = Z.FAC[pick], after = P.forecast(p.zones, p.units).at[z] || 0, dv = p.valueAfter - p.valueNow, dp = p.powerAfter - p.powerNow;
           h += '<div class="zpreview"><b>미리보기: ' + pf.name + '</b>' +
-            (p.budgetAfter < 0 ? '<div>의뢰 예산 ' + money(left) + ' (비용 ' + p.cost + ')</div>' : '<div>의뢰 예산 ' + money(left) + ' → <b>' + money(p.budgetAfter) + '</b> (-' + p.cost + ')</div>') +
+            (p.budgetAfter < 0 ? '<div>마석 ' + money(left) + ' (비용 ' + p.cost + ')</div>' : '<div>마석 ' + money(left) + ' → <b>' + money(p.budgetAfter) + '</b> (-' + p.cost + ')</div>') +
             (p.discount > 0 ? '<div class="discount">할인 -' + money(p.discount) + '</div>' : '') +
             '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + sign(dv) + ')</div>' +
             '<div>전투력 ' + p.powerNow + ' → <b>' + p.powerAfter + '</b> (' + sign(dp) + ')</div>' +
             (t !== 'yard' ? '<div>이 구역에 오는 침입자 ' + now + '명 → <b>' + after + '명</b></div>' : '') +
             (p.back ? '<div class="lack">출진 한도가 줄어 부대 ' + p.back + '개는 대기로 돌아가요</div>' : '') +
-            (p.why ? '<div class="lack">' + esc(p.why) + '</div>' : '<div class="dim">지은 뒤에는 의뢰 예산을 돌려받지 못해요</div>') + '</div>';
+            (p.why ? '<div class="lack">' + esc(p.why) + '</div>' : '<div class="dim">지은 뒤에는 마석을 돌려받지 못해요</div>') + '</div>';
         } else if (p && p.why) h += '<div class="zpreview"><div class="lack">' + esc(p.why) + '</div></div>';
         h += '<div class="zact"><button class="btn" data-close>닫기</button><button class="btn primary" data-build' + (p && p.ok ? '' : ' disabled') + '>' +
-          (p ? (p.ok ? '짓기 (예산 ' + p.cost + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
+          (p ? (p.ok ? '짓기 (마석 ' + p.cost + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
         // 시트는 처음 열 때만 만든다 (등장 애니메이션도 그때만). 이미 열려 있으면 안의 바뀐 부분만 제자리에서 고친다.
         var sheet = sheetBox.firstChild && sheetBox.firstChild.firstChild;
         if (!sheet) {

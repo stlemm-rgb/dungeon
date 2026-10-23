@@ -1,18 +1,18 @@
 /* D1 데모 진행 상태와 규칙 (화면 그리기 없음). C1 progress.js에서 이어 옴. 숫자·글 표는 battle_data.js (DEMO 아래)
  *
  * 공개 함수 목록·RUN 모양은 prototype/d1_demo/API.md. 규칙 요약 (docs/GAME_STRUCTURE.md 3·6절, GAME_PLAN 2026-10-22·23 절)
- *  1) 매주 전투: 현장의 "다음 주"(startBattle) -> 전투 -> applyBattle로 한 주가 끝남. 예산 0·건설 0이어도 진행 가능 (무료 기본 부대)
- *  2) 돈 분리: RUN.gold = 회사 금(영구, 전투 수입·납품 보수가 여기로) · RUN.site.budget = 의뢰 예산(그 의뢰의 건설·부대 조달 전용).
- *     예산이 모자라면 거절 (회사 금으로 대신 내지 않음). 남은 예산은 납품 때 사라짐. 환불 없음
+ *  1) 매주 전투: 현장의 "다음 주"(startBattle) -> 전투 -> applyBattle로 한 주가 끝남. 마석 0·건설 0이어도 진행 가능 (무료 기본 부대)
+ *  2) 돈 분리: RUN.gold = 회사 금(영구, 전투 수입·납품 보수가 여기로) · RUN.site.budget = 마석(그 의뢰의 건설·부대 조달 전용).
+ *     마석이 모자라면 거절 (회사 금으로 대신 내지 않음). 남은 마석은 납품 때 사라짐. 환불 없음
  *  3) 던전 가치 = 지어 둔 시설 점수 합(zones.js summary, 몬스터 제외).
  *     던전 전투력 = B안: Σ(인계할 현장 부대 점수 U × 통과 비율 w) + Σ(함정 점수 T × w). 친위대·부대장·카드 제외 (powerOf)
  *  4) 납품 기준 5단계 (의뢰 데이터 stages): 단계마다 가치+전투력(+2층 전투력) 묶은 기준선. 순서대로 채우면 단계가 오르고(questUpdate, 한 번만 보상)
  *     5단계 = "의뢰 완료". 납품은 deliver()를 불러야 함(자동 납품 없음). 납품 직전에 지금 값으로 5단계를 다시 확인
- *  5) 의뢰 = 데모 고정 목록(BATTLE_DATA.QUESTS): 1층 의뢰(은발 마왕) -> 회사 레벨 2부터 2층 의뢰. 2층은 3단계에 열림 (+ 추가 예산).
+ *  5) 의뢰 = 데모 고정 목록(BATTLE_DATA.QUESTS): 1층 의뢰(은발 마왕) -> 회사 레벨 2부터 2층 의뢰. 2층은 3단계에 열림 (+ 추가 마석).
  *     다 납품하면 settle -> leaveSettle() -> phase 'demoEnd' (데모 끝)
  *  10) 2차: 세로 층 (zones.js useSite: 2층 구역 id는 '2E'·'2H'..., 열리면 1층 B = 계단) · 층별 출진 (site.deploy, 층마다 한도, 기본 자동 편성,
  *     출진한 부대는 그 층 대기실에 나눠 섬 = arrange) · 퇴각(다음 주 쉼)·사망(큰 피해 때만, 첫 의뢰 없음, 친위대 불사)·전멸 무료 보충 ·
- *     카드 위기(battle_sim.js 'crisis' 사건, 전투당 최대 2장) · 의뢰인 주간 지원금 · 주소 옵션 ?seed=
+ *     카드 위기(battle_sim.js 'crisis' 사건, 전투당 최대 2장) · 의뢰인 마석 보급 · 주소 옵션 ?seed=
  *     회사 레벨(RUN.company) = 전투·단계·납품으로 쌓는 경험치형. 침입자 강함이 옛 명성 대신 참조
  *  6) 부대 = 같은 부족 몇 명 묶음 (RUN.site.squads, 현장마다 새로, 납품 때 의뢰인에게 인계). 친위대(RUN.guards)만 이름 있는 개체, 다음 현장 동행.
  *     능력치는 statOf(unit, key) 한곳: 기본 × 레벨 + 강화 + 장비 + 인챈트 (장비·인챈트는 빈 자리 0). 경험치 = 출진·참여 단위
@@ -26,7 +26,7 @@
 
   // ---------- 데이터 ----------
   var SAVE_KEY = 'dunguen_d1_run';  // 데모는 C1과 다른 저장 키 (C1 세이브 보존)
-  var VERSION = 6;                  // 6 = D1 데모 (회사 금/의뢰 예산 분리, 부대·친위대, 납품 기준 단계, 회사 레벨). 다르면 새 게임 (변환 없음)
+  var VERSION = 6;                  // 6 = D1 데모 (회사 금/마석 분리, 부대·친위대, 납품 기준 단계, 회사 레벨). 다르면 새 게임 (변환 없음)
   var BD = window.BATTLE_DATA;
   var OFF = BD.DEMO_OFF || {};
   var OFF_MSG = '데모에서는 준비 중이에요';
@@ -68,7 +68,7 @@
   //  floors 의뢰 층 수 · floorsOpen 열린 층 수 · deploy 층별 출진 { '1': [부대·친위대 id], '2': [...] } (층마다 출진 한도) ·
   //  pins 예전 placeUnit으로 고른 대기실 { id: 구역 } · auto 기본 자동 편성 켬 · rest 쉬는 부대 { id: 쉬는 주 } ·
   //  units 대기실 배치 { 구역: [id] } (deploy에서 계산해 저장, 읽기 전용) · squads 현장 부대 ·
-  //  budget 남은 의뢰 예산 · budgetStart 처음 예산 · budgetAdded 단계 보상으로 늘어난 예산 · spent 쓴 예산 · builds 예산을 쓴 건설 수 · value·power 저장 때 맞춰 둠
+  //  budget 남은 마석 · budgetStart 처음 마석 · budgetAdded 단계 보상으로 늘어난 마석 · spent 쓴 마석 · builds 마석을 쓴 건설 수 · value·power 저장 때 맞춰 둠
   function freshSite(q) {
     var floors = q && q.floors > 1 ? q.floors | 0 : 1;
     var b = ZONES.useSite(q && q.board || ZONES.DEFAULT_BOARD, floors, 1);
@@ -78,7 +78,7 @@
     var site = { board: b, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
       floors: floors, floorsOpen: 1, deploy: freshDeploy(floors), pins: {}, auto: true, rest: {},
       budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0 };
-    if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (예산 0이어도 진행 가능)
+    if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (마석 0이어도 진행 가능)
       site.squads.push(newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true));
     }
     return site;
@@ -304,7 +304,7 @@
   function rawUnit(id) { return typeof id !== 'string' ? null : id.charAt(0) === 's' ? squadById(id) : id.charAt(0) === 'g' ? guardById(id) : null; }
   function isGuard(u) { return !!u && typeof u.id === 'string' && u.id.charAt(0) === 'g'; }
 
-  // 능력치 한 항목의 조각: base 기본 · level 레벨 성장 · upgrade 부족 보석 강화 · equip 장비 · enchant 인챈트 (장비·인챈트는 아직 0, 자리만)
+  // 능력치 한 항목의 조각: base 기본 · level 레벨 성장 · upgrade 부족 신석 강화 · equip 장비 · enchant 인챈트 (장비·인챈트는 아직 0, 자리만)
   // u = 부대 또는 친위대 (RUN 안의 원본). 1명 기준 값. 친위대는 GUARD.mul 배
   function statParts(u, key) {
     var t = tribeData(u.tribe), mul = isGuard(u) ? (BD.GUARD.mul[key] || 1) : 1;
@@ -561,7 +561,7 @@
   // ---------- 납품 기준 ----------
   function curValues() { return { value: siteValue(), power: sitePower(), floor2: floorPower(2) }; }
   function meets(stg, cur) { return cur.value >= stg.value && cur.power >= stg.power && (!stg.floor2 || cur.floor2 >= stg.floor2); }
-  // 단계 올리기: 지금 값이 다음 단계를 채우면 순서대로 올림 (한 번만, 회사 경험치 + 층 열림 + 추가 예산). 새로 오른 단계 번호 목록
+  // 단계 올리기: 지금 값이 다음 단계를 채우면 순서대로 올림 (한 번만, 회사 경험치 + 층 열림 + 추가 마석). 새로 오른 단계 번호 목록
   //  층이 열리면 배치를 다시 끼우고(계단 연결, 보물방이 아래층으로) 편성도 다시 맞춘다
   function questUpdate() {
     var q = RUN.quest, out = [];
@@ -630,7 +630,7 @@
   // ---------- 의뢰 받기 (새 현장) ----------
   // q = 후보 의뢰(또는 그 id). settle(납품 화면)에서는 promoteIds = 친위대로 데려갈 현장 부대 id 목록:
   //  그 부대의 대장이 이름 있는 친위대가 되어 부대의 레벨·경험치를 이어받는다 (친위대 최대 GUARD.max, 이미 있는 친위대는 늘 남음).
-  //  나머지 현장 부대·시설·남은 예산은 의뢰인에게 인계 (사라짐). 회사 금·보석·회사 레벨·부족 강화·작품집은 남음
+  //  나머지 현장 부대·시설·남은 마석은 의뢰인에게 인계 (사라짐). 회사 금·신석·회사 레벨·부족 강화·작품집은 남음
   function pickQuest(q, promoteIds) {
     if ((RUN.phase !== 'choose' && RUN.phase !== 'settle') || !q || RUN.battling) return false;
     var qid = typeof q === 'object' ? q.id : q;
@@ -685,11 +685,11 @@
     RUN.stats.delivers++;
     choreAdd('deliver');   // 튜토리얼은 여기서 끄지 않는다 (정산 화면 'deliver' 안내가 떠야 함). 다음 의뢰를 고를 때(pickQuest)·데모 끝(leaveSettle) 때 끔
     // 인계 표 (화면 표시용 글): 남는 것 · 의뢰인에게 넘어가는 것
-    rep.carry = ['회사 금 ' + comma(RUN.gold), '보석 ' + comma(RUN.gems), '회사 레벨 ' + RUN.company.lv, '친위대 (최대 ' + BD.GUARD.max + ', 다음 현장 동행)', '작품집 ' + RUN.works.length + '점'];
+    rep.carry = ['회사 금 ' + comma(RUN.gold), '신석 ' + comma(RUN.gems), '회사 레벨 ' + RUN.company.lv, '친위대 (최대 ' + BD.GUARD.max + ', 다음 현장 동행)', '작품집 ' + RUN.works.length + '점'];
     var tb = Object.keys(RUN.tribes).filter(function (n) { return RUN.tribes[n] > 0; }).map(function (n) { return tribeData(n).name + ' +' + RUN.tribes[n]; });
-    if (tb.length) rep.carry.push('부족 보석 강화: ' + tb.join(' · '));
+    if (tb.length) rep.carry.push('부족 신석 강화: ' + tb.join(' · '));
     rep.lost = ['던전 시설 (의뢰인에게 인계)', '현장 부대 ' + rep.handover.length + '개 (의뢰인에게 인계, 친위대로 고른 대장은 동행)'];
-    if (rep.budgetLeft > 0) rep.lost.push('남은 의뢰 예산 ' + comma(rep.budgetLeft));
+    if (rep.budgetLeft > 0) rep.lost.push('남은 마석 ' + comma(rep.budgetLeft));
     RUN.history.push({ name: q.name, key: q.key, week: RUN.week });
     if (RUN.history.length > 30) RUN.history.shift();
     RUN.report = rep; RUN.quest = null; RUN.phase = 'settle'; RUN.plan = null;
@@ -726,7 +726,7 @@
   function budgetLeft() { return RUN.site && RUN.site.budget > 0 ? RUN.site.budget : 0; }
   function afterChange() { arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
 
-  // ---------- 건설 (의뢰 예산만) ----------
+  // ---------- 건설 (마석만) ----------
   // 구역 z를 시설 k로 지으면: 비용·가치·전투력 변화·막히는 이유. 미리보기 (아무것도 바꾸지 않음)
   //  units = 지은 뒤의 대기실 배치 (출진 한도가 줄면 back명이 대기로, 자동 편성이 켜져 있으면 빈 칸이 채워진 모습). floor = 그 구역의 층
   function previewBuild(z, k) {
@@ -740,7 +740,7 @@
     var fm = formation(zones2, RUN.site.deploy, RUN.site.pins, RUN.site.auto), units2 = fm.units, back = fm.back;
     var why = canEdit();
     if (!why && cur === k) why = '이미 이 시설이에요';
-    if (!why && cost > budgetLeft()) why = '의뢰 예산 ' + (cost - budgetLeft()) + ' 모자람';
+    if (!why && cost > budgetLeft()) why = '마석 ' + (cost - budgetLeft()) + ' 모자람';
     return {
       ok: !why, why: why, cost: cost, baseCost: bc.base, discount: bc.discount, counts: cost > 0,
       budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
@@ -751,13 +751,13 @@
   function buildZone(z, k) {
     var p = previewBuild(z, k);
     if (!p.ok) return { ok: false, msg: p.why };
-    RUN.site.budget -= p.cost;      // 의뢰 예산만 (회사 금 안 씀, 환불 없음)
+    RUN.site.budget -= p.cost;      // 마석만 (회사 금 안 씀, 환불 없음)
     RUN.site.spent += p.cost;
     RUN.site.zones[z] = k;          // 편성(한도·대기실 나눠 서기)은 afterChange -> arrange가 맞춤
     if (p.counts) { RUN.site.builds++; choreAdd('build'); }
     var stages = afterChange();
     var dv = p.valueAfter - p.valueNow;
-    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (예산 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')', stages: stages };
+    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')', stages: stages };
   }
   // 건설비: 시설 비용 × 층 배율(BATTLE_DATA.FLOOR_BUILD_MUL, 깊은 층이 비쌈) - 공방 할인(데모에서 꺼짐)
   function buildCostInfo(k, z) {
@@ -768,13 +768,13 @@
   }
   function buildCost(k, z) { return buildCostInfo(k, z).cost; }
 
-  // ---------- 부대 조달 (의뢰 예산만) ----------
+  // ---------- 부대 조달 (마석만) ----------
   function procureInfo(tribe) {
     var t = tribeData(tribe);
     if (!t) return null;
     var cost = BD.MON_SQUAD.newCost[tribe], why = canEdit();
     if (!why && RUN.contracts.indexOf(tribe) < 0) why = t.name + ' 사용권이 없어요';
-    if (!why && cost > budgetLeft()) why = '의뢰 예산 ' + (cost - budgetLeft()) + ' 모자람';
+    if (!why && cost > budgetLeft()) why = '마석 ' + (cost - budgetLeft()) + ' 모자람';
     return { tribe: tribe, name: t.name, count: BD.MON_SQUAD.start, cap: BD.MON_SQUAD.cap, lv: squadStartLv(), cost: cost, canAfford: !why, why: why };
   }
   // 새 부대 조달 (START명). 대기 중으로 들어온다
@@ -786,14 +786,14 @@
     var s = newSquad(RUN.site, tribe, BD.MON_SQUAD.start, false);
     RUN.site.squads.push(s);
     var stages = afterChange();
-    return { ok: true, msg: inf.name + ' 부대 조달 (예산 -' + inf.cost + ', ' + s.count + '명)', unit: unitView(s), stages: stages };
+    return { ok: true, msg: inf.name + ' 부대 조달 (마석 -' + inf.cost + ', ' + s.count + '명)', unit: unitView(s), stages: stages };
   }
   function refillInfo(id) {
     var s = squadById(id);
     if (!s) return null;
     var cost = BD.MON_SQUAD.memberCost[s.tribe], why = canEdit();
     if (!why && s.count >= BD.MON_SQUAD.cap) why = '정원(' + BD.MON_SQUAD.cap + '명)이 찼어요';
-    if (!why && cost > budgetLeft()) why = '의뢰 예산 ' + (cost - budgetLeft()) + ' 모자람';
+    if (!why && cost > budgetLeft()) why = '마석 ' + (cost - budgetLeft()) + ' 모자람';
     return { id: id, count: s.count, cap: BD.MON_SQUAD.cap, cost: cost, canAfford: !why, why: why };
   }
   // 부대에 1명 보충
@@ -805,7 +805,7 @@
     RUN.site.budget -= inf.cost; RUN.site.spent += inf.cost;
     s.count++;
     var stages = afterChange();
-    return { ok: true, msg: tribeData(s.tribe).name + ' 부대 보충 (예산 -' + inf.cost + ', ' + s.count + '/' + BD.MON_SQUAD.cap + '명)', stages: stages };
+    return { ok: true, msg: tribeData(s.tribe).name + ' 부대 보충 (마석 -' + inf.cost + ', ' + s.count + '/' + BD.MON_SQUAD.cap + '명)', stages: stages };
   }
 
   // ---------- 대기실 배치 (예전 방식, 호환) ----------
@@ -903,7 +903,7 @@
   }
 
   // ---------- 다음 주 = 이번 주 전투 시작 ----------
-  // 언제든 진행 가능 (의뢰 예산 0·건설 0이어도. 무료 기본 부대). msgs = 알림 (막지 않음): 싸울 부대가 없음 · 쉬는 부대
+  // 언제든 진행 가능 (마석 0·건설 0이어도. 무료 기본 부대). msgs = 알림 (막지 않음): 싸울 부대가 없음 · 쉬는 부대
   function startBattle() {
     if (RUN.phase !== 'play') return { ok: false, msgs: ['진행 중인 의뢰가 없어요'] };
     if (RUN.battling) return { ok: true, plan: RUN.plan, msgs: [] };
@@ -999,7 +999,7 @@
       u.count = BD.MON_SQUAD.start;
       retreats.forEach(function (r) { if (r.id === u.id) r.refill = u.count; });
     });
-    // 의뢰인 주간 지원금 (BATTLE_DATA.WEEKLY_BUDGET): 예산을 부대에 다 써서 가치 기준을 못 채우고 막히는 일을 막는 안전판
+    // 의뢰인 마석 보급 (BATTLE_DATA.WEEKLY_BUDGET): 마석을 부대에 다 써서 가치 기준을 못 채우고 막히는 일을 막는 안전판
     var budgetGain = Math.max(0, BD.WEEKLY_BUDGET | 0);
     if (budgetGain) { st.budget += budgetGain; st.budgetAdded += budgetGain; }
     arrange();
@@ -1013,7 +1013,7 @@
       retreats: retreats, deaths: deaths, noDeath: safe, crises: res.crises | 0,
       companyBefore: compBefore, companyAfter: company(), progress: questProgress()
     };
-    rep.hint = gems > 0 ? '보석 +' + gems + ' (지금 ' + RUN.gems + '개): 군단에서 부족 보석 강화에 쓸 수 있어요' : '';
+    rep.hint = gems > 0 ? '신석 +' + gems + ' (지금 ' + RUN.gems + '개): 군단에서 부족 신석 강화에 쓸 수 있어요' : '';
     // 쓰러짐·퇴각·사망을 나눈 목록 (화면 결과표용). down = 체력 0이 됐던 인원(사망 아니면 전투 뒤 회복) · retreated = 퇴각해 다음 주 쉼 · died = 실제 사망
     var downMap = isObj(res.monDown) ? res.monDown : {};
     retreats.forEach(function (r) { if (r.down && !downMap[r.id]) downMap[r.id] = r.down; });
@@ -1059,13 +1059,13 @@
     if (lv >= d.maxLv) return { ok: false, msg: d.name + '은(는) 최대 단계예요' };
     var why = upgradeBlock(); if (why) return { ok: false, msg: why };
     var c = d.costs[lv];
-    if (RUN.gems < c) return { ok: false, msg: '보석 ' + (c - RUN.gems) + '개 모자람' };
+    if (RUN.gems < c) return { ok: false, msg: '신석 ' + (c - RUN.gems) + '개 모자람' };
     RUN.gems -= c; RUN.workshop[id] = lv + 1;
     afterChange();
     return { ok: true, msg: d.name + ' ' + (lv + 1) + '단계' };
   }
 
-  // ---------- 부족 보석 강화 (영구, 보석) ----------
+  // ---------- 부족 신석 강화 (영구, 신석) ----------
   function tribeCost(lv) { var c = BD.TRIBE_UP.costs; return c[Math.min(c.length - 1, lv)]; }
   function tribeStepOf(t) { return { hp: Math.max(1, Math.round(t.base.hp * BD.TRIBE_UP.per)), atk: Math.max(1, Math.round(t.base.atk * BD.TRIBE_UP.per)) }; }
   function tribeInfo(id) {
@@ -1074,10 +1074,10 @@
     var lv = RUN.tribes[id] || 0, st = tribeStepOf(t), top = lv >= BD.TRIBE_UP.max, c = top ? null : tribeCost(lv);
     var why = top ? '데모에서는 ' + BD.TRIBE_UP.max + '단계까지예요' : upgradeBlock();
     if (!why && RUN.contracts.indexOf(id) < 0) why = t.name + ' 사용권이 없어요';
-    if (!why && RUN.gems < c) why = '보석 ' + (c - RUN.gems) + '개 모자람';
+    if (!why && RUN.gems < c) why = '신석 ' + (c - RUN.gems) + '개 모자람';
     return {
       id: id, name: t.name, lv: lv, max: BD.TRIBE_UP.max, contracted: RUN.contracts.indexOf(id) >= 0,
-      effect: lv ? '1명 체력 +' + st.hp * lv + ' · 공격 +' + st.atk * lv : '보석 강화 없음',
+      effect: lv ? '1명 체력 +' + st.hp * lv + ' · 공격 +' + st.atk * lv : '신석 강화 없음',
       next: top ? null : '1명 체력 +' + st.hp * (lv + 1) + ' · 공격 +' + st.atk * (lv + 1),
       cost: top ? null : { gems: c }, canAfford: !why, why: why
     };
@@ -1091,7 +1091,7 @@
     RUN.tribes[id] = inf.lv + 1;
     choreAdd('upgrade');
     var stages = afterChange();
-    return { ok: true, msg: inf.name + ' 보석 강화 +' + (inf.lv + 1) + ' (보석 -' + inf.cost.gems + ', ' + tribeInfo(id).effect + ')', stages: stages };
+    return { ok: true, msg: inf.name + ' 신석 강화 +' + (inf.lv + 1) + ' (신석 -' + inf.cost.gems + ', ' + tribeInfo(id).effect + ')', stages: stages };
   }
 
   // ---------- 광고 뽑기 (데모에서 꺼짐. C1 원본은 prototype/c1_shell/progress.js) ----------
@@ -1143,7 +1143,7 @@
     t.claimed = true;
     RUN.gems += d.gems;
     save();
-    return { ok: true, msg: d.label + ' 보상: 보석 +' + d.gems, gems: d.gems };
+    return { ok: true, msg: d.label + ' 보상: 신석 +' + d.gems, gems: d.gems };
   }
   function choresClaimable() {
     if (OFF.chores) return 0;
@@ -1193,7 +1193,7 @@
     // 의뢰·납품
     offerQuests: offerQuests, lockedQuest: lockedQuest, pickQuest: pickQuest, questProgress: questProgress, questUpdate: questUpdate,
     checkQuest: checkQuest, questBlockers: questBlockers, deliver: deliver,
-    // 현장: 가치·전투력·예산·건설
+    // 현장: 가치·전투력·마석·건설
     siteSummary: siteSummary, siteValue: siteValue, sitePower: sitePower, powerInfo: powerInfo, powerOf: powerOf, budgetLeft: budgetLeft,
     previewBuild: previewBuild, buildZone: buildZone, buildCost: buildCost, forecast: forecast,
     // 부대·친위대

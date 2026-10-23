@@ -12,19 +12,19 @@
 | --- | --- |
 | `v` `seed` `week` | 저장 형식 6 · 게임 무작위 씨앗 · 지금 주 |
 | `gold` | **회사 금** (영구. 전투 수입·납품 보수가 여기로. 데모에서는 쓰는 곳 없음) |
-| `gems` | 보석 (부족 보석 강화) |
+| `gems` | 신석 (부족 신석 강화) |
 | `company` `{ lv, exp }` | **회사 레벨** (전투 +1 · 납품 기준 단계 +1 · 납품 보수 `reward.companyExp`) |
 | `phase` | `choose` 의뢰 고르기 · `play` 진행 중 · `settle` 납품 직후 정산 |
 | `quest` | 진행 중 의뢰 `{ id, key, name, client, attr, floors, budget, reward{gold,gems,companyExp}, board, fixed, stages[5]{value,power,floor2?,opens?}, stage, stageWeeks, startWeek, tutorial }` |
 | `offers` | 후보 의뢰 목록 (위와 같은 모양) |
 | `report` | settle 때 납품 보고 (deliver 돌려주는 값) |
 | `site` | 지금 현장 `{ board, zones, fixed, units, squads, nextSquadNo, budget, budgetStart, spent, builds, value, power, floorsOpen }` |
-| `site.budget` | **의뢰 예산** 남은 것 (건설·부대 조달 전용) |
+| `site.budget` | **마석** 남은 것 (건설·부대 조달 전용) |
 | `site.fixed` | 고정 구역 `{ 구역 id: 'frozen_dock' }` (zones에는 `'fz_frozen_dock'` 시설로 들어 있음) |
 | `site.units` | 대기실 출진 `{ 구역 id: [부대·친위대 id] }` (칸당 1자리) |
 | `site.squads` | 현장 부대 `[{ id:'s1', tribe:'stone'|'ember', count, lv, exp, free }]` (납품 때 의뢰인에게 인계) |
 | `guards` | 친위대 `[{ id:'g1', tribe, name, intro, lv, exp, from }]` (이름 있는 개체, 다음 현장 동행, 최대 2) |
-| `tribes` | 부족 보석 강화 단계 `{ stone: 1 }` |
+| `tribes` | 부족 신석 강화 단계 `{ stone: 1 }` |
 | `contracts` | 부족 사용권 (데모: 두 부족 다) |
 | `works` | 작품집 `[{ no, key, name, client, attr, value, power, week }]` |
 | `stats` | `{ battles, delivers }` (해금 판단) |
@@ -48,16 +48,16 @@
 
 deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, companyBefore{lv,exp,need}, companyAfter, weeks, value, power, stage, builds, board, budgetLeft, budgetStart, handover[부대 보기], work, worksEffectNew, carry[글], lost[글] }`
 
-### 현장: 가치·전투력·예산·건설
+### 현장: 가치·전투력·마석·건설
 | 함수 | 돌려주는 값 | 언제 |
 | --- | --- | --- |
 | `siteSummary()` | `{ value, trap, den, lure, fixed, monsters, power, budget }` (value = 시설 점수만) | 요약 줄 |
 | `siteValue()` / `sitePower()` | 던전 가치 / 던전 전투력(B안, 친위대 제외) | |
 | `powerInfo()` | `{ total, parts:[{ z, kind:'trap'|'den', score, w, power }] }` 구역별 전투력 조각 (w = 통과 비율) | 전투력 자세히 |
 | `powerOf(zones, units)` | 아무 배치의 전투력 (미리보기) | |
-| `budgetLeft()` | 남은 의뢰 예산 | |
+| `budgetLeft()` | 남은 마석 | |
 | `previewBuild(z, k)` | `{ ok, why, cost, baseCost, discount, counts, budgetAfter, valueNow, valueAfter, powerNow, powerAfter, back, zones, units, from, fixed? }` | 건설 시트 |
-| `buildZone(z, k)` | `{ ok, msg, stages }` 예산에서 차감 (회사 금 안 씀, 모자라면 거절) | 짓기 |
+| `buildZone(z, k)` | `{ ok, msg, stages }` 마석에서 차감 (회사 금 안 씀, 모자라면 거절) | 짓기 |
 | `buildCost(k, z)` | 비용 | |
 | `forecast(zones?, units?)` | 문 위 숫자 `{ at, flow }` (C1과 같음) | |
 
@@ -70,10 +70,10 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `unitById(id)` (= `monById`) | 부대 보기 `{ id, kind:'squad'|'guard', tribe, tribeName, name, count, cap, lv, exp, need, hp, atk, def, free, placed }` (hp·atk·def는 1명 값) | |
 | `idleUnits()` | 대기실에 안 든 부대·친위대 보기 | 배치 목록 |
 | `statOf(id, key)` / `statParts(id, key)` | 능력치 값 / 조각 `{ base, level, upgrade, equip, enchant }` (장비·인챈트는 0 자리) | 자세히 |
-| `procureInfo(tribe)` / `procureSquad(tribe)` | 새 부대 조달 (의뢰 예산). info `{ tribe, name, count, cap, lv, cost, canAfford, why }` | |
-| `refillInfo(id)` / `refillSquad(id)` | 1명 보충 (의뢰 예산, 정원까지) | |
+| `procureInfo(tribe)` / `procureSquad(tribe)` | 새 부대 조달 (마석). info `{ tribe, name, count, cap, lv, cost, canAfford, why }` | |
+| `refillInfo(id)` / `refillSquad(id)` | 1명 보충 (마석, 정원까지) | |
 | `placeUnit(z, id)` / `removeUnit(z, index)` | 대기실 출진·빼기 (공짜). 2차부터 층별 출진의 호환 함수 (아래 7절) | |
-| `tribeInfo(tribe)` / `upgradeTribe(tribe)` | 부족 보석 강화 (데모 1회). info `{ id, name, lv, max, contracted, effect, next, cost{gems}|null, canAfford, why }` | 군단 |
+| `tribeInfo(tribe)` / `upgradeTribe(tribe)` | 부족 신석 강화 (데모 1회). info `{ id, name, lv, max, contracted, effect, next, cost{gems}|null, canAfford, why }` | 군단 |
 | `levelNeed(lv)` · `monGrade(lv)` | 레벨업 경험치 · 등급 글자 | |
 
 ### 회사·작품집·해금
@@ -87,7 +87,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | 함수 | 돌려주는 값 | 언제 |
 | --- | --- | --- |
 | `planInfo()` · `isSurgeWeek()` · `surgeIn()` | C1과 같음 (대량 출현은 데모에서 꺼져 늘 false / null) | 예고 |
-| `startBattle()` | `{ ok, plan, msgs }` — **언제든 가능** (건설 0·예산 0이어도) | 다음 주 |
+| `startBattle()` | `{ ok, plan, msgs }` — **언제든 가능** (건설 0·마석 0이어도) | 다음 주 |
 | `battleInput(plan?)` | `BSIM.create`에 그대로 넘길 `{ plan, zones, units, unitById }` | 전투 화면 |
 | `battlePlan()` · `battleSave()` · `saveBattle(cp)` · `setBattleSpeed(i, fastUsed)` · `setCardCount(n)` · `setBattle(b)` | C1과 같음 | |
 | `applyBattle(res)` | 결과 보고 `{ …C1 칸, repair:0, expGains[{id,name,exp,lvBefore,lvAfter}], stages, companyBefore, companyAfter, progress(questProgress), hint }` | 전투 끝 |
@@ -113,10 +113,10 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 
 | 옛 이름 | 대신 |
 | --- | --- |
-| `grantLeft()` · `SITE_GRANT` (첫 건설 공사비) | `budgetLeft()` (의뢰 예산) |
+| `grantLeft()` · `SITE_GRANT` (첫 건설 공사비) | `budgetLeft()` (마석) |
 | `placeMonster(z, id)` · `removeMonster(z, i)` | `placeUnit` · `removeUnit` |
 | `idleMonsters()` | `idleUnits()` |
-| `recruitInfo(name)` · `recruit(name)` (회사 금 모집) | `procureInfo/procureSquad(tribe)` · `refillInfo/refillSquad(id)` (의뢰 예산) |
+| `recruitInfo(name)` · `recruit(name)` (회사 금 모집) | `procureInfo/procureSquad(tribe)` · `refillInfo/refillSquad(id)` (마석) |
 | `setGuards(ids)` | `pickQuest(q, promoteIds)` |
 | `toContract()` | 없음 (settle 화면에서 바로 pickQuest) |
 | `goalNow` · `goalText` · `GOAL_TYPES` (전투 목표) | `questProgress()` (납품 기준 단계) |
@@ -148,9 +148,9 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `site.pins` | 예전 `placeUnit`으로 고른 대기실 `{ id: 구역 }` |
 | `site.auto` | 기본 자동 편성 (처음 켬, 손으로 출진을 바꾸면 꺼짐) |
 | `site.rest` | 쉬는 부대 `{ id: 쉬는 주 번호 }` (그 주 전투에 안 나감) |
-| `site.budgetAdded` | 단계 보상·주간 지원금으로 늘어난 의뢰 예산 합 |
+| `site.budgetAdded` | 단계 보상·마석 보급으로 늘어난 마석 합 |
 | `quest.noDeath` | 이 의뢰는 부대 사망 없음 (첫 의뢰) |
-| `quest.stages[i].budget` | 그 단계를 채우면 의뢰 예산 추가 (2층 의뢰 3단계 = 2층 건설용) |
+| `quest.stages[i].budget` | 그 단계를 채우면 마석 추가 (2층 의뢰 3단계 = 2층 건설용) |
 | `seed` | 주소 `?seed=숫자`가 있으면 새 게임(저장 없음·reset) 씨앗으로 씀 (재현 검사용) |
 
 1차 저장(층별 출진 칸 없음)은 불러올 때 `site.units`의 배치를 `deploy`로 옮긴다.
@@ -215,7 +215,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `deaths` · `noDeath` | 사망 수 · 이 의뢰는 사망 없음이었나 |
 | `restMsgs` | 결과표용 한 줄 글 배열 ("돌등껍질족 부대 퇴각 -> 다음 주 쉼 · 1명 사망") |
 | `crises` | 이번 전투 위기(카드) 수 |
-| `budgetGain` · `budgetAfter` | 의뢰인 주간 지원금 (`WEEKLY_BUDGET`) · 지원 뒤 남은 예산 |
+| `budgetGain` · `budgetAfter` | 의뢰인 마석 보급 (`WEEKLY_BUDGET`) · 지원 뒤 남은 마석 |
 
 - 규칙: 퇴각 → 다음 주 전투 쉼(자리 그대로) → 그다음 주 저절로 복귀. **큰 피해로 퇴각했을 때만** 쓰러진 인원마다 `deathChance`로 사망. **첫 의뢰(noDeath) 사망 없음. 친위대 불사**(퇴각만). 숙련도·레벨은 안 줄어듦. 인원 0(전멸) → 다음 주 기본 인원(`MON_SQUAD.start`) 무료 보충.
 
@@ -241,7 +241,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `FLOOR_CAP` | `{1:3, 2:2}` | 층 출진 한도 |
 | `FLOOR_BUILD_MUL` | `{1:1, 2:1.2}` | 층 건설비 배율 |
 | `RETREAT` | `hpRatio 0.25 · burstWindow 4 · bigShare 0.4 · deathChance 0.35` | 퇴각·큰 피해·사망 |
-| `WEEKLY_BUDGET` | 10 | 의뢰인 주간 지원금 (막힘 방지) |
+| `WEEKLY_BUDGET` | 10 | 의뢰인 마석 보급 (막힘 방지) |
 | `CARD_RULE` | `maxPerBattle 2 · crisisProgress 85 · massSquads 3 · kinds` | 카드 위기 |
 | `TRIBES[].grow` | hp·atk 0.5 (← 0.2) | 레벨 성장 |
 | `EXP` | deploy 8 · fight 8 (← 4·12) | 출진·참여 경험치 |

@@ -22,6 +22,8 @@
   --ready-soft: #243a2a;
   --accent-soft: #3a3020;
   --danger: #e5604f;
+  --maseok: var(--dir-up);     /* 마석 (현장 전용 돈) = 보라 */
+  --sinseok: var(--dir-right); /* 신석 (과금 재화) = 파랑 */
   --scrim: rgba(10, 11, 13, .8);
   /* 현장 지하 단면 (흙·지상) */
   --ground-top: #2f4a35;
@@ -338,7 +340,8 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 .bt-st { flex: none; display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
 .bt-st small { font-size: 9px; color: var(--dim); }
 .bt-st b { font-size: 12px; font-variant-numeric: tabular-nums; }
-.bt-st.gold b { color: var(--accent); } .bt-st.gem b { color: var(--dir-right); }
+.bt-st.gold b { color: var(--accent); } .bt-st.gem b { color: var(--sinseok); }
+.chip.sinseok { color: var(--sinseok); } .chip.maseok { color: var(--maseok); }
 .bt-st.sub b { font-size: 11px; color: var(--dim); } .bt-st.sub small { font-size: 8.5px; }
 
 /* 판: 남는 높이를 나눠 가진다 (너무 길게 늘어나지 않게 폭의 1.75배까지, 너무 짧아지면 화면이 스크롤) */
@@ -713,7 +716,7 @@ body.reduce .tut-hl { animation: none; }
 .pdone b { flex: 1; font-size: 18px; color: var(--ready); }
 .pdone .btn { width: auto; flex: none; padding: 10px 16px; }
 .pbudget { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--dim); }
-.pbudget b { color: var(--text); font-size: 13px; }
+.pbudget b { color: var(--maseok); font-size: 13px; }
 .pfall { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
 
 /* 세로 지하 단면: 지상 -> 1층 -> 2층 -> 3층 (아래로 갈수록 어두운 흙) */
@@ -863,7 +866,7 @@ body.reduce .bt-mon.retreating, body.reduce .bt-board.bt-alarm { animation: none
 .bt-group .lbl-died { color: var(--danger); font-weight: bold; }
 .bt-group .lbl-ok { color: var(--ready); font-weight: bold; }
 .bt-hint.demo { border-color: var(--ready); background: var(--ready-soft); }
-.bt-grant { color: var(--ready); }
+.bt-grant { color: var(--maseok); }
 #tabs.inbattle .bt-cards small { white-space: nowrap; font-size: 9px; }
 
 /* 데모 끝 */

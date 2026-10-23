@@ -27,7 +27,7 @@
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
  *  - 튜토리얼: 은발 마왕 말풍선(#tut, 탭 막대 바로 위). 대사는 lines.js, 단계 기록은 progress.js(P.tutorial 등). 아래 "튜토리얼" 절 참고.
- *  - 용어는 GAME_STRUCTURE 8절: 화면 글에 "퀘스트"를 쓰지 않는다 (의뢰·의뢰 완료·납품 기준·업무). 회사 금(영구) 와 의뢰 예산(현장 전용)은 따로 표시.
+ *  - 용어는 GAME_STRUCTURE 8절: 화면 글에 "퀘스트"를 쓰지 않는다 (의뢰·의뢰 완료·납품 기준·업무). 회사 금(영구) 와 마석(현장 전용)은 따로 표시.
  *  - 숫자는 가짜(균형 없음). 상태(RUN)는 progress.js가 localStorage에 자동 저장한다. 설정은 이 파일이 따로 저장.
  */
 (function () {
@@ -141,7 +141,7 @@
     return true;
   }
 
-  // 다음 주: 현장 맨 위 버튼. 언제든 누르면 이번 주 전투를 시작한다 (예산 0·건설 0이어도). 안 되면 이유를 토스트로
+  // 다음 주: 현장 맨 위 버튼. 언제든 누르면 이번 주 전투를 시작한다 (마석 0·건설 0이어도). 안 되면 이유를 토스트로
   function startWeek() {
     var r = P.startBattle();
     if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
@@ -176,7 +176,7 @@
     return '<button class="entry ' + o.kind + (o.on ? ' on' : '') + '"' + attr + (o.attrs || '') + '><span class="nm">' + nm + '</span>' + (sub ? '<small>' + sub + '</small>' : '') + '</button>';
   }
 
-  // 위쪽 줄 (회사·군단·현장 공통): 회사 이름 · 상점(취소선) · 메뉴 · 설정 톱니 / 회사 레벨 · 회사 금(영구) · 보석 · 주
+  // 위쪽 줄 (회사·군단·현장 공통): 회사 이름 · 상점(취소선) · 메뉴 · 설정 톱니 / 회사 레벨 · 회사 금(영구) · 신석 · 주
   function topbar(el) {
     el.appendChild(div('topbar',
       '<span class="company">검은망치 건설</span>' +
@@ -185,7 +185,7 @@
       '<button class="gear" data-go="settings" aria-label="설정">&#9881;&#xFE0E;</button>'));
     el.appendChild(div('resbar',
       '<span class="chip">회사 Lv ' + P.company().lv + '</span><span class="chip" data-chip="gold">회사 금 ' + money(RUN.gold) + '</span>' +
-      '<span class="chip">보석 ' + RUN.gems + '</span><span class="chip accent">' + RUN.week + '주째</span>'));
+      '<span class="chip sinseok">🔷 신석 ' + RUN.gems + '</span><span class="chip accent">' + RUN.week + '주째</span>'));
   }
 
   // 메뉴 팝업: 도감 · 업적 (데모에 없음 = 취소선). 바깥 누르기·닫기 버튼·Esc 로 닫는다.
@@ -214,7 +214,7 @@
     }).join('') + '</ul>';
   }
   function rewardText(rw) {
-    return '회사 금 +' + money(rw.gold || 0) + (rw.gems ? ' · 보석 +' + rw.gems : '') + ' · 회사 경험치 +' + (rw.companyExp || 0);
+    return '회사 금 +' + money(rw.gold || 0) + (rw.gems ? ' · 신석 +' + rw.gems : '') + ' · 회사 경험치 +' + (rw.companyExp || 0);
   }
 
   // ---------- 회사 탭: 하청 건설사 건물 단면 ----------
@@ -246,7 +246,7 @@
     var ok = need != null && now >= need;
     return '<div class="pcell' + (ok ? ' ok' : '') + '"><span>' + label + '</span><b>' + fmtN(now) + '/' + (need == null ? '-' : fmtN(need)) + '</b></div>';
   }
-  // 진행표 (P.questProgress): 납품 기준 n/5 · 가치 · 전투력 · (2층 전투력) · 의뢰 예산. 5단계를 채우면 의뢰 완료 + [납품하기]
+  // 진행표 (P.questProgress): 납품 기준 n/5 · 가치 · 전투력 · (2층 전투력) · 마석. 5단계를 채우면 의뢰 완료 + [납품하기]
   function progressHtml(q) {
     var pr = P.questProgress();
     if (!pr) return '';
@@ -260,7 +260,7 @@
         pcell('가치', pr.cur.value, nx.value) + pcell('전투력', pr.cur.power, nx.power) + (nx.floor2 ? pcell('2층 전투력', pr.cur.floor2, nx.floor2) : '') + '</div>';
       if (pr.floorLock) h += '<div class="pwhy">🔒 지하 ' + pr.floorLock.floor + '층: ' + pr.floorLock.atStage + '단계 달성 시 열림</div>';
     }
-    h += '<div class="pbudget"><span>의뢰 예산 <small class="dim">(건설·부대 조달)</small></span><b>' + money(pr.budget) + ' / ' + money(pr.budgetStart) + '</b></div>';
+    h += '<div class="pbudget"><span>🟣 마석 <small class="dim">(건설·부대 조달)</small></span><b>' + money(pr.budget) + ' / ' + money(pr.budgetStart) + '</b></div>';
     return h + '</div>';
   }
 
@@ -380,7 +380,7 @@
       var all = P.squads().concat(P.guards()).filter(function (u) { return u.floor !== fi.n && (u.kind === 'guard' || u.count > 0); });
       all.sort(function (a, b) { return (a.resting ? 1 : 0) - (b.resting ? 1 : 0) || (a.kind === 'guard' ? 1 : 0) - (b.kind === 'guard' ? 1 : 0); });
       h += '<h3 class="seclabel">대기 · 다른 층 부대 (' + all.length + ')</h3>' + (all.length ? all.map(function (u) { return unitRow(u, fi); }).join('') :
-        '<div class="card dim small-text">출진시킬 부대가 더 없어요. 군단 탭에서 부대를 조달해요 (의뢰 예산).</div>');
+        '<div class="card dim small-text">출진시킬 부대가 더 없어요. 군단 탭에서 부대를 조달해요 (마석).</div>');
       h += '<div class="small-text dim">부대 하나는 한 층에만 설 수 있어요. 친위대도 한 칸을 차지해요. 큰 피해를 입고 퇴각한 부대는 다음 주까지 쉬어요.</div>';
       box.innerHTML = h;
     }
@@ -412,7 +412,7 @@
     h += siteHtml(q) + fixedHtml(q);
     if (q.attr) h += '<div class="qattr"><div class="qattr-h"><span class="chip">던전 속성</span> <b>' + esc(q.attr.label || '') + '</b></div>' + (q.attr.effect ? '<div class="small-text">' + esc(q.attr.effect) + '</div>' : '') + '</div>';
     h += '<div class="poplabel qlabel">납품 기준 ' + q.stage + '/' + q.stages.length + (pr && pr.complete ? ' · 의뢰 완료' : '') + '</div>' + stagesHtml(q, q.stage) +
-      '<div class="stat"><span>의뢰 예산</span><b>' + money(P.budgetLeft()) + ' / ' + money(RUN.site.budgetStart) + '</b></div>' +
+      '<div class="stat"><span>마석</span><b>' + money(P.budgetLeft()) + ' / ' + money(RUN.site.budgetStart) + '</b></div>' +
       '<div class="stat"><span>납품 보수</span><b>' + rewardText(q.reward) + '</b></div>';
     el.appendChild(div('card contract', h));
     el.appendChild(div('dim small-text', '한 번에 의뢰 하나만 받을 수 있어요. 납품 기준 5단계를 다 채우고 [납품하기]를 누르면 새 의뢰를 고를 수 있어요.'));
@@ -571,7 +571,7 @@
       if (!guard) {
         var rf = P.refillInfo(u.id), full = rf && u.count >= u.cap;
         h += '<div class="uact"><button class="btn small' + (full ? '' : ' primary') + (rf && !rf.canAfford ? ' poor' : '') + '" data-refill="' + u.id + '"' + (rf && !rf.canAfford ? ' aria-disabled="true"' : '') + '>' +
-          (full ? '정원 가득' : '1명 보충 (예산 ' + (rf ? rf.cost : '?') + ')') + '</button></div>';
+          (full ? '정원 가득' : '1명 보충 (마석 ' + (rf ? rf.cost : '?') + ')') + '</button></div>';
       }
       return h + '</div>';
     }
@@ -579,24 +579,24 @@
       var ti = P.tribeInfo(t.id), pc = P.procureInfo(t.id), c = gemCost(ti);
       var upBtn = !ti || ti.contracted === false ? '<button class="btn small" disabled>사용권 필요</button>'
         : ti.next == null || c == null ? '<button class="btn small" disabled>최대 단계</button>'
-        : '<button class="btn small primary' + (ti.canAfford ? '' : ' poor') + '" data-uptribe="' + t.id + '"' + (ti.canAfford ? '' : ' aria-disabled="true"') + '>보석 강화 (보석 ' + c + ')</button>';
-      var prBtn = pc ? '<button class="btn small primary' + (pc.canAfford ? '' : ' poor') + '" data-procure="' + t.id + '"' + (pc.canAfford ? '' : ' aria-disabled="true"') + '>새 부대 조달 (예산 ' + pc.cost + ')</button>' : '';
+        : '<button class="btn small primary' + (ti.canAfford ? '' : ' poor') + '" data-uptribe="' + t.id + '"' + (ti.canAfford ? '' : ' aria-disabled="true"') + '>신석 강화 (신석 ' + c + ')</button>';
+      var prBtn = pc ? '<button class="btn small primary' + (pc.canAfford ? '' : ' poor') + '" data-procure="' + t.id + '"' + (pc.canAfford ? '' : ' aria-disabled="true"') + '>새 부대 조달 (마석 ' + pc.cost + ')</button>' : '';
       return '<div class="card tribecard" data-tid="' + t.id + '"><div class="tribehead"><b>' + esc(t.name) + '</b><span class="chip">' + esc(t.role) + '</span>' +
-        '<span class="chip">보석 강화 Lv ' + (ti ? ti.lv + '/' + ti.max : 0) + '</span></div>' +
+        '<span class="chip">신석 강화 Lv ' + (ti ? ti.lv + '/' + ti.max : 0) + '</span></div>' +
         '<div class="small-text">' + esc(t.feature) + '</div><div class="small-text dim">' + esc(t.talk) + '</div>' +
         (ti ? '<div class="small-text dim">지금 ' + esc(ti.effect) + (ti.next ? ' · 다음 ' + esc(ti.next) : '') + '</div>' : '') +
         '<div class="row2">' + prBtn + upBtn + '</div></div>';
     }
     function draw() {
       var gOpen = deliveredOnce();
-      segEl.innerHTML = entry({ kind: 'open', name: '부대·부족', sub: '조달·보석 강화', on: corpsTab === 'mon', attrs: ' data-t="mon"' }) +
+      segEl.innerHTML = entry({ kind: 'open', name: '부대·부족', sub: '조달·신석 강화', on: corpsTab === 'mon', attrs: ' data-t="mon"' }) +
         (gOpen ? entry({ kind: 'open', name: '친위대', sub: '최대 ' + P.GUARD_MAX + '명', on: corpsTab === 'guard', attrs: ' data-t="guard"' })
                : entry({ kind: 'lock', name: '친위대', cond: condText('guard') })) +
         entry({ kind: 'soon', name: '훈련' }) + entry({ kind: 'soon', name: '대장간' }) + entry({ kind: 'soon', name: '몬스터 숙소' });
       var s = '';
       if (corpsTab === 'mon') {
-        s += '<div class="gemnote"><span class="chip accent">의뢰 예산 ' + money(P.budgetLeft()) + '</span><span class="chip accent">보석 ' + RUN.gems + '</span>' +
-          '<span class="small-text dim">부대 조달·보충은 의뢰 예산, 보석 강화는 보석을 써요. 보석 강화는 다음 현장에도 남고, 현장 부대는 납품 때 의뢰인에게 넘어가요.</span></div>';
+        s += '<div class="gemnote"><span class="chip maseok">🟣 마석 ' + money(P.budgetLeft()) + '</span><span class="chip sinseok">🔷 신석 ' + RUN.gems + '</span>' +
+          '<span class="small-text dim">부대 조달·보충은 마석, 신석 강화는 신석을 써요. 신석 강화는 다음 현장에도 남고, 현장 부대는 납품 때 의뢰인에게 넘어가요.</span></div>';
         var sq = P.squads();
         s += '<h3 class="seclabel">현장 부대 (' + sq.length + ')</h3>' + (sq.length ? sq.map(unitCardHtml).join('') : '<div class="card dim small-text">부대가 없어요. 아래에서 조달하세요.</div>');
         s += '<h3 class="seclabel">부족</h3>' + P.TRIBES.map(tribeCardHtml).join('');
@@ -686,7 +686,7 @@
     });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { hold.addEventListener(ev, stopHold); });
     el.appendChild(hold);
-    el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·회사 금·보석·부대·친위대·의뢰가 모두 처음으로 돌아갑니다.'));
+    el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·회사 금·신석·부대·친위대·의뢰가 모두 처음으로 돌아갑니다.'));
     el.appendChild(div('mt-auto dim small-text', '버전: D1 첫 데모 (3차: 세로 층·출진·퇴각·위기 카드, 임시 숫자)'));
   };
 
@@ -708,7 +708,7 @@
       (q.attr.effect ? '<div class="small-text">' + esc(q.attr.effect) + '</div>' : '') +
       (q.attr.counter ? '<div class="small-text qcounter">내 대응: ' + esc(q.attr.counter) + '</div>' : '') + '</div>';
     h += '<div class="poplabel qlabel">납품 기준 5단계 (가치 + 전투력)</div>' + stagesHtml(q, null) +
-      '<div class="money"><div>의뢰 예산<b>' + money(q.budget) + '</b></div><div>보수<b>회사 금 ' + money(q.reward.gold) + '</b></div></div>' +
+      '<div class="money"><div>🟣 마석<b>' + money(q.budget) + '</b></div><div>보수<b>회사 금 ' + money(q.reward.gold) + '</b></div></div>' +
       '<div class="small-text dim">보수: ' + rewardText(q.reward) + '</div>' +
       '<div class="qpick">이 의뢰 받기 ▶</div>';
     var c = div('card contract pickable', h);
@@ -730,9 +730,9 @@
       var work = r.work;
       el.appendChild(div('card payout',
         '<h3>정산</h3>' +
-        '<div class="stat"><span>의뢰 보수</span><b>회사 금 +' + money(r.gold) + (r.gems ? ' · 보석 +' + r.gems : '') + '</b></div>' +
+        '<div class="stat"><span>의뢰 보수</span><b>회사 금 +' + money(r.gold) + (r.gems ? ' · 신석 +' + r.gems : '') + '</b></div>' +
         '<div class="stat"><span>회사 금</span><b>' + money(r.goldBefore) + ' → ' + money(RUN.gold) + '</b></div>' +
-        (r.gems ? '<div class="stat"><span>보석</span><b>' + r.gemsBefore + ' → ' + RUN.gems + '</b></div>' : '') +
+        (r.gems ? '<div class="stat"><span>신석</span><b>' + r.gemsBefore + ' → ' + RUN.gems + '</b></div>' : '') +
         '<div class="stat"><span>회사 경험치</span><b>+' + r.companyExp + '</b></div>' +
         '<div class="stat total"><span>회사 레벨</span><b>' + coText(r.companyBefore) + ' → ' + coText(r.companyAfter) + '</b></div>' +
         '<div class="stat"><span>걸린 기간</span><b>' + r.weeks + '주</b></div>' +
