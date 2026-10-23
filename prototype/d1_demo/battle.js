@@ -2,7 +2,7 @@
  *
  *  ① 들어오면 멈춘 상태. "전투 시작"은 하단 탭의 가운데 "다음 주" 버튼과 같은 자리(api.bar = 탭 막대 자리에 배속 · 전투 시작 · 안내)
  *  ② 무리가 대기 장소(야외)에 등급 낮은 무리부터 차례로 등장, 아래 안내 줄 "D급 OO 10명 평균 레벨 N · 짐꾼 N명"
- *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (카드 전용 화면, 눌러서 닫기, 몇 초 뒤 저절로)
+ *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (카드 전용 화면, 눌러야 닫힘)
  *  ④ 10명 = 1분대가 작은 얼굴 도트로 실제 구역 판을 따라 이동. 함정·대기실 몬스터가 작동
  *  ⑤ 이벤트 카드 = 위기 때만 (BSIM 사건 'crisis': 대량 출현·보물방 근접·보스, 전투 한 번에 최대 P.cardRule().maxPerBattle장. 진행도 시점 카드는 없다).
  *     화면 전체를 덮는 카드 전용 화면 (위 3/4 그림 자리, 아래 1/4 제목·설명·효과). 아래 막대의 [카드 N장 남음]은 BSIM.crisisLeft(S).
@@ -61,7 +61,7 @@
       ROWS = stackRows();
       var U = {
         phase: 'ready', paused: false, speedIdx: RUN.prefs.speedIdx, fastUsed: !!bs.fastUsed || RUN.prefs.speedIdx > 0,
-        appearIdx: 0, appearT: 0, secT: 0, card: null, queue: [], cardsShown: 0, cardsUsed: 0, cardNo: 0, picks: []
+        appearIdx: 0, appearT: 0, card: null, queue: [], cardsShown: 0, cardsUsed: 0, cardNo: 0, picks: []
       };
       // 저장 지점에 넣는 화면 진행 (기다리는 위기 카드 · 카드 몇 장째 · 고른 카드 목록)
       var UI_KEYS = ['queue', 'cardsShown', 'cardsUsed', 'cardNo', 'picks'];
@@ -277,17 +277,14 @@
         var o = openOverlay('sec', '<div class="bt-ovmid">' + cardHtml({
           art: c.art || BD.SECRETARY_ART, artName: BD.SECRETARY, tag: BD.SECRETARY + ' · 침입 보고', title: c.tag,
           desc: '소장님, 마지막 무리 <b>' + g.grade + '급 ' + g.name + '</b> 등장! 침입자 특성이 확정됐어요.', fx: c.text
-        }) + '</div><div class="bt-ovhint">눌러서 침입 시작</div><div class="bt-sectimer"><i></i></div>');
-        secBar = o.querySelector('.bt-sectimer i');
+        }) + '</div><div class="bt-ovhint">눌러서 침입 시작</div>');
         o.querySelector('.bt-ovcard').animate([{ transform: 'translateY(-60px) scale(.92)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
-        U.secT = 0;
         o.addEventListener('click', closeSecretary);
         buzz('warn');
       }
-      var secBar = null;
       function closeSecretary() {
         if (U.phase !== 'icard') return;
-        dismissOverlay(ov, MOTION.dur.fade); secBar = null;
+        dismissOverlay(ov, MOTION.dur.fade);
         log('침입자 카드 확정: ' + S.icard.tag + ' (' + S.icard.text + ')', 'icard');
         log('침입 시작! 10명씩 분대로 들어옵니다', 'good');
         U.phase = 'fight';
@@ -539,10 +536,7 @@
           U.appearT -= real;
           if (U.appearT <= 0 && U.appearIdx < plan.groups.length) { appearNext(); U.appearT = BD.APPEAR_GAP; }
         } else if (U.phase === 'icard') {
-          U.secT += real;
-          if (secBar) secBar.style.width = Math.max(0, 100 - U.secT / BD.SECRETARY_LIFE * 100) + '%';
-          fitOverlay();
-          if (U.secT >= BD.SECRETARY_LIFE) closeSecretary();
+          fitOverlay();   // 침입 보고는 눌러야 닫힌다 (사용자 10-23: 저절로 사라지면 못 읽음)
         } else if (U.phase === 'fight' && !U.paused) {
           // 카드 전용 화면이 떠 있는 동안 전투는 완전히 멈춘다 (시간 초과도 없이 고를 때까지 기다림. 카드가 끝나면 이어서)
           if (U.card) fitOverlay();
