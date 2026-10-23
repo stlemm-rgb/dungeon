@@ -46,6 +46,9 @@ function runBattle(W, P) {
 const sample = {};
 store[C1KEY] = '{"v":5,"keep":true}';   // C1 저장은 건드리지 않아야 함
 let W = boot(), P = W.PROGRESS, R = P.RUN, BD = W.BATTLE_DATA, Z = W.ZONES;
+// 아래 1~10번 일반 규칙 검사는 세 갈래(fork3) 판 구역 id(CD·LB·TR ...)로 짜여 있다. 실제 첫 의뢰 판(외길)은 맨 아래 11번에서 따로 검사
+function forkQ1(bd) { bd.QUESTS[0].board = 'fork3'; bd.QUESTS[0].fixed = { CC: 'frozen_dock' }; bd.QUESTS[0].budget = 260; }   // (옛 첫 의뢰 값)
+forkQ1(BD);
 P.reset();
 ok(R.v === 6 && P.VERSION === 6 && P.SAVE_KEY === KEY, '저장 v6·키 ' + P.SAVE_KEY);
 
@@ -85,8 +88,12 @@ R.site.budget = b0 - pv.cost - pr0.cost - rf.cost;
 
 // ---------- 10) 시설 3종·입구 고정·고정 구역 ----------
 ok(JSON.stringify(Z.facFor('LB').sort()) === JSON.stringify(['den', 'empty', 'lure', 'trap']), '방 시설 = 빈 구역 + 3종: ' + Z.facFor('LB'));
-ok(JSON.stringify(Z.facFor('E')) === '["split"]', '입구는 분기만');
-ok(!P.previewBuild('E', 'wait').ok && !P.buildZone('Y', 'thorn').ok, '입구 방향·덫 숲 거부');
+ok(JSON.stringify(Z.facFor('E')) === '["split","wait"]', '입구는 분기·대기만 (소감 뒤 대기 다시 엶): ' + Z.facFor('E'));
+ok(!P.previewBuild('E', 'left').ok && !P.previewBuild('E', 'right').ok && !P.buildZone('Y', 'thorn').ok, '입구 굽은길·덫 숲 거부');
+{
+  const pw = P.previewBuild('E', 'wait');
+  ok(pw.ok && pw.cost === Z.FAC.wait.cost && Z.forecast(pw.zones, {}, 20).at.CB === 20 && !Z.forecast(pw.zones, {}, 20).at.TL, '입구 대기 = 전원 가운데 길: ' + JSON.stringify(Z.forecast(pw.zones, {}, 20).at));
+}
 const fz = Object.keys(R.site.fixed)[0];
 ok(fz && R.site.zones[fz] === Z.fixedFac(R.site.fixed[fz]) && Z.FAC[R.site.zones[fz]].name === '얼어붙은 하역장', '고정 구역 얼어붙은 하역장 ' + fz);
 r = P.buildZone(fz, 'trap');
@@ -306,7 +313,7 @@ ok(R.quest.stage === 3 && R.site.floorsOpen === 2 && P.unlocks().floor2, '3단�
 // 새 게임을 q2(2층 의뢰)까지 빠르게: q1을 5단계로 채워 납품 -> 친위대 1 -> q2
 function freshTo(stageQ) {
   W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
-  P.reset(); P.pickQuest(P.offerQuests()[0]);
+  forkQ1(BD); P.reset(); P.pickQuest(P.offerQuests()[0]);
   if (stageQ === 1) return;
   R.site.budget = 999; P.buildZone('TR', 'lure'); P.buildZone('RB', 'den'); ['CB', 'CD', 'RC', 'RD', 'TL', 'LB', 'LC', 'LD'].forEach(z => P.buildZone(z, 'trap'));
   R.site.squads[0].lv = 20; P.questUpdate();
@@ -454,11 +461,14 @@ freshTo(1);
   let ret = null;
   for (let i = 0; i < 4000 && !S.done; i++) W.BSIM.step(S, 0.1).forEach(e => { if (e.type === 'mretreat') ret = e; });
   const res = W.BSIM.result(S);
-  ok(ret && ret.id === R.site.squads[0].id && res.monRetreat.length === 1 && res.monRetreat[0].id === ret.id, '전투 중 퇴각 사건·결과: ' + JSON.stringify(ret));
+  // RB 대기실(2칸)에는 기본 부대 + 대기실을 지어 받은 부대가 같이 선다 -> 둘 다 퇴각할 수 있음
+  const inRB = R.site.units.RB || [];
+  ok(ret && inRB.indexOf(ret.id) >= 0 && res.monRetreat.length >= 1 && res.monRetreat.length === new Set(res.monRetreat.map(m => m.id)).size &&
+     res.monRetreat.every(m => inRB.indexOf(m.id) >= 0) && res.monRetreat.some(m => m.id === ret.id), '전투 중 퇴각 사건·결과: ' + JSON.stringify([ret, res.monRetreat]));
   ok(S.dens.RB.every(m => m.out), '퇴각한 부대는 그 뒤 싸우지 않음 (out)');
   const snap = W.BSIM.snapshot(S); ok(snap.mu && snap.crisis, '저장 지점에 퇴각·위기 상태');
   const rp = P.applyBattle(res);
-  ok(rp.retreats.length === 1 && P.isResting(ret.id), '실제 전투 퇴각 -> 쉼');
+  ok(rp.retreats.length === res.monRetreat.length && res.monRetreat.every(m => P.isResting(m.id)), '실제 전투 퇴각 -> 쉼');
 }
 // ---------- 5) 카드 위기: 최대 2장, 배속·재접속 같음 ----------
 freshTo(1);
@@ -518,6 +528,111 @@ freshTo(2);
     return sb;
   })();
   ok(W2.PROGRESS.RUN.seed === 12345, '?seed= 주소 옵션 = 새 게임 씨앗: ' + W2.PROGRESS.RUN.seed);
+}
+// ===================== 11) 사용자 플레이 소감 뒤 (2026-10-23): 외길 첫 판·튜토리얼 강조·마석 보급·대기실 부대 =====================
+W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+P.reset(); P.pickQuest(P.offerQuests()[0]);
+{
+  // 첫 의뢰 = 외길, 갈림길은 두 번째 의뢰부터
+  ok(R.quest.key === 'q1' && R.site.board === 'line' && BD.QUESTS[1].board === 'fork3', '첫 의뢰 = 외길 판, 두 번째 = 세 갈래: ' + R.site.board);
+  const must = Z.mustPass();
+  ok(JSON.stringify(must) === JSON.stringify(['R1', 'R2', 'R3', 'R4', 'R5']), '외길에서 반드시 지나는 구역 = 큰길 R1~R5: ' + must);
+  const fz = Object.keys(R.site.fixed)[0];
+  ok(fz && must.indexOf(fz) >= 0 && R.site.zones[fz] === Z.fixedFac('frozen_dock'), '고정 구역(얼어붙은 하역장)이 큰길 위: ' + fz);
+  const tp = P.tutorialPath();
+  ok(Array.isArray(tp) && tp.length >= 3 && tp.indexOf(fz) < 0 && tp.every(z => must.indexOf(z) >= 0 && Z.zoneType(z) === 'room'), '튜토리얼 강조 = 모두 지나는 큰길 중 지을 수 있는 칸: ' + tp);
+  sample.tutorialPath = tp;
+  // 강조 칸은 어떤 시설 배치에서도 침입자 전원이 지난다 (길 계산 + 실제 전투 분대 길)
+  const layouts = [{}, { NL1: 'lure' }, { NR2: 'lure', R2: 'den' }, { NL3: 'den', NR3: 'lure', R4: 'trap' }, { NL1: 'den', NR1: 'den', R1: 'lure' }];
+  layouts.forEach((lay, i) => {
+    const zones = Object.assign({}, R.site.zones, lay), units = {};
+    Object.keys(lay).forEach(z => { if (lay[z] === 'den') units[z] = [R.site.squads[0].id]; });
+    const w = Z.passRatios(zones, units);
+    ok(tp.concat([fz]).every(z => Math.abs((w[z] || 0) - 1) < 1e-9), '배치 ' + i + ': 강조 칸 통과 비율 1: ' + JSON.stringify(w));
+    const turn = {};
+    for (let k = 0; k < 6; k++) { const r = Z.routeOf(zones, units, turn); ok(tp.every(z => r.indexOf(z) >= 0), '배치 ' + i + ' 분대 ' + k + ' 길에 강조 칸 전부: ' + r.join('>')); }
+  });
+  {
+    R.site.budget = 999; P.buildZone('NL1', 'lure');
+    P.startBattle();
+    const S = W.BSIM.create(P.battleInput());
+    ok(S.squads.length >= 2 && S.squads.every(q => tp.every(z => q.route.indexOf(z) >= 0)), '실제 전투: 모든 분대 길에 강조 칸: ' + S.squads.map(q => q.route.join('>')).join(' / '));
+    R.battling = false; R.bsave = null;
+  }
+  // 세 갈래 판(두 번째 의뢰)에는 반드시 지나는 방이 없다 -> 그래서 첫 의뢰에서 뺌
+  Z.useSite('fork3', 1, 1);
+  ok(Z.mustPass().filter(z => Z.zoneType(z) === 'room').length === 0, '세 갈래 판은 모두 지나는 방이 없음');
+  Z.useSite(R.site.board, R.site.floors, R.site.floorsOpen);
+}
+// 마석 보급: 매주 큰길 시설 하나 값
+W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+P.reset(); P.pickQuest(P.offerQuests()[0]);
+{
+  ok(P.weeklyBudget() === BD.WEEKLY_BUDGET && BD.WEEKLY_BUDGET === 30 && P.questProgress().weeklyBudget === 30, '마석 보급 값 API: ' + P.weeklyBudget());
+  const cheap = Math.min.apply(null, P.tutorialPath().map(z => Math.min(P.buildCost('trap', z), P.buildCost('den', z))));
+  ok(P.weeklyBudget() >= cheap, '보급 한 번으로 큰길 시설 하나: ' + P.weeklyBudget() + ' >= ' + cheap);
+  R.site.budget = 0;
+  P.startBattle();
+  const rp = P.applyBattle({ gold: 0, gems: 0, loot: 0, reached: 0, kills: 0, total: 0, squads: 0, deployed: [], fought: [] });
+  ok(rp.budgetGain === 30 && rp.budgetAfter === 30 && P.budgetLeft() === 30 && R.site.budgetAdded === 30, '전투 뒤 마석 +30: ' + JSON.stringify([rp.budgetGain, rp.budgetAfter]));
+  const pv = P.previewBuild('R1', 'trap');
+  ok(pv.ok, '마석 0에서 보급만으로 큰길 함정 가능: ' + pv.why);
+}
+// 대기실을 지으면 기본 부대 +1 (자동 편성), 철거·재건으로는 안 늘어남
+W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+P.reset(); P.pickQuest(P.offerQuests()[0]);
+{
+  const st = R.site, n0 = st.squads.length, fr = BD.MON_SQUAD_FREE;
+  ok(n0 === 1 && st.denGifts === 0, '처음: 무료 기본 부대 1, 받은 대기실 부대 0');
+  const pv = P.previewBuild('R2', 'den');
+  ok(pv.ok && pv.gift === 1 && pv.giftTribe === fr.tribe && pv.giftCount === fr.count && /부대 \+1/.test(pv.giftText), '미리보기에 부대 +1: ' + JSON.stringify([pv.gift, pv.giftText]));
+  const b0 = P.budgetLeft();
+  let r = P.buildZone('R2', 'den');
+  ok(r.ok && r.gift === 1 && r.msg.indexOf('부대 +1') >= 0 && r.units.length === 1, '완공 메시지에 부대 +1: ' + r.msg);
+  const g = st.squads[st.squads.length - 1];
+  ok(st.squads.length === n0 + 1 && g.tribe === fr.tribe && g.count === fr.count && g.free && g.lv === BD.SQUAD_START_LV[0] && st.denGifts === 1, '받은 부대 = 기본 부족·인원·무료: ' + JSON.stringify(g));
+  ok(P.budgetLeft() === b0 - pv.cost, '부대는 공짜 (마석은 대기실 값만)');
+  ok(st.auto && st.deploy[1].indexOf(g.id) >= 0 && st.deploy[1].indexOf(st.squads[0].id) >= 0 && (st.units.R2 || []).length === 2, '자동 편성: 기본 부대 + 새 부대 둘 다 출진: ' + JSON.stringify(st.deploy));
+  ok(P.sitePower() === pv.powerAfter, '미리보기 전투력 = 지은 뒤 전투력 (새 부대 포함): ' + pv.powerAfter + ' / ' + P.sitePower());
+  // 철거·재건 반복: 부대가 안 늘어남
+  st.budget = 9999;
+  for (let k = 0; k < 5; k++) {
+    ok(P.buildZone('R2', 'empty').ok, '철거 ' + k);
+    const p2 = P.previewBuild('R2', 'den');
+    r = P.buildZone('R2', 'den');
+    ok(r.ok && !r.gift && p2.gift === 0 && st.squads.length === n0 + 1, '재건 ' + k + ': 부대 그대로 ' + st.squads.length);
+  }
+  // 다른 칸으로 옮겨 짓기 (철거 뒤 다른 칸): 안 늘어남
+  P.buildZone('R2', 'empty'); r = P.buildZone('NL2', 'den');
+  ok(r.ok && !r.gift && st.squads.length === n0 + 1, '옮겨 짓기로는 부대 안 늘어남');
+  // 대기실이 동시에 둘이 되면 하나 더
+  r = P.buildZone('R4', 'den');
+  ok(r.ok && r.gift === 1 && st.squads.length === n0 + 2 && st.denGifts === 2, '대기실 2개째 -> 부대 +1');
+  ok(st.denGifts <= Z.summary(st.zones, {}, null).den * BD.DEN_GIFT, '받은 수 <= 대기실 수 최고치');
+  // 마석 0: 대기실을 못 지으니 부대도 안 생김
+  st.budget = 0;
+  r = P.buildZone('NR2', 'den');
+  ok(!r.ok && st.squads.length === n0 + 2 && st.denGifts === 2, '마석 0이면 대기실도 부대도 없음: ' + r.msg);
+  // 저장·불러오기: denGifts 유지
+  P.save(); W = boot(); P = W.PROGRESS; R = P.RUN;
+  ok(P.load() && R.site.denGifts === 2 && R.site.squads.length === n0 + 2, 'denGifts 저장 유지');
+  // 옛 v6 저장 (denGifts 칸 없음): 이미 있는 대기실 수만큼 받은 것으로 침 (소급 지급 없음)
+  const sv = JSON.parse(store[KEY]); delete sv.site.denGifts; store[KEY] = JSON.stringify(sv);
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA;
+  const dens = W.ZONES.summary(R.site.zones, {}, null).den;
+  ok(P.load() && R.v === 6 && R.site.denGifts === dens && R.site.squads.length === n0 + 2, '옛 v6 저장: denGifts = 지금 대기실 수 (' + dens + '), 부대 소급 없음');
+  R.site.budget = 999;
+  ok(P.buildZone('NL2', 'empty').ok && !P.buildZone('NL2', 'den').gift, '옛 저장: 있던 대기실 재건은 부대 없음');
+  ok(P.buildZone('NR3', 'den').gift === 1, '옛 저장: 새 대기실(동시 수 최고치 넘음)은 부대 +1');
+}
+// 옛 v6 저장의 세 갈래 첫 현장: 반드시 지나는 방이 없어도 튜토리얼 강조가 빈 배열이 아님 (가장 많이 지나는 칸)
+W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+forkQ1(BD); P.reset(); P.pickQuest(P.offerQuests()[0]);
+{
+  P.save(); W = boot(); P = W.PROGRESS; R = P.RUN; Z = W.ZONES;   // 데이터는 외길이지만 저장된 현장은 세 갈래
+  ok(P.load() && R.site.board === 'fork3', '옛 저장 세 갈래 첫 현장 유지');
+  const tp = P.tutorialPath();
+  ok(Array.isArray(tp) && tp.length > 0 && tp.every(z => Z.zoneType(z) === 'room' && !R.site.fixed[z]), '세 갈래 옛 저장: 강조 칸 있음 ' + tp);
 }
 console.log(JSON.stringify({ problems, sample }));
 """

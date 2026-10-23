@@ -2,6 +2,8 @@
  *
  * 공개 함수 목록·RUN 모양은 prototype/d1_demo/API.md. 규칙 요약 (docs/GAME_STRUCTURE.md 3·6절, GAME_PLAN 2026-10-22·23 절)
  *  1) 매주 전투: 현장의 "다음 주"(startBattle) -> 전투 -> applyBattle로 한 주가 끝남. 마석 0·건설 0이어도 진행 가능 (무료 기본 부대)
+ *  11) 사용자 플레이 소감 뒤(2026-10-23): 첫 의뢰 = 외길 판, 튜토리얼 강조 = 모두 지나는 큰길(tutorialPath) · 마석 보급 30(weeklyBudget) ·
+ *     대기실을 지으면 기본 부대 +1 (DEN_GIFT, site.denGifts로 철거·재건 무한 생성 막음)
  *  2) 돈 분리: RUN.gold = 회사 금(영구, 전투 수입·납품 보수가 여기로) · RUN.site.budget = 마석(그 의뢰의 건설·부대 조달 전용).
  *     마석이 모자라면 거절 (회사 금으로 대신 내지 않음). 남은 마석은 납품 때 사라짐. 환불 없음
  *  3) 던전 가치 = 지어 둔 시설 점수 합(zones.js summary, 몬스터 제외).
@@ -68,7 +70,8 @@
   //  floors 의뢰 층 수 · floorsOpen 열린 층 수 · deploy 층별 출진 { '1': [부대·친위대 id], '2': [...] } (층마다 출진 한도) ·
   //  pins 예전 placeUnit으로 고른 대기실 { id: 구역 } · auto 기본 자동 편성 켬 · rest 쉬는 부대 { id: 쉬는 주 } ·
   //  units 대기실 배치 { 구역: [id] } (deploy에서 계산해 저장, 읽기 전용) · squads 현장 부대 ·
-  //  budget 남은 마석 · budgetStart 처음 마석 · budgetAdded 단계 보상으로 늘어난 마석 · spent 쓴 마석 · builds 마석을 쓴 건설 수 · value·power 저장 때 맞춰 둠
+  //  budget 남은 마석 · budgetStart 처음 마석 · budgetAdded 단계 보상으로 늘어난 마석 · spent 쓴 마석 · builds 마석을 쓴 건설 수 · value·power 저장 때 맞춰 둠 ·
+  //  denGifts 대기실을 지어 받은 기본 부대 수 (DEN_GIFT. 받은 수 <= 동시에 있었던 대기실 수 최고치 × DEN_GIFT -> 철거·재건으로 안 늘어남)
   function freshSite(q) {
     var floors = q && q.floors > 1 ? q.floors | 0 : 1;
     var b = ZONES.useSite(q && q.board || ZONES.DEFAULT_BOARD, floors, 1);
@@ -77,7 +80,7 @@
     Object.keys(fixed).forEach(function (z) { if (zones[z] !== ZONES.fixedFac(fixed[z])) delete fixed[z]; }); // 판에 없는 구역은 버림
     var site = { board: b, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
       floors: floors, floorsOpen: 1, deploy: freshDeploy(floors), pins: {}, auto: true, rest: {},
-      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0 };
+      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0, denGifts: 0 };
     if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (마석 0이어도 진행 가능)
       site.squads.push(newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true));
     }
@@ -214,6 +217,9 @@
     st.squads.forEach(function (s) { s.count = Math.max(0, Math.min(BD.MON_SQUAD.cap, s.count | 0)); s.free = s.free === true; fixLevel(s); });
     if (typeof st.nextSquadNo !== 'number') st.nextSquadNo = st.squads.length + 1;
     ['budget', 'budgetStart', 'budgetAdded', 'spent', 'builds'].forEach(function (k) { st[k] = nonNeg(st[k]); });
+    // 대기실 부대 선물 칸이 없는 옛 v6 저장: 이미 있는 대기실은 받은 것으로 친다 (소급 지급 없음, 다음 새 대기실부터 받음)
+    if (typeof st.denGifts !== 'number' || !isFinite(st.denGifts) || st.denGifts < 0) st.denGifts = denCount(st.zones) * Math.max(0, BD.DEN_GIFT | 0);
+    st.denGifts = Math.floor(st.denGifts);
     st.auto = st.auto !== false;
     if (!isObj(st.rest)) st.rest = {};
     Object.keys(st.rest).forEach(function (id) { if (!rawUnit(id) || typeof st.rest[id] !== 'number' || st.rest[id] < RUN.week) delete st.rest[id]; });
@@ -602,7 +608,7 @@
       stage: q.stage, total: total, complete: complete, canDeliver: !why, why: why, cur: cur,
       next: nx ? { stage: q.stage + 1, value: nx.value, power: nx.power, floor2: nx.floor2 || 0, opens: nx.opens || 0 } : null,
       floors: q.floors, floorsOpen: RUN.site.floorsOpen, floorLock: lock, line: line,
-      budget: budgetLeft(), budgetStart: RUN.site.budgetStart, budgetAdded: RUN.site.budgetAdded || 0
+      budget: budgetLeft(), budgetStart: RUN.site.budgetStart, budgetAdded: RUN.site.budgetAdded || 0, weeklyBudget: weeklyBudget()
     };
   }
   function checkQuest() { var p = questProgress(); return !!(p && p.canDeliver); }
@@ -621,10 +627,18 @@
   }
   // 건너뛰기: 안내만 끈다 (데모 의뢰 순서는 그대로)
   function skipTutorial() { RUN.tutorial.on = false; save(); return true; }
-  // 튜토리얼 중 첫 현장에서 분대 하나가 갈 길 (입구 'E'부터 보물방 'B'). 아니면 null
+  // 튜토리얼 중 첫 현장에서 강조할 칸: 침입자 모두가 반드시 지나는 구역(ZONES.mustPass, 외길 판 = 큰길) 중 지을 수 있는 칸 (고정 구역 뺌).
+  //  (lines.js 'zones' = "반짝이는 칸이 침입자가 반드시 지나는 길"이 늘 참이 되게. 예전: 분대 하나의 길이라 세 갈래 판에서 거짓이었음)
+  //  반드시 지나는 칸이 없는 판(옛 저장의 세 갈래 첫 현장)이면 통과 비율이 가장 높은 칸들. 튜토리얼이 아니면 null
   function tutorialPath() {
     if (!RUN.tutorial.on || RUN.phase !== 'play' || RUN.siteNo !== 1) return null;
-    return ZONES.routeOf(RUN.site.zones, RUN.site.units, {});
+    var st = RUN.site;
+    function buildable(z) { return ZONES.zoneType(z) === 'room' && !st.fixed[z] && ZONES.floorOpen(ZONES.floorOf(z)); }
+    var must = ZONES.mustPass().filter(buildable);
+    if (must.length) return must;
+    var w = ZONES.passRatios(st.zones, st.units), top = 0;
+    Object.keys(w).forEach(function (z) { if (buildable(z) && w[z] > top) top = w[z]; });
+    return ZONES.ORDER.filter(function (z) { return buildable(z) && top > 0 && w[z] >= top - 1e-9; });
   }
 
   // ---------- 의뢰 받기 (새 현장) ----------
@@ -724,6 +738,20 @@
     return '';
   }
   function budgetLeft() { return RUN.site && RUN.site.budget > 0 ? RUN.site.budget : 0; }
+  // 의뢰인 마석 보급: 전투(한 주)가 끝날 때마다 마석 +이만큼 (BATTLE_DATA.WEEKLY_BUDGET). 화면의 "다음 주 마석 +N"
+  function weeklyBudget() { return Math.max(0, BD.WEEKLY_BUDGET | 0); }
+
+  // ---------- 대기실 기본 부대 (DEN_GIFT) ----------
+  //  대기실을 지으면 기본 부대(MON_SQUAD_FREE 부족·인원, 무료)가 같이 온다. 한 현장에서 받는 수 <= 동시에 있었던 대기실 수의 최고치 × DEN_GIFT
+  //  (site.denGifts = 지금까지 받은 수). 그래서 철거 -> 재건, 다른 칸으로 옮겨 짓기로는 더 생기지 않는다. 마석이 0이면 대기실을 못 지으니 생기지 않는다
+  function denCount(zones) { return ZONES.summary(zones, {}, null).den; }
+  function denGiftOf(zones2) {
+    var per = Math.max(0, BD.DEN_GIFT | 0), fr = BD.MON_SQUAD_FREE;
+    if (!per || !fr || !RUN.site) return 0;
+    return Math.max(0, denCount(zones2) * per - (RUN.site.denGifts || 0));
+  }
+  function giftSquad(site) { return newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true); }
+  function giftText(n) { var t = tribeData(BD.MON_SQUAD_FREE.tribe); return n > 0 ? '기본 부대 +' + n + ' (' + t.name + ' ' + BD.MON_SQUAD_FREE.count + '명' + (n > 1 ? '씩' : '') + ', 무료)' : ''; }
   function afterChange() { arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
 
   // ---------- 건설 (마석만) ----------
@@ -737,15 +765,22 @@
     var cur = RUN.site.zones[z], bc = buildCostInfo(k, z), cost = bc.cost;
     var zones2 = {}; Object.keys(RUN.site.zones).forEach(function (q) { zones2[q] = RUN.site.zones[q]; });
     zones2[z] = k;
+    // 대기실 기본 부대: 받게 되면 잠깐 현장 부대에 넣어 편성·전투력을 계산하고 뺀다 (id = 지으면 실제로 붙을 번호)
+    var gift = denGiftOf(zones2), temp = [], no0 = RUN.site.nextSquadNo;
+    for (var gi = 0; gi < gift; gi++) temp.push(giftSquad(RUN.site));
+    RUN.site.squads = RUN.site.squads.concat(temp);
     var fm = formation(zones2, RUN.site.deploy, RUN.site.pins, RUN.site.auto), units2 = fm.units, back = fm.back;
+    var powerAfter = powerOf(zones2, units2);
+    RUN.site.squads = RUN.site.squads.slice(0, RUN.site.squads.length - temp.length); RUN.site.nextSquadNo = no0;
     var why = canEdit();
     if (!why && cur === k) why = '이미 이 시설이에요';
     if (!why && cost > budgetLeft()) why = '마석 ' + (cost - budgetLeft()) + ' 모자람';
     return {
       ok: !why, why: why, cost: cost, baseCost: bc.base, discount: bc.discount, counts: cost > 0,
       budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
-      powerNow: sitePower(), powerAfter: powerOf(zones2, units2),
-      back: back, zones: zones2, units: units2, from: cur, floor: fl
+      powerNow: sitePower(), powerAfter: powerAfter,
+      back: back, zones: zones2, units: units2, from: cur, floor: fl,
+      gift: gift, giftTribe: gift ? BD.MON_SQUAD_FREE.tribe : '', giftCount: gift ? BD.MON_SQUAD_FREE.count : 0, giftText: giftText(gift)
     };
   }
   function buildZone(z, k) {
@@ -755,9 +790,13 @@
     RUN.site.spent += p.cost;
     RUN.site.zones[z] = k;          // 편성(한도·대기실 나눠 서기)은 afterChange -> arrange가 맞춤
     if (p.counts) { RUN.site.builds++; choreAdd('build'); }
+    var gifts = [];
+    for (var gi = 0; gi < p.gift; gi++) { var gs = giftSquad(RUN.site); RUN.site.squads.push(gs); gifts.push(gs); }
+    RUN.site.denGifts += gifts.length;
     var stages = afterChange();
     var dv = p.valueAfter - p.valueNow;
-    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')', stages: stages };
+    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' + (gifts.length ? ' · ' + giftText(gifts.length) : ''),
+      stages: stages, gift: gifts.length, units: gifts.map(unitView) };
   }
   // 건설비: 시설 비용 × 층 배율(BATTLE_DATA.FLOOR_BUILD_MUL, 깊은 층이 비쌈) - 공방 할인(데모에서 꺼짐)
   function buildCostInfo(k, z) {
@@ -1000,7 +1039,7 @@
       retreats.forEach(function (r) { if (r.id === u.id) r.refill = u.count; });
     });
     // 의뢰인 마석 보급 (BATTLE_DATA.WEEKLY_BUDGET): 마석을 부대에 다 써서 가치 기준을 못 채우고 막히는 일을 막는 안전판
-    var budgetGain = Math.max(0, BD.WEEKLY_BUDGET | 0);
+    var budgetGain = weeklyBudget();
     if (budgetGain) { st.budget += budgetGain; st.budgetAdded += budgetGain; }
     arrange();
     var stages = questUpdate();
@@ -1194,7 +1233,7 @@
     offerQuests: offerQuests, lockedQuest: lockedQuest, pickQuest: pickQuest, questProgress: questProgress, questUpdate: questUpdate,
     checkQuest: checkQuest, questBlockers: questBlockers, deliver: deliver,
     // 현장: 가치·전투력·마석·건설
-    siteSummary: siteSummary, siteValue: siteValue, sitePower: sitePower, powerInfo: powerInfo, powerOf: powerOf, budgetLeft: budgetLeft,
+    siteSummary: siteSummary, siteValue: siteValue, sitePower: sitePower, powerInfo: powerInfo, powerOf: powerOf, budgetLeft: budgetLeft, weeklyBudget: weeklyBudget,
     previewBuild: previewBuild, buildZone: buildZone, buildCost: buildCost, forecast: forecast,
     // 부대·친위대
     TRIBES: BD.TRIBES, STATS: BD.STATS, squads: squads, guards: guards, unitById: unitById, monById: unitById, idleUnits: idleUnits,

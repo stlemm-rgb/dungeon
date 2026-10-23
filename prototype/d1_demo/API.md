@@ -94,7 +94,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `cardRule()` | `{ mode:'crisis', maxPerBattle:2, crisisProgress }` 이벤트 카드 B안 데이터 (위기 감지는 2차) | |
 
 ### 튜토리얼·저장
-`tutorial()` · `tutorialSeen(id)` · `skipTutorial()`(안내만 끔) · `tutorialPath()`(튜토리얼 중 첫 현장의 길) · `save()` · `load()` · `reset()` · `setClock(fn)`
+`tutorial()` · `tutorialSeen(id)` · `skipTutorial()`(안내만 끔) · `tutorialPath()`(튜토리얼 중 첫 현장에서 강조할 칸 = 침입자 모두가 지나는 큰길 중 지을 수 있는 칸, 12절) · `save()` · `load()` · `reset()` · `setClock(fn)`
 
 ### 데모에서 꺼진 것 (부르면 늘 거절·0, 지급 없음)
 `watchAd()` · `gachaInfo()`(`{ off:true, left:0 }`) · `gachaPull()` · `chores()`(`off:true`, 진행 안 오름) · `claimChore()` · `choresClaimable()`(0) · `idleInfo()`(`off:true`) · `claimIdle()` · `WORKSHOPS`(ready false) · `workshopInfo()` · `upgradeWorkshop()`. 끄는 표 = `BATTLE_DATA.DEMO_OFF`, `PROGRESS.OFF`.
@@ -102,7 +102,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 ## 3. ZONES·BSIM 바뀐 점
 
 - `ZONES.summary(zones, units, unitById?)`: value에 몬스터가 **안 들어감**. `fixed` 수 추가.
-- `ZONES.facFor(z)`: 데모 시설만 (방 = 빈 구역·함정 복도·몬스터 대기실·미끼, 입구 = 분기, 야외 = 숲).
+- `ZONES.facFor(z)`: 데모 시설만 (방 = 빈 구역·함정 복도·몬스터 대기실·미끼, 입구 = 분기·**대기**(12절), 야외 = 숲).
 - `ZONES.slotsOf(k, z)`: 대기실 칸당 1자리 (부대 하나).
 - 새: `ZONES.fixedFac(id)` · `isFixedFac(k)` · `passRatios(zones, units, n?)` · `trapScore(z, boost?)` · `defaultZones(fixed?)`. 고정 구역 시설은 `FAC['fz_frozen_dock']` (kind `fixed`).
 - `BSIM.create(o)`: `o.unitById`(또는 옛 `monById`)로 부대를 받아 **인원 수만큼** 싸우는 개체를 만든다. `S.dens[z][i] = { id, n, name, hp, max, atk, def, guard, lost }`.
@@ -127,7 +127,7 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `RUN.monsters` (개체) | `RUN.site.squads` (부대) + `RUN.guards` (친위대) |
 | 자동 납품 (`checkQuest` 참이면 shell이 deliver) | 진행표 "의뢰 완료" → 납품 버튼에서만 `deliver()` |
 | "금 쓴 건설 없으면 다음 주 막힘" | 없음 (언제든 다음 주) |
-| 판 3종 무작위·입구 방향(대기·굽은길)·덫 숲 | 없음 (fork3 한 판, 입구 분기 고정) |
+| 판 3종 무작위·입구 방향(대기·굽은길)·덫 숲 | 없음 (의뢰마다 정해진 판: 첫 의뢰 외길·두 번째 세 갈래. 입구는 분기·대기, 굽은길 없음 — 12절) |
 | 수리비 (`rep.repair`) | 늘 0 |
 | 납품 판매 대금 (`rep.sale` = 가치 절반) | 없음 |
 
@@ -241,9 +241,41 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 | `FLOOR_CAP` | `{1:3, 2:2}` | 층 출진 한도 |
 | `FLOOR_BUILD_MUL` | `{1:1, 2:1.2}` | 층 건설비 배율 |
 | `RETREAT` | `hpRatio 0.25 · burstWindow 4 · bigShare 0.4 · deathChance 0.35` | 퇴각·큰 피해·사망 |
-| `WEEKLY_BUDGET` | 10 | 의뢰인 마석 보급 (막힘 방지) |
+| `WEEKLY_BUDGET` | ~~10~~ → **30** (12절) | 의뢰인 마석 보급 (막힘 방지) |
 | `CARD_RULE` | `maxPerBattle 2 · crisisProgress 85 · massSquads 3 · kinds` | 카드 위기 |
 | `TRIBES[].grow` | hp·atk 0.5 (← 0.2) | 레벨 성장 |
 | `EXP` | deploy 8 · fight 8 (← 4·12) | 출진·참여 경험치 |
 | q1 `stages` | 가치 30/55/80/105/130 · 전투력 50/75/100/130/160 | 첫 의뢰 3주 안팎 |
 | q2 `stages` | 3단계 `budget:150` · 4단계 가치 190·전투력 200·2층 50 · 5단계 230·250·2층 90 | |
+
+---
+
+# 12. 사용자 플레이 소감 뒤 (2026-10-23)
+
+화면 이름: 의뢰 예산 = **마석**, 주간 지원금 = **마석 보급**, 보석 = **신석** (코드 변수 `budget`·`gems`는 그대로). 저장은 **v6 그대로** (칸 하나 늘어남, 아래).
+
+| 바뀐 것 | 내용 |
+| --- | --- |
+| 첫 의뢰 판 | q1 = **외길(`line`)**. 큰길 `R1`~`R5`는 침입자 모두가 지남. 고정 구역 얼어붙은 하역장 = `R3`(큰길 가운데). 마석 260 → **110** (외길은 같은 마석으로 전투력이 커서, 근거 battle_data.js QUESTS 주석). 갈림길(세 갈래)은 q2부터 |
+| 튜토리얼 강조 | `tutorialPath()` = **모두 지나는 칸**(`ZONES.mustPass()`) 중 지을 수 있는 방 (고정 구역 뺌). q1이면 `['R1','R2','R4','R5']`. 반드시 지나는 칸이 없는 판(옛 저장의 세 갈래 첫 현장)이면 통과 비율이 가장 높은 칸들 (빈 배열 안 됨). 튜토리얼이 아니면 null (예전과 같음) |
+| 입구 대기 | 입구 시설 `wait`(대기, 마석 10, 전원 가운데 길로) 다시 지을 수 있음 (`DEMO_FACILITIES.entry = ['split','wait']`). 굽은길은 여전히 없음. q2 정산 안내에 한 줄 (lines.js `deliver`) |
+| 마석 보급 | `WEEKLY_BUDGET` 10 → **30** (큰길 시설 하나 = 3칸 × 10). 새 함수 `P.weeklyBudget()` → 숫자 (다음 주 마석 +N). `questProgress().weeklyBudget`도 같은 값 |
+| 대기실 부대 | 몬스터 대기실을 지으면 **기본 부대 +1** (`MON_SQUAD_FREE`와 같은 부족·인원, `free: true`, 시작 레벨 = 조달과 같음). 자동 편성이 켜져 있으면 바로 출진 칸에 들어감. 마석 조달은 다른 부족·추가 부대용으로 그대로 |
+| q2 마석 | 200 → **150** (2층 대기실 부대가 2층 전투력 조건을 바로 채워 q2가 전투 1번에 끝나서. 근거 battle_data.js) |
+| 무한 생성 막기 | 한 현장에서 받는 수 ≤ **동시에 있었던 대기실 수의 최고치** × `DEN_GIFT`(1). 철거 → 재건, 다른 칸으로 옮겨 짓기로는 안 생김. 마석 0이면 대기실을 못 지어 안 생김 |
+
+### 함수·칸
+
+| 이름 | 모양 |
+| --- | --- |
+| `P.weeklyBudget()` | 마석 보급 값 (지금 30) |
+| `previewBuild(z, k)` | 추가: `gift`(지으면 받을 부대 수, 0·1) · `giftTribe` · `giftCount` · `giftText`("기본 부대 +1 (돌등껍질족 3명, 무료)", 없으면 `''`). `powerAfter`·`units`는 **받을 부대까지 넣은** 편성 (units에 아직 없는 새 부대 id가 들어 있을 수 있음 → `unitById`가 null) |
+| `buildZone(z, k)` | 추가: `gift`(받은 수) · `units`(받은 부대 보기 배열). `msg` 끝에 " · 기본 부대 +1 (…)" |
+| `questProgress()` | 추가: `weeklyBudget` |
+| `ZONES.mustPass()` | 지금 배치에서 입구 → 보물방 길을 막으면 못 가는 구역 (판 모양만, 길 순서). 외길 = `R1`~`R5`, 세 갈래 = `[]` |
+| `RUN.site.denGifts` | 이 현장에서 대기실로 받은 부대 수. **옛 v6 저장**(칸 없음)은 불러올 때 지금 대기실 수 × `DEN_GIFT`로 채움 (소급 지급 없음, 다음 새 대기실부터 받음). 옛 저장의 q1 현장은 세 갈래 판 그대로 진행 |
+
+### 화면 쪽에 넘길 일 (로직은 끝, 화면 파일은 안 고침)
+- 건설 미리보기(build.js `zpreview`)에 `p.giftText`가 있으면 한 줄 보여 주기 (지금은 전투력 증가로만 보이고, 완공 토스트에는 나옴).
+- 현장 위/결과표에 "다음 주 마석 +`P.weeklyBudget()`".
+- build.js `zoneWhy`의 입구 글 "데모에서는 분기로 고정이에요" → 대기도 지을 수 있음으로.
