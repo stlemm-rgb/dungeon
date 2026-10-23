@@ -51,7 +51,7 @@
   - `read_png`, `write_png`, `crop_top`, `compare`, `main`
 - `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
   - `main`
-- `tools/test_d1_core.py` — D1 데모 핵심 규칙 검사 (prototype/d1_demo): 예산·회사 금 분리, 가치/전투력 분리, 납품 기준 5단계·수동 납품, 2층 의뢰, 끈 기능, 저장 v6.
+- `tools/test_d1_core.py` — D1 데모 핵심 규칙 검사 (prototype/d1_demo): 문 토큰 판·탐험·조우 즉시 승패, 마석/회사 금, 가치/전투력, 납품 단계, 층, 저장 v7.
   - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`
@@ -60,7 +60,7 @@
 - `tools/test_names.py` — 이름 검사: 전역 이름 겹침, 파일 앞글자 규칙, 불러오기 목록 빠짐.
   - `check`, `main`
 - `tools/test_oldsaves.py` — 예전 세이브 검사: tools/oldsaves/*.txt를 불러와 save_ensureStateReady 뒤 오류가 없는지.
-  - `make`, `main`
+  - `d1_oldsaves`, `make`, `main`
 - `tools/test_rules.py` — 코드 규칙 검사: 값 통로, 무작위 구분, 금지 함수, 색 변수, 모듈 금지.
   - `line_of`, `check_js`, `check_css`, `check_html`, `main`
 - `tools/tool_common.py` — 검사 도구 공용 부품: 경로, 브라우저 찾기, 헤드리스 실행, JS 전역 이름 읽기.

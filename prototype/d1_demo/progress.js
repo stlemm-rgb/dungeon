@@ -21,6 +21,11 @@
  *  7) 고정 구역: 의뢰마다(quest.fixed), 짓기·바꾸기를 로직에서 거부
  *  8) 데모에서 끈 기능(BATTLE_DATA.DEMO_OFF): 광고 뽑기·광고/예고 대량 출현·일일/주간 업무·방치 보상·공방 — 지급 경로에서 거부
  *  9) 무작위는 이 파일의 시드 무작위(rnd)만. 전투 안의 무작위는 plan.seed로 battle_sim.js가 굴림. 연출용 무작위는 shell.js fxRandom
+ *  12) 3차(2026-10-24, docs/DESIGN_D1_DOORS.md): 판 = 칸 + 문 토큰 (RUN.site.boards 층별 판 id · RUN.site.doors { 층: [벽 조각 id] }). 저장 v7.
+ *     문 옮기기·시설 미확정을 한 번에 미리보기(previewLayout) -> [건설] 한 번에 확정(commitLayout). 문 옮기기는 무료, 매주 언제나.
+ *     확정 불가: 문 수가 다름(tokens) · 없는 벽·겹침(target) · 끊긴 방(disconnected) · 미리보기 경로의 문 통과가 한도를 넘음(limit) · 마석 모자람(budget) · 잠김(locked)
+ *     옛 v6 저장 = B안: 회사 기록(금·신석·회사 레벨·친위대·작품집·부족 강화·끝낸 의뢰)만 이어 받고, 진행 중 의뢰는 같은 의뢰를 새 판으로 처음부터 (migrateV6)
+ *     데모 목록에서 숨긴 의뢰(QUESTS hidden: q2)는 고르지 않음 -> q1 납품 뒤 데모 끝
  * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest) · demoEnd = 데모 끝
  */
 (function () {
@@ -28,7 +33,7 @@
 
   // ---------- 데이터 ----------
   var SAVE_KEY = 'dunguen_d1_run';  // 데모는 C1과 다른 저장 키 (C1 세이브 보존)
-  var VERSION = 6;                  // 6 = D1 데모 (회사 금/마석 분리, 부대·친위대, 납품 기준 단계, 회사 레벨). 다르면 새 게임 (변환 없음)
+  var VERSION = 7;                  // 7 = 문 토큰 판 (site.boards·site.doors). 6 = D1 데모 첫 판 -> migrateV6 (B안). 그 밖의 버전은 새 게임
   var BD = window.BATTLE_DATA;
   var OFF = BD.DEMO_OFF || {};
   var OFF_MSG = '데모에서는 준비 중이에요';
@@ -72,13 +77,17 @@
   //  units 대기실 배치 { 구역: [id] } (deploy에서 계산해 저장, 읽기 전용) · squads 현장 부대 ·
   //  budget 남은 마석 · budgetStart 처음 마석 · budgetAdded 단계 보상으로 늘어난 마석 · spent 쓴 마석 · builds 마석을 쓴 건설 수 · value·power 저장 때 맞춰 둠 ·
   //  denGifts 대기실을 지어 받은 기본 부대 수 (DEN_GIFT. 받은 수 <= 동시에 있었던 대기실 수 최고치 × DEN_GIFT -> 철거·재건으로 안 늘어남)
+  //  boards 층별 판 id (GRID_BOARDS) · doors 확정된 문 { 층: [벽 조각 id] } (층마다 개수 = 그 판의 문 토큰 수)
   function freshSite(q) {
     var floors = q && q.floors > 1 ? q.floors | 0 : 1;
-    var b = ZONES.useSite(q && q.board || ZONES.DEFAULT_BOARD, floors, 1);
-    var fixed = {}; Object.keys(q && q.fixed || {}).forEach(function (z) { fixed[z] = q.fixed[z]; });
+    var boards = questBoards(q, floors);
+    ZONES.useSite(boards, floors, 1, null);
+    var doors = ZONES.initialDoors();
+    var fixed = {}, fx = q && q.fixed ? q.fixed : ZONES.boardFixed(boards, floors);
+    Object.keys(fx).forEach(function (z) { fixed[z] = fx[z]; });
     var zones = ZONES.defaultZones(fixed);
     Object.keys(fixed).forEach(function (z) { if (zones[z] !== ZONES.fixedFac(fixed[z])) delete fixed[z]; }); // 판에 없는 구역은 버림
-    var site = { board: b, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
+    var site = { boards: boards, doors: doors, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
       floors: floors, floorsOpen: 1, deploy: freshDeploy(floors), pins: {}, auto: true, rest: {},
       budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0, denGifts: 0 };
     if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (마석 0이어도 진행 가능)
@@ -88,7 +97,18 @@
   }
   function freshDeploy(floors) { var d = {}; for (var n = 1; n <= floors; n++) d[n] = []; return d; }
   // 지금 현장의 판·층 배치를 ZONES에 끼운다 (불러오기·새 현장·층 열림 때)
-  function useSiteLayout() { var s = RUN.site; ZONES.useSite(s.board, s.floors || 1, s.floorsOpen || 1); }
+  function useSiteLayout() { var s = RUN.site; ZONES.useSite(s.boards, s.floors || 1, s.floorsOpen || 1, s.doors); }
+  // 의뢰의 층별 판 id (데이터 boards. 없거나 모자라면 첫 판으로 채움)
+  function questBoards(q, floors) {
+    var list = q && Array.isArray(q.boards) ? q.boards : [], out = [], first = ZONES.hasBoard(list[0]) ? list[0] : ZONES.DEFAULT_BOARD;
+    for (var n = 1; n <= (floors || 1); n++) out.push(ZONES.hasBoard(list[n - 1]) ? list[n - 1] : first);
+    return out;
+  }
+  // 문 배치 모양 { 층: [id] } 깊은 복사
+  function copyDoors(d) { var o = {}; Object.keys(d || {}).forEach(function (n) { o[n] = (d[n] || []).slice(); }); return o; }
+  function flatDoors(d) { var out = []; Object.keys(d || {}).sort().forEach(function (n) { out = out.concat(d[n] || []); }); return out; }
+  // 데모 목록 의뢰 (hidden 뺌)
+  function demoQuests() { return BD.QUESTS.filter(function (d) { return !d.hidden; }); }
   // 부대 하나: id 's'+번호, tribe 부족 id, count 인원, lv·exp 숙련도, free 무료 기본 부대인가
   function newSquad(site, tribe, count, free) {
     var sq = { id: 's' + site.nextSquadNo++, tribe: tribe, count: count, lv: squadStartLv(), exp: 0, free: !!free };
@@ -119,7 +139,7 @@
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
       prefs: freshPrefs(), workshop: freshWorkshop(),
       chores: freshChores(), idle: freshIdle(), lastSeen: now(),
-      tutorial: { on: true, seen: {} }
+      tutorial: { on: true, seen: {} }, notice: ''
     };
   }
   // ---------- 일일·주간 업무 상태 (데모에서 꺼짐: 진행·받기 없음) ----------
@@ -202,9 +222,16 @@
     // 현장
     if (!isObj(RUN.site) || !isObj(RUN.site.zones)) RUN.site = freshSite(RUN.phase === 'choose' ? null : RUN.quest);
     var st = RUN.site;
-    if (!ZONES.hasBoard(st.board)) st.board = ZONES.DEFAULT_BOARD;
     st.floors = Math.max(1, Math.min(3, (st.floors | 0) || (RUN.quest && RUN.quest.floors) || 1));
     st.floorsOpen = Math.max(1, Math.min(st.floors, st.floorsOpen | 0));
+    if (!Array.isArray(st.boards) || st.boards.length !== st.floors || !st.boards.every(ZONES.hasBoard)) st.boards = questBoards(Array.isArray(st.boards) ? st : RUN.quest, st.floors);
+    delete st.board;
+    // 문: 층마다 판의 문 수·있는 벽·모든 방 이어짐을 지켜야 함. 깨진 층은 판의 처음 문으로
+    ZONES.useSite(st.boards, st.floors, st.floorsOpen, null);
+    var dr = isObj(st.doors) ? st.doors : {}, nd = {};
+    for (var fl = 1; fl <= st.floors; fl++) nd[fl] = ZONES.validateDoors(dr[fl], fl).ok ? dr[fl].slice() : ZONES.initialDoors(fl);
+    st.doors = nd;
+    if (typeof RUN.notice !== 'string') RUN.notice = '';
     useSiteLayout();
     var dz = ZONES.defaultZones({});   // 빠진 구역(예: 1차 저장의 2층)은 기본 시설로
     Object.keys(dz).forEach(function (z) { if (!ZONES.FAC[st.zones[z]] || ZONES.facFor(z).concat([dz[z]]).indexOf(st.zones[z]) < 0 && !ZONES.isFixedFac(st.zones[z])) st.zones[z] = dz[z]; });
@@ -274,12 +301,44 @@
             (d.phase !== 'play' || (isObj(d.quest) && Array.isArray(d.quest.stages) && d.quest.stages.length))) {
           setRun(d); ensureStateReady(); ensurePlan(); accrueIdle(); save(); return true;
         }
+        if (d && d.v === 6 && typeof d.week === 'number' && isObj(d.company)) { migrateV6(d); ensureStateReady(); ensurePlan(); save(); return true; }
       }
     } catch (e) { /* 깨진 저장은 무시하고 새로 시작 */ }
     setRun(freshRun());
     RUN.site = freshSite(null);
     return false;
   }
+  // 옛 v6 저장 바꾸기 (B안, DESIGN_D1_DOORS 3-2): 회사 기록만 이어 받는다. 현장(옛 구역 판)·전투 중 저장·이번 주 계획은 버림.
+  //  play 중이던 의뢰 = 같은 의뢰를 새 판으로 처음부터 (단계 0, 마석 처음 값, 무료 기본 부대만, 시작 주 = 지금 주).
+  //  그 의뢰가 데모 목록에서 숨겨졌으면(q2) 데모 의뢰가 남았으면 choose, 다 끝냈으면 demoEnd. settle은 그대로(현장은 새 빈 현장 + 옛 부대 목록)
+  var V6_KEEP = ['seed', 'week', 'gold', 'gems', 'company', 'qid', 'siteNo', 'doneQuests', 'guards', 'nextGuardNo', 'tribes', 'contracts', 'works', 'stats',
+    'history', 'prefs', 'tutorial', 'surgeWeek', 'adWeek', 'workshop', 'chores', 'idle', 'lastSeen', 'report'];
+  var V6_NOTICE = '새 판(문 토큰)으로 바뀌었어요. 회사 기록은 그대로이고, 진행 중이던 의뢰는 새 판에서 처음부터 시작해요.';
+  function migrateV6(d) {
+    var base = freshRun();
+    V6_KEEP.forEach(function (k) { if (d[k] !== undefined) base[k] = d[k]; });
+    base.v = VERSION; base.notice = V6_NOTICE;
+    setRun(base);
+    if (!isObj(RUN.company)) RUN.company = { lv: 1, exp: 0 };
+    if (!Array.isArray(RUN.doneQuests)) RUN.doneQuests = [];
+    var left = demoQuests().some(function (x) { return RUN.doneQuests.indexOf(x.key) < 0; });
+    var qd = d.phase === 'play' && isObj(d.quest) ? questData(d.quest.key) : null;
+    if (qd && !qd.hidden) {
+      var q = makeQuest(qd);
+      if (typeof d.quest.id === 'number') { q.id = d.quest.id; RUN.qid = Math.max(RUN.qid | 0, q.id + 1); }
+      q.startWeek = RUN.week;
+      RUN.quest = q; RUN.phase = 'play'; RUN.site = freshSite(q);
+    } else if (d.phase === 'settle') {
+      RUN.phase = 'settle'; RUN.site = freshSite(null);
+      if (isObj(d.site) && Array.isArray(d.site.squads)) RUN.site.squads = d.site.squads.slice();   // 정산 화면 친위대 고르기용
+    } else {
+      RUN.phase = d.phase === 'demoEnd' || !left ? 'demoEnd' : 'choose';
+      RUN.site = freshSite(null);
+    }
+    if (RUN.phase !== 'settle') RUN.report = null;
+  }
+  // 한 번 보여 줄 안내 (옛 저장 바꿈 등). 읽으면 지움
+  function takeNotice() { var m = RUN.notice || ''; if (m) { RUN.notice = ''; save(); } return m; }
   function reset() {
     try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 무시 */ }
     setRun(freshRun());
@@ -377,7 +436,8 @@
   }
   // 편성 계산 (상태를 바꾸지 않음): 한도 맞추기 -> (auto면) 빈 칸 채우기 -> 대기실에 나눠 서기.
   //  돌려주는 값 { deploy, units, back(한도가 줄어 대기로 돌아간 수) }
-  function formation(zones, deploy, pins, auto) {
+  //  doors = 문 배치 (없으면 지금 문). 통과 비율·전투력을 그 문으로 계산
+  function formation(zones, deploy, pins, auto, doors) {
     var st = RUN.site, dep = {}, back = 0, used = {};
     for (var n = 1; n <= st.floors; n++) {
       var cap = floorCap(n, zones), list = (deploy[n] || []).filter(function (id) {
@@ -404,7 +464,7 @@
     var units = {}, w = null;
     for (var f = 1; f <= st.floors; f++) {
       if (!dep[f].length) continue;
-      w = w || ZONES.passRatios(zones, {});
+      w = w || ZONES.passRatios(zones, {}, doors);
       var dens = ZONES.densOf(zones, f);
       dens.sort(function (a, b) { return (w[b] || 0) - (w[a] || 0); });   // 안정 정렬: 같으면 길 순서
       var free = {}; dens.forEach(function (z) { free[z] = ZONES.slotsOf(zones[z], z); units[z] = []; });
@@ -415,7 +475,7 @@
         dens.forEach(function (z) {
           if (!(free[z] > 0)) return;
           units[z].push(id);
-          var p = powerParts(zones, units).raw;
+          var p = powerParts(zones, units, doors).raw;
           units[z].pop();
           var d = pick ? p - best : 1, dw = pick ? (w[z] || 0) - (w[pick] || 0) : 0;
           if (d > 1e-6 || (d > -1e-6 && (dw > 1e-9 || (dw > -1e-9 && units[z].length < units[pick].length)))) { pick = z; best = p; }
@@ -507,13 +567,15 @@
   }
   // 던전 전투력 B안 (+ 구역별 조각 + 층별 합). 통과 비율은 층마다 그 층 입구 기준 (zones.js passRatios). 열린 층만
   //  units = 대기실 배치 (출진 한도 안의 편성. 쉬는 부대도 인계 편성이라 셈). 친위대는 뺀다
-  function powerParts(zones, units) {
-    var hand = handoverUnits(units), w = ZONES.passRatios(zones, hand), parts = [], total = 0, fl = {};
+  //  3차: 통과 비율·함정 횟수 = 미리보기 경로 12개 (ZONES.passInfo). 함정은 비율 대신 "경로마다 min(들어간 횟수, trapMax)의 평균"을 곱함 (막다른 방 왕복이 점수에 보임).
+  //   parts[].w = 곱한 값 (대기실 = 통과 비율, 함정 = 평균 들어간 횟수). doors 없으면 지금 문
+  function powerParts(zones, units, doors) {
+    var hand = handoverUnits(units), inf = ZONES.passInfo(zones, doors), w = inf.ratio, parts = [], total = 0, fl = {};
     Object.keys(zones).forEach(function (z) {
       var f = ZONES.FAC[zones[z]], n = ZONES.floorOf(z);
       if (!f || z === 'Y' || !ZONES.CELLS[z] || !ZONES.floorOpen(n)) return;
       var r = w[z] || 0, score = 0;
-      if (f.kind === 'trap') score = ZONES.trapScore(z, workshopEffect('lab'));
+      if (f.kind === 'trap') { score = ZONES.trapScore(z, workshopEffect('lab')); r = inf.trap[z] || 0; }
       else if (f.kind === 'den') (hand[z] || []).forEach(function (id) { score += squadScore(rawUnit(id)); });
       else return;
       if (!score) return;
@@ -523,7 +585,7 @@
     var floors = {}; Object.keys(fl).forEach(function (n) { floors[n] = Math.floor(fl[n] + 1e-6); });
     return { total: Math.floor(total + 1e-6), raw: total, parts: parts, floors: floors };   // raw = 버리기 전 합 (편성 비교용)
   }
-  function powerOf(zones, units) { return powerParts(zones, units).total; }
+  function powerOf(zones, units, doors) { return powerParts(zones, units, doors).total; }
   function sitePower() { return powerOf(RUN.site.zones, RUN.site.units); }
   function powerInfo() { return powerParts(RUN.site.zones, RUN.site.units); }
   // n층 전투력 (그 층 입구 기준 통과 비율). 잠긴 층은 0
@@ -551,11 +613,13 @@
   // ---------- 의뢰 ----------
   function questData(key) { for (var i = 0; i < BD.QUESTS.length; i++) { if (BD.QUESTS[i].key === key) return BD.QUESTS[i]; } return null; }
   function attrView(id) { var a = BD.ATTRS.filter(function (x) { return x.id === id; })[0] || BD.ATTRS[0]; return { id: a.id, label: a.label, effect: a.effect, counter: a.counter }; }
+  //  boards = 층별 판 id (board = 1층 판, 옛 화면 호환) · fixed = 판 데이터의 고정 구역 (방 id, 2층은 앞에 '2')
   function makeQuest(d) {
+    var floors = d.floors > 1 ? d.floors | 0 : 1, boards = questBoards(d, floors);
     return {
       id: RUN.qid++, key: d.key, kind: 'normal', grade: '', name: d.name, tutorial: d.key === BD.QUESTS[0].key,
-      client: { name: d.client.name, kind: d.client.kind }, attr: attrView(d.attr), floors: d.floors, board: d.board,
-      fixed: JSON.parse(JSON.stringify(d.fixed || {})), budget: d.budget, reward: JSON.parse(JSON.stringify(d.reward)),
+      client: { name: d.client.name, kind: d.client.kind }, attr: attrView(d.attr), floors: d.floors, board: boards[0], boards: boards,
+      fixed: ZONES.boardFixed(boards, floors), budget: d.budget, reward: JSON.parse(JSON.stringify(d.reward)),
       stages: JSON.parse(JSON.stringify(d.stages)), stage: 0, stageWeeks: [], startWeek: 0, noDeath: !!d.noDeath
     };
   }
@@ -563,14 +627,14 @@
   function offerQuests() {
     if (RUN.offers && RUN.offers.length) return RUN.offers;
     if (RUN.phase === 'play' || RUN.phase === 'demoEnd') return [];
-    var list = BD.QUESTS.filter(function (d) { return d.minCompanyLv <= RUN.company.lv && RUN.doneQuests.indexOf(d.key) < 0; }).map(makeQuest);
+    var list = demoQuests().filter(function (d) { return d.minCompanyLv <= RUN.company.lv && RUN.doneQuests.indexOf(d.key) < 0; }).map(makeQuest);
     RUN.offers = list;
     save();
     return list;
   }
   // 회사 레벨 때문에 아직 못 받는 다음 의뢰 (화면의 🔒 안내용). 없으면 null
   function lockedQuest() {
-    var d = BD.QUESTS.filter(function (x) { return x.minCompanyLv > RUN.company.lv && RUN.doneQuests.indexOf(x.key) < 0; })[0];
+    var d = demoQuests().filter(function (x) { return x.minCompanyLv > RUN.company.lv && RUN.doneQuests.indexOf(x.key) < 0; })[0];
     return d ? { key: d.key, name: d.name, floors: d.floors, minCompanyLv: d.minCompanyLv } : null;
   }
 
@@ -646,6 +710,9 @@
     function buildable(z) { return ZONES.zoneType(z) === 'room' && !st.fixed[z] && ZONES.floorOpen(ZONES.floorOf(z)); }
     var must = ZONES.mustPass().filter(buildable);
     if (must.length) return must;
+    // 3차: 반드시 지나는 방이 없으면(처음 g1 = 세 갈래 길) 보물방과 문으로 이어진 방들 (침입자는 보물방에 가려면 이 중 한 곳을 꼭 지남)
+    var bf = ZONES.bossFront().filter(buildable);
+    if (bf.length) return ZONES.ORDER.filter(function (z) { return bf.indexOf(z) >= 0; });
     var w = ZONES.passRatios(st.zones, st.units), top = 0;
     Object.keys(w).forEach(function (z) { if (buildable(z) && w[z] > top) top = w[z]; });
     return ZONES.ORDER.filter(function (z) { return buildable(z) && top > 0 && w[z] >= top - 1e-9; });
@@ -693,7 +760,7 @@
     var rep = {
       quest: q, gold: q.reward.gold, gems: q.reward.gems, companyExp: q.reward.companyExp || 0,
       goldBefore: RUN.gold, gemsBefore: RUN.gems, companyBefore: company(), weeks: RUN.week - q.startWeek + 1,
-      value: cur.value, power: cur.power, stage: q.stage, builds: RUN.site.builds, board: RUN.site.board,
+      value: cur.value, power: cur.power, stage: q.stage, builds: RUN.site.builds, board: RUN.site.boards[0], boards: RUN.site.boards.slice(),
       budgetLeft: budgetLeft(), budgetStart: RUN.site.budgetStart,
       handover: RUN.site.squads.filter(function (s) { return s.count > 0; }).map(unitView), work: null, worksEffectNew: false,
       carry: [], lost: []
@@ -726,7 +793,7 @@
   // 데모 의뢰를 다 납품하면 settle 화면에 고를 의뢰가 없다. leaveSettle()로 phase 'demoEnd'(데모 끝)로 넘어간다.
   //  demoEnd: 진행 중 의뢰 없음, 다음 주·건설·출진 불가 (canEdit·startBattle이 거절), 회사·군단·작품집은 볼 수 있음. 새 게임은 reset()
   function demoState() {
-    var noMore = !BD.QUESTS.some(function (d) { return RUN.doneQuests.indexOf(d.key) < 0; });
+    var noMore = !demoQuests().some(function (d) { return RUN.doneQuests.indexOf(d.key) < 0; });
     var end = RUN.phase === 'demoEnd' || (RUN.phase === 'settle' && noMore);
     return { end: end, phase: RUN.phase, canLeave: RUN.phase === 'settle' && noMore,
       msg: end ? '데모는 여기까지예요. 플레이해 주셔서 고마워요!' : '' };
@@ -764,49 +831,120 @@
   function giftText(n) { var t = tribeData(BD.MON_SQUAD_FREE.tribe); return n > 0 ? '기본 부대 +' + n + ' (' + t.name + ' ' + BD.MON_SQUAD_FREE.count + '명' + (n > 1 ? '씩' : '') + ', 무료)' : ''; }
   function afterChange() { arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
 
-  // ---------- 건설 (마석만) ----------
-  // 구역 z를 시설 k로 지으면: 비용·가치·전투력 변화·막히는 이유. 미리보기 (아무것도 바꾸지 않음)
-  //  units = 지은 뒤의 대기실 배치 (출진 한도가 줄면 back명이 대기로, 자동 편성이 켜져 있으면 빈 칸이 채워진 모습). floor = 그 구역의 층
-  function previewBuild(z, k) {
-    if (RUN.site && RUN.site.fixed && RUN.site.fixed[z]) return { ok: false, why: '고정 구역이라 바꿀 수 없어요', fixed: true };
-    var f = ZONES.FAC[k], fl = ZONES.floorOf(z);
-    if (!f || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) return { ok: false, why: '지을 수 없는 시설' };
-    if (!ZONES.floorOpen(fl)) return { ok: false, why: fl + '층은 아직 잠겨 있어요', floor: fl, locked: true };
-    var cur = RUN.site.zones[z], bc = buildCostInfo(k, z), cost = bc.cost;
-    var zones2 = {}; Object.keys(RUN.site.zones).forEach(function (q) { zones2[q] = RUN.site.zones[q]; });
-    zones2[z] = k;
+  // ---------- 건설·문 옮기기 (마석만, 문은 무료) ----------
+  // 미확정 문·시설 전부를 한 번에 미리보기 (아무것도 바꾸지 않음). change = { doors: { 층: [벽 조각 id] }, builds: { 방: 시설 } } (둘 다 없어도 됨)
+  //  -> { ok, why, code('tokens'·'disconnected'·'limit'·'target'·'budget'·'locked'·''), cost, budgetAfter, valueNow, valueAfter, powerNow, powerAfter,
+  //       gift, giftTribe, giftCount, giftText, units(바뀐 뒤 대기실 배치), back, zones, doors({ 층: [...] } 바뀐 뒤), isolated[끊긴 방], floor(문 검사에 걸린 층),
+  //       passes[습관별 한 층 최대 문 통과 수], limit, paid(돈 드는 건설 수), changed{ doors, builds } }
+  //  확인 순서: 잠김(전투 중·의뢰 없음·잠긴 층·고정 구역) -> 시설 이름 -> 문(개수·벽·이어짐) -> 마석 -> 문 통과 한도(미리보기 경로 12개)
+  //  문이 깨진 배치면 전투력은 계산하지 않음 (powerAfter = powerNow)
+  function previewLayout(change) {
+    change = isObj(change) ? change : {};
+    var st = RUN.site, why = canEdit(), code = why ? 'locked' : '', isolated = [], badFloor = 0;
+    if (!st) return { ok: false, why: why || '현장이 없어요', code: 'locked' };
+    var doors = copyDoors(st.doors), doorChanged = false;
+    if (isObj(change.doors)) Object.keys(change.doors).forEach(function (key) {
+      var n = key | 0, list = change.doors[key];
+      if (n < 1 || n > st.floors) { if (!code) { code = 'target'; why = '없는 층이에요'; } return; }
+      if (Array.isArray(list) && list.slice().sort().join() === (st.doors[n] || []).slice().sort().join()) return;
+      doorChanged = true;
+      doors[n] = Array.isArray(list) ? list.slice() : [];
+      if (!code && n > st.floorsOpen) { code = 'locked'; why = n + '층은 아직 잠겨 있어요'; badFloor = n; }
+    });
+    var zones2 = {}; Object.keys(st.zones).forEach(function (q) { zones2[q] = st.zones[q]; });
+    var cost = 0, paid = 0, built = [];
+    if (isObj(change.builds)) Object.keys(change.builds).forEach(function (z) {
+      var k = change.builds[z], fl = ZONES.floorOf(z);
+      if (st.zones[z] === k) return;
+      if (st.fixed && st.fixed[z]) { if (!code) { code = 'locked'; why = '고정 구역이라 바꿀 수 없어요'; } return; }
+      if (!ZONES.FAC[k] || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) { if (!code) { code = 'target'; why = '지을 수 없는 시설'; } return; }
+      if (!ZONES.floorOpen(fl)) { if (!code) { code = 'locked'; why = fl + '층은 아직 잠겨 있어요'; } return; }
+      zones2[z] = k; built.push(z);
+      var c = buildCost(k, z); cost += c; if (c > 0) paid++;
+    });
+    var doorsOk = true;
+    if (doorChanged) for (var n = 1; n <= st.floors; n++) {
+      var v = ZONES.validateDoors(doors[n], n);
+      if (!v.ok) { doorsOk = false; if (!code) { code = v.code; why = v.why; isolated = v.isolated; badFloor = n; } break; }
+    }
+    if (!code && cost > budgetLeft()) { code = 'budget'; why = '마석 ' + (cost - budgetLeft()) + ' 모자람'; }
+    var useDoors = doorsOk ? flatDoors(doors) : flatDoors(st.doors);
+    var info = ZONES.passInfo(zones2, useDoors), limit = ZONES.GRID.passLimit;
+    if (!code && doorsOk && info.maxPass > limit) {
+      code = 'limit'; why = '분대 ' + (info.worst + 1) + ' 문 통과 ' + info.maxPass + '회: 최대 ' + limit + '회를 넘습니다';
+    }
     // 대기실 기본 부대: 받게 되면 잠깐 현장 부대에 넣어 편성·전투력을 계산하고 뺀다 (id = 지으면 실제로 붙을 번호)
-    var gift = denGiftOf(zones2), temp = [], no0 = RUN.site.nextSquadNo;
-    for (var gi = 0; gi < gift; gi++) temp.push(giftSquad(RUN.site));
-    RUN.site.squads = RUN.site.squads.concat(temp);
-    var fm = formation(zones2, RUN.site.deploy, RUN.site.pins, RUN.site.auto), units2 = fm.units, back = fm.back;
-    var powerAfter = powerOf(zones2, units2);
-    RUN.site.squads = RUN.site.squads.slice(0, RUN.site.squads.length - temp.length); RUN.site.nextSquadNo = no0;
-    var why = canEdit();
-    if (!why && cur === k) why = '이미 이 시설이에요';
-    if (!why && cost > budgetLeft()) why = '마석 ' + (cost - budgetLeft()) + ' 모자람';
+    var gift = denGiftOf(zones2), temp = [], no0 = st.nextSquadNo;
+    for (var gi = 0; gi < gift; gi++) temp.push(giftSquad(st));
+    st.squads = st.squads.concat(temp);
+    var fm = formation(zones2, st.deploy, st.pins, st.auto, useDoors), units2 = fm.units;
+    var powerNow = sitePower(), powerAfter = doorsOk ? powerOf(zones2, units2, useDoors) : powerNow;
+    st.squads = st.squads.slice(0, st.squads.length - temp.length); st.nextSquadNo = no0;
     return {
-      ok: !why, why: why, cost: cost, baseCost: bc.base, discount: bc.discount, counts: cost > 0,
-      budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
-      powerNow: sitePower(), powerAfter: powerAfter,
-      back: back, zones: zones2, units: units2, from: cur, floor: fl,
-      gift: gift, giftTribe: gift ? BD.MON_SQUAD_FREE.tribe : '', giftCount: gift ? BD.MON_SQUAD_FREE.count : 0, giftText: giftText(gift)
+      ok: !code, why: why, code: code, cost: cost, budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
+      powerNow: powerNow, powerAfter: powerAfter, gift: gift, giftTribe: gift ? BD.MON_SQUAD_FREE.tribe : '', giftCount: gift ? BD.MON_SQUAD_FREE.count : 0, giftText: giftText(gift),
+      units: units2, back: fm.back, zones: zones2, doors: doors, isolated: isolated, floor: badFloor, passes: info.passes.slice(), limit: limit,
+      paid: paid, changed: { doors: doorChanged, builds: built }
     };
+  }
+  // [건설]: 미확정 문·시설을 한 번에 확정 (previewLayout이 ok일 때만). -> { ok, msg, code, stages, gift, units(받은 부대 보기) }
+  function commitLayout(change) {
+    var p = previewLayout(change), st = RUN.site;
+    if (!p.ok) return { ok: false, msg: p.why, code: p.code, stages: [], gift: 0, units: [] };
+    if (!p.changed.doors && !p.changed.builds.length) return { ok: false, msg: '바뀐 것이 없어요', code: '', stages: [], gift: 0, units: [] };
+    st.budget -= p.cost; st.spent += p.cost;   // 마석만 (회사 금 안 씀, 환불 없음)
+    p.changed.builds.forEach(function (z) { st.zones[z] = p.zones[z]; });
+    if (p.changed.doors) { st.doors = copyDoors(p.doors); useSiteLayout(); }
+    if (p.paid) { st.builds += p.paid; for (var i = 0; i < p.paid; i++) choreAdd('build'); }
+    var gifts = [];
+    for (var gi = 0; gi < p.gift; gi++) { var gs = giftSquad(st); st.squads.push(gs); gifts.push(gs); }
+    st.denGifts += gifts.length;
+    var stages = afterChange();
+    var dv = p.valueAfter - p.valueNow, parts = [];
+    if (p.changed.builds.length === 1) { var z = p.changed.builds[0]; parts.push(ZONES.NAMES[z] + ' ' + ZONES.FAC[st.zones[z]].name + ' 완공'); }
+    else if (p.changed.builds.length) parts.push('시설 ' + p.changed.builds.length + '곳 완공');
+    if (p.changed.doors) parts.push('문 배치 확정');
+    var msg = parts.join(' · ') + (p.changed.builds.length ? ' (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' : '') + (gifts.length ? ' · ' + giftText(gifts.length) : '');
+    return { ok: true, msg: msg, code: '', stages: stages, gift: gifts.length, units: gifts.map(unitView) };
+  }
+  // (호환) 방 z를 시설 k로 지으면: 비용·가치·전투력 변화·막히는 이유. previewLayout({ builds: { z: k } })에 옛 칸을 붙임
+  //  units = 지은 뒤의 대기실 배치 (출진 한도가 줄면 back명이 대기로, 자동 편성이 켜져 있으면 빈 칸이 채워진 모습). floor = 그 방의 층
+  function previewBuild(z, k) {
+    if (RUN.site && RUN.site.fixed && RUN.site.fixed[z]) return { ok: false, why: '고정 구역이라 바꿀 수 없어요', fixed: true, code: 'locked' };
+    var f = ZONES.FAC[k], fl = ZONES.floorOf(z);
+    if (!f || ZONES.ALL.indexOf(z) < 0 || ZONES.facFor(z).indexOf(k) < 0) return { ok: false, why: '지을 수 없는 시설', code: 'target' };
+    if (!ZONES.floorOpen(fl)) return { ok: false, why: fl + '층은 아직 잠겨 있어요', floor: fl, locked: true, code: 'locked' };
+    var from = RUN.site.zones[z], bc = buildCostInfo(k, z), ch = {}; ch[z] = k;
+    var p = previewLayout({ builds: ch });
+    if (from === k) { p.cost = bc.cost; p.budgetAfter = budgetLeft() - bc.cost; }
+    var why = canEdit() || (from === k ? '이미 이 시설이에요' : p.why);
+    p.ok = !why; p.why = why; p.baseCost = bc.base; p.discount = bc.discount; p.counts = bc.cost > 0; p.from = from; p.floor = fl;
+    return p;
   }
   function buildZone(z, k) {
     var p = previewBuild(z, k);
-    if (!p.ok) return { ok: false, msg: p.why };
-    RUN.site.budget -= p.cost;      // 마석만 (회사 금 안 씀, 환불 없음)
-    RUN.site.spent += p.cost;
-    RUN.site.zones[z] = k;          // 편성(한도·대기실 나눠 서기)은 afterChange -> arrange가 맞춤
-    if (p.counts) { RUN.site.builds++; choreAdd('build'); }
-    var gifts = [];
-    for (var gi = 0; gi < p.gift; gi++) { var gs = giftSquad(RUN.site); RUN.site.squads.push(gs); gifts.push(gs); }
-    RUN.site.denGifts += gifts.length;
-    var stages = afterChange();
-    var dv = p.valueAfter - p.valueNow;
-    return { ok: true, msg: ZONES.NAMES[z] + ' ' + ZONES.FAC[k].name + ' 완공 (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' + (gifts.length ? ' · ' + giftText(gifts.length) : ''),
-      stages: stages, gift: gifts.length, units: gifts.map(unitView) };
+    if (!p.ok) return { ok: false, msg: p.why, code: p.code };
+    var ch = {}; ch[z] = k;
+    return commitLayout({ builds: ch });
+  }
+  // n층 문 정보 (건설 모드): { n, doors[벽 조각 id], count(토큰 수), limit(문 통과 한도), canEdit, why }
+  function doorInfo(n) {
+    var st = RUN.site; n = n | 0 || 1;
+    if (!st || n < 1 || n > st.floors) return null;
+    var why = canEdit() || (n > st.floorsOpen ? n + '층은 아직 잠겨 있어요' : '');
+    return { n: n, doors: (st.doors[n] || []).slice(), count: ZONES.doorCount(n), limit: ZONES.GRID.passLimit, canEdit: !why, why: why };
+  }
+  // 분대 탐험 경로 (?debug 경로 선): seed 없으면 이번 주 계획 시드, 분대 수 = 이번 주 계획 분대 수 (계획이 없으면 3)
+  //  -> [{ squad, habit, rooms, steps, reached }]. 같은 시드면 실제 전투 경로와 같다 (battle_sim이 같은 함수를 부름)
+  function exploreRoutes(seed) {
+    var plan = RUN.plan, n = 3;
+    if (plan && plan.groups) { n = 0; plan.groups.forEach(function (g) { n += g.count / BD.SQUAD; }); }
+    var sd = seed === undefined || seed === null ? (plan ? plan.seed : 0) : seed, doors = flatDoors(RUN.site.doors), out = [];
+    for (var i = 0; i < n; i++) {
+      var r = ZONES.exploreRoute(doors, RUN.site.zones, i, sd);
+      out.push({ squad: r.squad, habit: r.habit, rooms: r.rooms, steps: r.steps, reached: r.reached, passes: r.passes });
+    }
+    return out;
   }
   // 건설비: 시설 비용 × 층 배율(BATTLE_DATA.FLOOR_BUILD_MUL, 깊은 층이 비쌈) - 공방 할인(데모에서 꺼짐)
   function buildCostInfo(k, z) {
@@ -882,7 +1020,7 @@
     return { ok: r.ok, msg: r.msg };
   }
   // 문 위 숫자 미리 보기
-  function forecast(zones, units) { return ZONES.forecast(zones || RUN.site.zones, units || RUN.site.units, ZONES.PREVIEW_INVADERS); }
+  function forecast(zones, units, doors) { return ZONES.forecast(zones || RUN.site.zones, units || RUN.site.units, ZONES.PREVIEW_INVADERS, doors ? flatDoors(doors) : undefined); }
 
   // ---------- 성장 (출진·참여 경험치) ----------
   function addExp(u, n, msgs) {
@@ -993,7 +1131,7 @@
       var l = RUN.site.units[z].filter(function (id) { return !isResting(id); });
       if (l.length) us[z] = l;
     });
-    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal() };
+    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal(), doors: copyDoors(RUN.site.doors) };
   }
 
   // ---------- 전투 결과 반영 ----------
@@ -1062,6 +1200,9 @@
       retreats: retreats, deaths: deaths, noDeath: safe, crises: res.crises | 0,
       companyBefore: compBefore, companyAfter: company(), progress: questProgress()
     };
+    // 3차 결과표 한 줄: "함정으로 N분대 퇴각, 대기실에서 N분대 격퇴" (BATTLE_DATA.SUMMARY_TEXT)
+    rep.trapRetreats = res.trapRetreats | 0; rep.denRepels = res.denRepels | 0; rep.clashes = res.clashes | 0;
+    rep.summary = String(BD.SUMMARY_TEXT || '').replace('{trap}', rep.trapRetreats).replace('{den}', rep.denRepels);
     rep.hint = gems > 0 ? '신석 +' + gems + ' (지금 ' + RUN.gems + '개): 군단에서 부족 신석 강화에 쓸 수 있어요' : '';
     // 쓰러짐·퇴각·사망을 나눈 목록 (화면 결과표용). down = 체력 0이 됐던 인원(사망 아니면 전투 뒤 회복) · retreated = 퇴각해 다음 주 쉼 · died = 실제 사망
     var downMap = isObj(res.monDown) ? res.monDown : {};
@@ -1083,7 +1224,7 @@
   // ---------- 해금 (경험 중심, GAME_STRUCTURE 5절) ----------
   function unlocks() {
     return { corps: RUN.stats.battles > 0, guards: RUN.stats.delivers > 0, works: RUN.works.length > 0,
-      floor2: !!(RUN.site && RUN.site.floorsOpen >= 2), secondQuest: RUN.company.lv >= (BD.QUESTS[1] ? BD.QUESTS[1].minCompanyLv : 99), demoEnd: RUN.phase === 'demoEnd' };
+      floor2: !!(RUN.site && RUN.site.floorsOpen >= 2), secondQuest: RUN.company.lv >= (demoQuests()[1] ? demoQuests()[1].minCompanyLv : 99), demoEnd: RUN.phase === 'demoEnd' };
   }
 
   // ---------- 공방 (데모에서 꺼짐) ----------
@@ -1245,6 +1386,8 @@
     // 현장: 가치·전투력·마석·건설
     siteSummary: siteSummary, siteValue: siteValue, sitePower: sitePower, powerInfo: powerInfo, powerOf: powerOf, budgetLeft: budgetLeft, weeklyBudget: weeklyBudget,
     previewBuild: previewBuild, buildZone: buildZone, buildCost: buildCost, forecast: forecast,
+    // 문 토큰 (3차)
+    previewLayout: previewLayout, commitLayout: commitLayout, doorInfo: doorInfo, exploreRoutes: exploreRoutes, takeNotice: takeNotice,
     // 부대·친위대
     TRIBES: BD.TRIBES, STATS: BD.STATS, squads: squads, guards: guards, unitById: unitById, monById: unitById, idleUnits: idleUnits,
     statOf: function (id, key) { var u = rawUnit(id); return u ? statOf(u, key) : 0; },
