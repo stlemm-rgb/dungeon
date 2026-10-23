@@ -415,7 +415,8 @@ freshTo(2);
 {
   R.site.budget = 999; P.buildZone('CD', 'den'); P.buildZone('RB', 'den');
   const s = R.site.squads[0], g = R.guards[0];
-  ok(!R.quest.noDeath, '두 번째 의뢰는 사망 있음');
+  ok(R.quest.noDeath === true, '두 번째 의뢰도 사망 없음 (데모)');
+  R.quest.noDeath = false;  // 출시판용 사망 규칙은 계속 검사
   // 사망 확률: 큰 피해 퇴각만, 여러 판 굴려 비율 확인
   let died = 0, n = 0;
   for (let k = 0; k < 40; k++) {

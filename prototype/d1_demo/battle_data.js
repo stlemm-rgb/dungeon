@@ -226,7 +226,7 @@ window.BATTLE_DATA = {
   //           floor2 = 그중 2층 전투력 이상 · opens = 이 단계를 채우면 열리는 층. reward.companyExp = 납품 때 회사 경험치
   //  예산 근거(측정, 최적 배치·레벨 1): 1층 의뢰 260 = 바로 3단계까지(4단계 전투력 137/145), 240이면 5단계에 부대 레벨 5 필요(느림).
   //   2층 의뢰 320이면 레벨 1로 바로 3단계(2층 열림)라 데모 끝 장면의 "🔒 2층"이 안 보임 -> 200 = 바로 2단계까지.
-  //  noDeath = 이 의뢰에서는 부대 사망 없음 (첫 의뢰). budget(단계) = 그 단계를 채우면 의뢰 예산 추가 (2층 건설용)
+  //  noDeath = 이 의뢰에서는 부대 사망 없음 (데모는 두 의뢰 모두 사망 없음, 사용자 2026-10-23. 사망 규칙은 출시판용으로 남김). budget(단계) = 그 단계를 채우면 의뢰 예산 추가 (2층 건설용)
   //  ---- 2차 측정 (2026-10-23, node로 실제 전투 계산, 카드는 위기 때 방향 무작위, 정책별 12~20시드) ----
   //  정책: fe = frontend가 실제로 눌러 본 보통 배치(함정 8 + 미끼 1 + 대기실 1, 무료 기본 부대만, 조달·보충 없음) ·
   //        greedy = 언덕 오르기(예산이 되는 한 5단계까지 모자란 비율을 가장 줄이는 건설·조달·보충·출진) · greedy30 = 그중 30%는 두 번째 선택 ·
@@ -244,7 +244,7 @@ window.BATTLE_DATA = {
       board: 'fork3', fixed: { CC: 'frozen_dock' }, budget: 260,
       reward: { gold: 600, gems: 6, companyExp: 10 },
       stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 100 }, { value: 105, power: 130 }, { value: 130, power: 160 }] },
-    { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2,
+    { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2, noDeath: true,
       board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 200,
       reward: { gold: 900, gems: 8, companyExp: 15 },
       stages: [{ value: 60, power: 70 }, { value: 100, power: 110 }, { value: 140, power: 150, opens: 2, budget: 150 },
