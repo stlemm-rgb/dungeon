@@ -360,7 +360,7 @@
 
   // ---------- 층별 출진 (2차) ----------
   //  부대·친위대를 층에 출진시킨다 (site.deploy). 층마다 출진 한도 = min(FLOOR_CAP[층], 그 층 대기실 자리 합). 친위대도 한 칸 차지. 중복 출진 없음.
-  //  출진한 부대는 그 층의 대기실 구역들에 나눠 선다 (arrange: 침입자가 많이 오는 대기실부터, 덜 찬 곳으로. placeUnit으로 고른 곳(pins)이 먼저).
+  //  출진한 부대는 그 층의 대기실 구역들에 나눠 선다 (arrange: 한 부대씩 실제 전투력이 가장 커지는 대기실로. placeUnit으로 고른 곳(pins)이 먼저).
   //  기본 자동 편성(site.auto, 처음 켬): 빈 칸이 있으면 쉬지 않는 부대를 전투력 큰 순으로 채운다 (부대 먼저, 그다음 친위대). 손으로 바꾸면 꺼짐
   //  쉬는 부대(site.rest): 퇴각한 다음 주 전투에 안 나감 (자리는 그대로, 전투력에는 셈). 그 주가 지나면 저절로 풀림
   function deployedFloor(id) {
@@ -397,7 +397,10 @@
         if (best) { dep[best].push(u.id); used[u.id] = true; }
       });
     }
-    // 대기실에 나눠 서기
+    // 대기실에 나눠 서기: placeUnit으로 고른 곳(pins) 먼저, 나머지는 한 부대씩 "실제 전투력(부대 배치 반영 통과 비율)이 가장 커지는" 대기실로.
+    //  전투력이 같으면(친위대는 전투력에 안 셈) 빈 판 통과 비율이 큰 곳 -> 그것도 같으면 덜 찬 곳 -> 길 순서. 같은 입력 = 같은 결과.
+    //  (예전엔 빈 판 비율로만 순서를 정해서, 비율이 같아 보이는 대기실로 나눠 섰다가 몬스터가 보여 침입자가 피하는 바람에
+    //   전투력이 줄었다: 2층 의뢰 previewBuild -26(미끼 있음), 미끼 없는 RB+TR 대기실 67 -> 37)
     var units = {}, w = null;
     for (var f = 1; f <= st.floors; f++) {
       if (!dep[f].length) continue;
@@ -407,15 +410,15 @@
       var free = {}; dens.forEach(function (z) { free[z] = ZONES.slotsOf(zones[z], z); units[z] = []; });
       var rest = [];
       dep[f].forEach(function (id) { var z = pins && pins[id]; if (z && free[z] > 0) { units[z].push(id); free[z]--; } else rest.push(id); });
-      // 침입자가 더 많이 오는 대기실부터 채우고, 통과 비율이 같은 대기실끼리만 덜 찬 곳으로 나눈다.
-      //  (예전엔 비율을 안 보고 덜 찬 곳으로만 나눠서, 대기실을 하나 더 지으면 잘 서 있던 부대가 침입자가 덜 오는(몬스터가 보이면 피하는)
-      //   새 대기실로 옮겨 가 전투력이 줄었다: 2층 의뢰 previewBuild -26)
       rest.forEach(function (id) {
-        var pick = null;
+        var pick = null, best = 0;
         dens.forEach(function (z) {
           if (!(free[z] > 0)) return;
-          var d = pick ? (w[z] || 0) - (w[pick] || 0) : 1;
-          if (d > 1e-9 || (d > -1e-9 && units[z].length < units[pick].length)) pick = z;
+          units[z].push(id);
+          var p = powerParts(zones, units).raw;
+          units[z].pop();
+          var d = pick ? p - best : 1, dw = pick ? (w[z] || 0) - (w[pick] || 0) : 0;
+          if (d > 1e-6 || (d > -1e-6 && (dw > 1e-9 || (dw > -1e-9 && units[z].length < units[pick].length)))) { pick = z; best = p; }
         });
         if (pick) { units[pick].push(id); free[pick]--; }
       });
@@ -518,7 +521,7 @@
       total += score * r; fl[n] = (fl[n] || 0) + score * r;
     });
     var floors = {}; Object.keys(fl).forEach(function (n) { floors[n] = Math.floor(fl[n] + 1e-6); });
-    return { total: Math.floor(total + 1e-6), parts: parts, floors: floors };
+    return { total: Math.floor(total + 1e-6), raw: total, parts: parts, floors: floors };   // raw = 버리기 전 합 (편성 비교용)
   }
   function powerOf(zones, units) { return powerParts(zones, units).total; }
   function sitePower() { return powerOf(RUN.site.zones, RUN.site.units); }
