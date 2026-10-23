@@ -9,9 +9,11 @@
  *     위·아래·왼쪽·오른쪽으로 끌면 그 가장자리 글이 커지고 색이 바뀜 (가장자리 글을 눌러도 됨). 떠 있는 동안 전투는 완전히 멈추고
  *     시간 초과도 없다 (고를 때까지 기다림). 그림은 나중에 외부 파일이 들어옴: 그림 자리에 data-art="카드의 art 키"
  *  - 화면 배치: 맨 위 한 줄(시간·진행바·처치·금·신석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 아래 한 줄 안내 + 버튼 줄(api.bar)
- *  - 판 = ZONES.stackMap()(열린 층을 위아래로 쌓음, 층 사이 한 줄 = 계단, 좌표가 분대·대기실 좌표와 같음). 2층이 열리면 줄이 늘어 칸을 줄이고(.tall) 구역 이름은 숨긴다.
- *    아직 잠긴 층은 판 아래에 🔒 한 줄로만 알린다 (전투는 열린 층까지)
- *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표(회사 금·의뢰인 마석 보급·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 홈으로 (회사 진행 띠에서 [다음 주]·[납품하기])
+ *  - 판 = ZONEVIEW.boardHtml: 싸우는 층 하나 (5x7 칸, 여러 칸 방 = 고정 구역은 한 덩어리) + 통로(파이프)는 전투 중에도 보임. 분대는 q.x·q.y 그대로 (되돌아가는 걸음 포함), 좌표 = 칸 단위.
+ *    말풍선: 조사 중 = 분대 위 작은 ?, 조우 = ⚔ 1초 -> 몬스터 승(win)이면 ✔ 아니면 💨 1초 (기호만, 글 없음). 침입자 퇴각(iretreat)은 "퇴각" 글자 + 한 줄 안내.
+ *    층별로 차례로 싸운다 (12절 9-4): 이 층 분대가 모두 끝나면(사건 floorEnd) 알림("N층 전투 끝 · N+1층으로") -> 버튼을 누르면 BSIM.nextFloor 뒤 다음 층 판을 새로 그리고 계속.
+ *    아직 잠긴 층은 판 아래에 🔒 한 줄로만 알린다 (전투는 열린 층까지). ?debug 면 분대 색 경로 선 + 문 통과 수.
+ *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 시간 초과는 방어 성공) -> 결과표(한 줄 요약 rep.summary·회사 금·의뢰인 마석 보급·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 홈으로 (회사 진행 띠에서 [다음 주]·[납품하기])
  *     두 번째 현장 첫 전투 결과표에는 "데모 끝까지 왔어요" 한 줄 (계속 진행 가능)
  *  - D1: 전투 입력은 P.battleInput(plan) 그대로 (부대 인원만큼 싸우는 개체). 대기실 부대는 부대마다 한 줄, 인원 수만큼 점 (친위대는 큰 점).
  *    얼어붙은 하역장(chill 사건)을 지난 분대는 느려지고 얼음 테두리로 보인다. 아군 퇴각(mretreat 사건): 그 부대 점이 커졌다 흐려지고 "퇴각" 글자 (S.dens[z][i].out 이면 흐리게)
@@ -30,15 +32,11 @@
   function tf(x, y, r) { return 'translate(' + x + 'px,' + y + 'px) rotate(' + r + 'deg)'; }
   function money(n) { return Number(Math.round(n)).toLocaleString('en-US'); }
   function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
-  // 판 크기는 부지마다 다르다: 칸 수는 쓸 때마다 지금 판에서 읽는다. 줄 수 ROWS = 열린 층을 쌓은 판의 줄 수 (층 사이 한 줄 포함, 좌표가 ZONES.anchorOf와 같음)
-  var ROWS = 7;
-  function pctX(x) { return (x / Z.MAP[0].length * 100) + '%'; }
-  function pctY(y) { return (y / ROWS * 100) + '%'; }
-  // 열린 층까지 쌓은 판의 줄 수
-  function stackRows() {
-    var fi = Z.floorInfo && Z.floorInfo(Z.OPEN || 1);
-    return fi ? fi.rowOff + fi.rows : Z.MAP.length;
-  }
+  // 지금 보는 층 하나의 판 (화면은 싸우는 층 하나만). 좌표는 칸 단위 (x = 열 + 0.5, y = 층 줄 오프셋 + 행 + 0.5, 분대·대기실 좌표 = ZONES.anchorOf와 같음)
+  var V = { floor: 1, cols: 5, rows: 7, off: 0 };
+  function setView(n) { var g = Z.grid(n); V.floor = n; V.cols = g.cols; V.rows = g.rows; V.off = g.rowOff; }
+  function pctX(x) { return (x / V.cols * 100) + '%'; }
+  function pctY(y) { return ((y - V.off) / V.rows * 100) + '%'; }
 
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.battle = function (api) {
@@ -58,15 +56,19 @@
       var bs = P.battleSave() || {};
       var S = bs.snap ? SIM.restore(simIn, bs.snap) : null, resumed = !!S;
       if (!S) S = SIM.create(simIn);
-      ROWS = stackRows();
+      setView(S.floor || 1);
       var U = {
         phase: 'ready', paused: false, speedIdx: RUN.prefs.speedIdx, fastUsed: !!bs.fastUsed || RUN.prefs.speedIdx > 0,
-        appearIdx: 0, appearT: 0, card: null, queue: [], cardsShown: 0, cardsUsed: 0, cardNo: 0, picks: []
+        appearIdx: 0, appearT: 0, card: null, queue: [], cardsShown: 0, cardsUsed: 0, cardNo: 0, picks: [],
+        floorNotice: null, notice: false   // 층 넘어가기 알림 (floorEnd 사건 -> 알림 -> [N층으로])
       };
       // 저장 지점에 넣는 화면 진행 (기다리는 위기 카드 · 카드 몇 장째 · 고른 카드 목록)
       var UI_KEYS = ['queue', 'cardsShown', 'cardsUsed', 'cardNo', 'picks'];
       if (resumed && bs.ui) UI_KEYS.forEach(function (k) { if (bs.ui[k] !== undefined) U[k] = bs.ui[k]; });
-      if (resumed) { U.phase = 'fight'; U.paused = true; U.appearIdx = plan.groups.length; }
+      if (resumed) {
+        U.phase = 'fight'; U.paused = true; U.appearIdx = plan.groups.length;
+        if (S.pending) U.floorNotice = { type: 'floorEnd', n: S.floor, next: S.pending };   // 층 알림이 떠 있던 중에 저장됨: 알림부터 다시
+      }
       function checkpoint() {
         var ui = {}; UI_KEYS.forEach(function (k) { ui[k] = U[k]; });
         P.saveBattle({ snap: SIM.snapshot(S), ui: JSON.parse(JSON.stringify(ui)) });
@@ -82,7 +84,7 @@
         '<div class="bt-top' + (plan.surge ? ' surge' : '') + '">' + (plan.surge ? '<span class="bt-surgechip">대량</span>' : '') +
         '<span class="bt-time">1:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
         stat('kill', '처치') + stat('gold', '금') + stat('gem', '신석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
-        '<div class="zboard bt-board' + (ROWS > 7 ? ' tall' : '') + '">' + window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, stack: true, rows: ROWS }) + '</div>' +
+        '<div class="zboard bt-board"></div>' +
         ((Z.FLOORS || 1) > (Z.OPEN || 1) ? '<div class="bt-locked">🔒 지하 ' + (Z.OPEN + 1) + '층 · ' + lockWhy(Z.OPEN + 1) + '</div>' : '') +
         '<div class="bt-log"></div>';
 
@@ -94,10 +96,8 @@
         '<button class="tab-main bt-start" type="button">전투 시작 ▶</button>' +
         '<span class="bt-note">전투 중 이동 불가</span>';
 
-      var board = el.querySelector('.bt-board'), wrap = board.querySelector('.zwrap');
-      board.style.setProperty('--rows', ROWS); // 판 세로 칸 수: 칸이 남는 높이를 나눠 가진다 (shell.css .bt-board)
-      var layer = div('bt-layer'); wrap.appendChild(layer);
-      var fxLayer = div('bt-layer'); wrap.appendChild(fxLayer);
+      var board = el.querySelector('.bt-board'), wrap = null;
+      var layer = div('bt-layer'), fxLayer = div('bt-layer');
       var logEl = el.querySelector('.bt-log');
       var timeEl = el.querySelector('.bt-time'), progEl = el.querySelector('.bt-prog i'), pctEl = el.querySelector('.bt-pct');
       var killEl = el.querySelector('.bt-st.kill b'), goldEl = el.querySelector('.bt-st.gold b'), gemEl = el.querySelector('.bt-st.gem b');
@@ -162,7 +162,7 @@
         var r = SIM.result(S);
         killEl.textContent = r.kills + '/' + r.total; goldEl.textContent = '+' + money(r.gold); gemEl.textContent = '+' + Math.floor(r.gems);
         reachEl.textContent = r.reached; fleeEl.textContent = r.retreated;
-        var left = Math.max(0, BD.TIME_LIMIT - S.t), sec = Math.ceil(left);
+        var left = SIM.timeLeft(S), sec = Math.ceil(left);   // 이번 층 남은 시간 (층마다 따로)
         timeEl.textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
         timeEl.classList.toggle('low', U.phase === 'fight' && left < 10);
         var p = SIM.progress(S);
@@ -170,9 +170,10 @@
       }
 
       // ---------- 분대·몬스터 도트 ----------
-      var sqEls = {}, monEls = {};
+      // 분대 점 위의 말풍선(.bt-bub): 조사 중 = 작은 ?, 조우 = ⚔ 1초 -> 몬스터 승이면 ✔ 아니면 💨 1초 (기호만, 글 없음). 상태(q.inspect·q.clash)를 그대로 읽어 배속·일시정지·불러오기와 늘 맞는다
+      var sqEls = {}, monEls = {}, CL = BD.CLASH || { encounter: 1 };
       S.squads.forEach(function (q) {
-        var d = div('bt-sq wait', '<i class="bt-hp"><u></u></i><b>' + BD.SQUAD + '</b>');
+        var d = div('bt-sq wait', '<i class="bt-hp"><u></u></i><b>' + BD.SQUAD + '</b><span class="bt-bub" hidden></span>');
         d.setAttribute('data-g', q.grade); d.style.left = pctX(q.x); d.style.top = pctY(q.y);
         d.hidden = true; layer.appendChild(d); sqEls[q.id] = d;
         if (resumed) { // 저장 지점부터: 이미 나온 무리는 보이고, 끝난 분대는 처음부터 치움
@@ -180,19 +181,36 @@
           else d.hidden = false;
         }
       });
-      // 대기실 부대: 부대마다 한 줄, 인원 수만큼 점 (친위대는 큰 점). 줄은 구역 안에서 아래로 쌓인다
-      Object.keys(S.dens).forEach(function (z) {
-        var a = Z.anchorOf(z), rows = {}, order = [];
-        S.dens[z].forEach(function (m) { if (!rows[m.id]) { rows[m.id] = []; order.push(m.id); } rows[m.id].push(m); });
-        order.forEach(function (uid, ui) {
-          var list = rows[uid];
-          list.forEach(function (m, i) {
-            var d = div('bt-mon' + (m.guard ? ' guard' : ''), '<i class="bt-hp"><u></u></i>');
-            d.style.left = pctX(a.x + (i - (list.length - 1) / 2) * 0.16); d.style.top = pctY(a.y + 0.2 + ui * 0.2);
-            d.title = m.name; layer.appendChild(d); monEls[z + ':' + uid + ':' + i] = { el: d, m: m };
+      // ?debug: 분대 색 경로 선 + 문 통과 수 (건설 화면과 같은 함수·같은 시드라 실제 전투 경로와 같음)
+      var dbg = window.ZONEVIEW.debugData ? window.ZONEVIEW.debugData() : null;
+      // 싸우는 층 하나의 판 + 그 층 대기실 부대 점. 부대마다 한 줄, 인원 수만큼 점 (친위대는 큰 점). 줄은 방 안에서 아래로 쌓인다
+      function drawFloor(n) {
+        setView(n);
+        board.innerHTML = window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, doors: simIn.doors, floor: n, counts: dbg && dbg.counts, routes: dbg && dbg.routes });
+        wrap = board.querySelector('.zwrap');
+        wrap.appendChild(layer); wrap.appendChild(fxLayer);
+        Object.keys(monEls).forEach(function (k) { var o = monEls[k]; if (o.el.parentNode) o.el.parentNode.removeChild(o.el); });
+        monEls = {};
+        Object.keys(S.dens).forEach(function (z) {
+          if (Z.floorOf(z) !== n) return;
+          var a = Z.anchorOf(z), rows = {}, order = [];
+          S.dens[z].forEach(function (m) { if (!rows[m.id]) { rows[m.id] = []; order.push(m.id); } rows[m.id].push(m); });
+          order.forEach(function (uid, ui) {
+            var list = rows[uid];
+            list.forEach(function (m, i) {
+              var d = div('bt-mon' + (m.guard ? ' guard' : ''), '<i class="bt-hp"><u></u></i>');
+              d.style.left = pctX(a.x + (i - (list.length - 1) / 2) * 0.16); d.style.top = pctY(a.y + 0.2 + ui * 0.2);
+              d.title = m.name; layer.appendChild(d); monEls[z + ':' + uid + ':' + i] = { el: d, m: m };
+            });
           });
         });
-      });
+      }
+      drawFloor(V.floor);
+      function bubbleOf(q) {
+        if (q.state === 'fight' && q.clash) return { cls: 'clash', txt: q.clash.t < CL.encounter - 1e-9 ? '⚔' : q.clash.win ? '✔' : '💨' };
+        if (q.state === 'move' && q.inspect > 1e-9) return { cls: 'ask', txt: '?' };
+        return { cls: '', txt: '' };
+      }
       function paint() {
         S.squads.forEach(function (q) {
           var d = sqEls[q.id]; if (!d || d.classList.contains('out')) return;
@@ -201,14 +219,18 @@
             d.addEventListener('animationend', function () { if (d.parentNode) d.parentNode.removeChild(d); });
             return;
           }
-          var inf = SIM.squadInfo(q);
-          d.style.left = pctX(q.x); d.style.top = pctY(q.y);
+          var inf = SIM.squadInfo(q), bub = d.querySelector('.bt-bub'), bb = bubbleOf(q);
+          // 위층으로 막 내려온 분대는 층 위쪽 야외 띠 높이에서 들어온다 (계단 쪽 좌표가 판 밖이라)
+          d.style.left = pctX(q.x); d.style.top = pctY(V.floor > 1 ? Math.max(q.y, V.off - 0.3) : q.y);
+          d.classList.toggle('offfloor', (q.floor || 1) !== V.floor && q.state !== 'wait');
           d.querySelector('b').textContent = inf.alive;
           d.querySelector('u').style.width = (inf.alive / BD.SQUAD * 100) + '%';
-          d.classList.toggle('wait', q.state === 'wait');
+          d.classList.toggle('wait', q.state === 'wait' || q.state === 'stairs');
           d.classList.toggle('fight', q.state === 'fight');
           d.classList.toggle('frozen', S.freeze > 0);
           d.classList.toggle('chilled', q.chill > 0);
+          if (bub.textContent !== bb.txt) bub.textContent = bb.txt;
+          bub.className = 'bt-bub ' + bb.cls; bub.hidden = !bb.txt;
         });
         Object.keys(monEls).forEach(function (k) {
           var o = monEls[k];
@@ -249,14 +271,46 @@
             case 'crisis': onCrisis(e); break;
             case 'chill': flashZone(e.z, 'bt-chill'); floatText(e.x, e.y - 0.2, '얼어붙음', 'chill'); log('분대 ' + (e.id + 1) + '가 얼어붙은 하역장에 들어서 느려져요', 'good'); break;
             case 'reach':
-              flashZone('B', 'bt-hit'); floatText(e.x, e.y - 0.3, '약탈 -' + e.loot + '금', 'big');
+              flashZone(S.goal, 'bt-hit'); floatText(e.x, e.y - 0.3, '약탈 -' + e.loot + '금', 'big');
               log('분대 ' + (e.id + 1) + '가 보물방에 닿았어요! 짐꾼 ' + e.porters + '명이 금 ' + e.loot + ' 약탈', 'bad'); buzz('warn'); break;
             case 'guarded': floatText(e.x, e.y - 0.3, '무적! 퇴각', 'big'); log('보물방 1회 무적: 분대 ' + (e.id + 1) + ' 퇴각', 'good'); break;
             case 'revive': flashZone(e.z, 'bt-boost'); break;
-            case 'timeout': log('1분이 지났어요. 남은 ' + e.n + '분대가 퇴각합니다', 'good'); break;
+            // 말풍선(? ⚔ ✔ 💨)은 paint 가 분대 상태에서 읽는다. 여기서는 한 줄 안내만
+            case 'clash': log('분대 ' + (e.id + 1) + ' · ' + (Z.NAMES[e.z] || e.z) + ' 대기실 조우', ''); break;
+            case 'iretreat':
+              floatText(e.x, e.y - 0.25, '퇴각', 'flee');
+              if (e.cause !== 'timeout') log('분대 ' + (e.id + 1) + ' 퇴각 (' + (CAUSE_TEXT[e.cause] || '') + ')', 'good');
+              break;
+            case 'stairs': floatText(e.x, e.y - 0.25, '▼ 계단', 'chill'); log('분대 ' + (e.id + 1) + '가 계단에 닿았어요', ''); break;
+            case 'floorEnd': U.floorNotice = e; checkpoint(); break;   // 이 층 전투 끝: 알림은 프레임 루프가 띄움 (눌러야 다음 층)
+            case 'floorStart': drawFloor(e.n); log(e.n + '층 전투 시작! 남은 시간 ' + Math.round(SIM.timeLeft(S)) + '초', 'good'); break;
+            case 'timeout': log('시간이 지났어요. 남은 ' + e.n + '분대가 퇴각합니다', 'good'); break;
           }
         });
       }
+      var CAUSE_TEXT = { trap: '함정에 당해', den: '대기실에 막혀', clash: '조우 피해로', card: '카드 효과로' };
+
+      // ---------- 층 넘어가기 알림 (12절 9-4): 1층이 완전히 끝나면 알림 -> 누르면 2층 전투 ----------
+      function showFloorNotice(e) {
+        U.notice = true;
+        var wait = S.squads.filter(function (q) { return q.state === 'stairs'; }).length;
+        var o = openOverlay('sec', '<div class="bt-ovmid">' + cardHtml({
+          art: 'floor', artName: '계단', tag: e.n + '층 전투 끝', title: e.n + '층 전투 끝 · ' + e.next + '층으로',
+          desc: '침입자 ' + wait + '분대가 계단을 내려가요.',
+          fx: '<button class="btn primary big" type="button" data-nextfloor>' + e.next + '층으로 ▶</button>'
+        }) + '</div>');
+        o.querySelector('[data-nextfloor]').addEventListener('click', function () {
+          if (!U.notice) return;
+          U.notice = false; U.floorNotice = null;
+          dismissOverlay(o, MOTION.dur.fade);
+          show(SIM.nextFloor(S));
+          paint();   // 일시정지 중이어도 새 층 좌표로 분대 점을 다시 놓는다
+          checkpoint();
+          buzz('good');
+        });
+        buzz('warn');
+      }
+      function checkFloorNotice() { if (U.floorNotice && !U.notice && !ovBusy && !U.card) showFloorNotice(U.floorNotice); }
 
       // ---------- ② 무리 등장 ----------
       function appearNext() {
@@ -438,7 +492,7 @@
           ['처치', rep.kills + ' / ' + rep.total + '명 (짐꾼 ' + rep.porterKills + ')'],
           ['얻은 금', '+' + money(rep.gold)], ['얻은 신석', '+' + rep.gems],
           ['보물방 도달', rep.reached + ' / ' + rep.squads + '분대'],
-          ['침입자 퇴각', rep.retreated + '분대' + (rep.timeout ? ' (1분 지남)' : '')],
+          ['침입자 퇴각', rep.retreated + '분대' + (rep.timeout ? ' (시간 초과 포함)' : '')],
           ['약탈된 금', rep.loot ? '-' + money(rep.loot) : '0'],
           ['회사 금', money(rep.goldBefore) + ' → <b>' + money(rep.goldAfter) + '</b>'],
           ['신석', rep.gemsBefore + ' → <b>' + rep.gemsAfter + '</b>'],
@@ -477,6 +531,7 @@
         var box = div('bt-result',
           '<div class="card bt-resbox"><h3 class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '방어 성공!' : '보물방 침입 ' + rep.reached + '분대') + '</h3>' +
           '<div class="dim small-text bt-ressub">' + rep.week + '주째 일반 침입' + (ok ? ' · 보물방 방어 +1회' : '') + '</div>' +
+          (rep.summary ? '<div class="bt-sumline">' + esc(rep.summary) + '</div>' : '') +
           rows.map(function (r) { return '<div class="stat"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('') +
           '<div class="stat bt-grant"><span>의뢰인 마석 보급</span><b>마석 +' + (rep.budgetGain || 0) + ' → ' + money(rep.budgetAfter || 0) + '</b></div>' +
           '<div class="bt-sub">출진 부대 · 경험치</div>' + unitRows +
@@ -539,18 +594,22 @@
           fitOverlay();   // 침입 보고는 눌러야 닫힌다 (사용자 10-23: 저절로 사라지면 못 읽음)
         } else if (U.phase === 'fight' && !U.paused) {
           // 카드 전용 화면이 떠 있는 동안 전투는 완전히 멈춘다 (시간 초과도 없이 고를 때까지 기다림. 카드가 끝나면 이어서)
-          if (U.card) fitOverlay();
+          //  층 알림(U.notice·S.pending)이 떠 있는 동안도 멈춤: 누르면 다음 층 시작
+          if (U.card || U.notice || U.floorNotice) fitOverlay();
           else {
             // 배속에서도 계산이 건너뛰지 않게 작게 나눠 진행
             var dt = real * BD.SPEEDS[U.speedIdx], n = Math.ceil(dt / 0.05);
             for (var i = 0; i < n && !S.done; i++) {
               show(SIM.step(S, dt / n));
-              if (U.queue.length) break;   // 위기가 생기면 이번 프레임은 거기서 멈추고 바로 카드를 띄움
+              if (U.queue.length || U.floorNotice) break;   // 위기가 생기면 이번 프레임은 거기서 멈추고 바로 카드를 띄움 / 이 층이 끝나면 알림
             }
           }
           checkCards();
+          checkFloorNotice();
           paint();
           if (S.done) finish();
+        } else if (U.phase === 'fight') {
+          checkFloorNotice();   // 일시정지·저장에서 이어진 중에도 층 알림은 띄움
         }
       }
       drawSpeed();

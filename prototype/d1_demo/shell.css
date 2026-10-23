@@ -45,6 +45,17 @@
   --pend-hatch: rgba(230, 162, 60, .2); /* 건설 모드: 미확정으로 놓은 구역의 빗금 */
   --ice: #9fd8ee;
   --zone-edge: #8a93a3;
+  /* 문 토큰 판: 벽 · 통로(파이프) · 문 · 문을 놓을 수 있는 벽 · 끊긴 방 · ?debug 분대 경로 선 */
+  --wall: #0f1115;
+  --pipe: #5d7183;
+  --pipe-rim: #12161b;
+  --door: #e8bb72;
+  --door-ink: #211a10;
+  --slot-fill: rgba(88, 166, 232, .28);
+  --iso-hatch: rgba(229, 96, 79, .42);
+  --sq-1: #9eddf0;
+  --sq-2: #edb9ed;
+  --sq-3: #f9d786;
   /* 의뢰 카드의 판 모양 미리보기 (이웃한 구역끼리 다른 색) */
   --mini-a: #36506c;
   --mini-b: #5e4f74;
@@ -347,10 +358,12 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 body[data-screen="battle"] #view { display: flex; flex-direction: column; } /* 전투 화면이 보이는 높이를 다 쓰게 (판이 남는 높이를 채움) */
 body[data-screen="battle"] .bt-screen { flex: 1 0 auto; min-height: 0; }
 .bt-board .zwrap { flex: 1 1 0; min-height: 0; }
-.bt-board .zgrid { height: 100%; grid-template-rows: repeat(var(--rows, 7), minmax(0, 1fr)); }
-.bt-board .zc { aspect-ratio: auto; min-height: 0; cursor: default; font-size: 10px; }
-.bt-board .zc .fn { font-size: 10.5px; }
-.bt-board .zc .zn { font-size: 8px; }
+.bt-board .zgrid { height: 100%; aspect-ratio: auto; }
+.bt-board .zc { cursor: default; }
+.bt-board .zl { font-size: 10px; }
+.bt-board .zl .fn { font-size: 10.5px; }
+.bt-board .zl .zn { font-size: 8px; }
+.zwrap > .bt-layer { inset: var(--zb); z-index: 4; }
 .bt-board .zyard { flex: none; height: 24px; cursor: default; padding-top: 0; font-size: 10px; }
 .bt-board .zc.bt-hit { animation: bt-hit var(--dur-fx) var(--ease-out); }
 .bt-board .zc.bt-boost { animation: bt-boost var(--dur-fx) var(--ease-out); }
@@ -367,6 +380,13 @@ body[data-screen="battle"] .bt-screen { flex: 1 0 auto; min-height: 0; }
 .bt-sq[data-g="A"] { background: var(--grade-a); } .bt-sq[data-g="S"] { background: var(--grade-s); }
 .bt-sq b { position: absolute; left: 50%; top: 13px; transform: translateX(-50%); font-size: 8px; line-height: 9px; color: var(--text); text-shadow: 0 0 2px var(--bg); }
 .bt-sq.wait { opacity: .75; }
+.bt-sq.offfloor { display: none; }
+/* 분대 위 말풍선: 조사 중 = 작은 ? / 조우 = ⚔ -> ✔(몬스터 승) 또는 💨 (기호만) */
+.bt-bub { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 3px; line-height: 1; white-space: nowrap; pointer-events: none; z-index: 2; }
+.bt-bub[hidden] { display: none; }
+.bt-bub.ask { color: var(--accent); font-size: 15px; font-weight: bold; text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); }
+.bt-bub.clash { padding: 3px 7px; border-radius: 10px; background: var(--text); color: var(--bg); border: 2px solid var(--bg); font-size: 14px; }
+.bt-bub.clash::after { content: ""; position: absolute; left: 50%; top: 100%; margin-left: -4px; border: 4px solid transparent; border-top-color: var(--text); }
 .bt-sq.fight { animation: bt-fight calc(var(--dur-fx) * .6) ease-in-out infinite alternate; }
 .bt-sq.frozen { box-shadow: 0 0 0 3px var(--dir-right); }
 .bt-sq.gone { animation: bt-gone var(--dur-panel) var(--ease-out) forwards; }
@@ -526,27 +546,57 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .zyard { height: 34px; display: flex; align-items: center; justify-content: center; gap: 4px; background: var(--zone-yard); color: var(--dim); font-size: 13px;
   border: 2px solid var(--zone-edge); border-bottom: 0; border-radius: 8px 8px 0 0; cursor: pointer; }
 .zyard b { color: var(--text); }
-.zwrap { position: relative; }
-.zgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 2px solid var(--zone-edge); border-radius: 0 0 8px 8px; overflow: hidden; }
-.zc { aspect-ratio: var(--za, 1.25); min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
-  font-size: 11px; line-height: 1.2; cursor: pointer; border: 1px solid var(--zone-edge); outline: 1px dotted var(--line); outline-offset: -2px;
-  background: var(--zone-none); transition: background var(--dur-tap); }
-.zc .zn { color: var(--dim); font-size: 9px; }
-.zc .fn { font-weight: bold; font-size: 12px; }
-.zc .zi { font-size: 10px; color: var(--text); }
-.zc .zi.warn { color: var(--danger); }
-.zc.k-trap { background: var(--zone-trap); } .zc.k-trap .fn { color: var(--dir-left); }
-.zc.k-den { background: var(--zone-den); } .zc.k-den .fn { color: var(--dir-right); }
-.zc.k-turn { background: var(--ready-soft); } .zc.k-turn .fn { color: var(--ready); }
-.zc.k-lure { background: var(--zone-lure); } .zc.k-lure .fn { color: var(--dir-up); }
-.zc.k-boss { background: var(--zone-boss); cursor: default; } .zc.k-boss .fn { color: var(--accent); }
+/* 판 = 칸 배경(.zgrid > .zc) -> 통로 파이프(.zpipes, SVG) -> 방 글(.zlabels > .zl) -> 문 표시(.zdoors) 순으로 겹친다. 오버레이 3개는 테두리 안쪽(--zb)에 딱 맞춘다 */
+.zwrap { position: relative; --zb: 2px; }
+.zgrid { display: grid; grid-template-columns: repeat(var(--zc, 5), minmax(0, 1fr)); grid-template-rows: repeat(var(--zr, 7), minmax(0, 1fr)); aspect-ratio: var(--gar, .9);
+  border: 2px solid var(--zone-edge); border-radius: 0 0 8px 8px; overflow: hidden; }
+.zc { min-width: 0; min-height: 0; position: relative; cursor: pointer; border: 2px solid var(--wall); background: var(--zone-none); transition: background var(--dur-tap); }
+.zl { min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  font-size: 11px; line-height: 1.2; text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); }
+.zlabels { position: absolute; inset: var(--zb); z-index: 2; display: grid; grid-template-columns: repeat(var(--zc, 5), minmax(0, 1fr)); grid-template-rows: repeat(var(--zr, 7), minmax(0, 1fr)); pointer-events: none; }
+.zl .zn { position: absolute; top: 1px; left: 3px; right: 3px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-size: 8.5px; }
+.zl .fn { font-weight: bold; font-size: 12px; }
+.zl .zi { font-size: 10px; color: var(--text); }
+.zl .zi.warn { color: var(--danger); }
+.zl .zp { font-size: 9px; font-weight: bold; color: var(--accent); }
+.zl.k-none .fn { color: var(--dim); font-weight: normal; }
+.zl.k-trap .fn { color: var(--dir-left); } .zl.k-den .fn { color: var(--dir-right); } .zl.k-turn .fn { color: var(--ready); } .zl.k-lure .fn { color: var(--dir-up); }
+.zl.k-boss .fn { color: var(--accent); } .zl.k-fixed .fn { color: var(--ice); } .zl.k-stairs .fn { color: var(--ice); }
+.zc.k-trap { background: var(--zone-trap); }
+.zc.k-den { background: var(--zone-den); }
+.zc.k-turn { background: var(--ready-soft); }
+.zc.k-lure { background: var(--zone-lure); }
+.zc.k-boss { background: var(--zone-boss); cursor: default; }
 .zc.sel, .zyard.sel { box-shadow: inset 0 0 0 3px var(--accent); }
 .zc.pv { outline: 2px dashed var(--accent); outline-offset: -3px; }
-.zdoors { position: absolute; inset: 0; pointer-events: none; }
-.zdoor { position: absolute; transform: translate(-50%, -50%); background: var(--panel); border: 2px solid var(--accent); border-radius: 3px; z-index: 2; }
-.zdoor.h { width: 22px; height: 9px; } .zdoor.v { width: 9px; height: 22px; }
+.zc.iso { box-shadow: inset 0 0 0 3px var(--danger); background-image: repeating-linear-gradient(45deg, var(--iso-hatch) 0 6px, transparent 6px 12px); }
+/* 통로(파이프): 문이 있는 벽을 가로질러 두 방 가운데를 잇는 굵은 관. 굵기는 화면 픽셀 그대로 (non-scaling-stroke) */
+.zpipes { position: absolute; left: var(--zb); top: var(--zb); width: calc(100% - 2 * var(--zb)); height: calc(100% - 2 * var(--zb)); z-index: 1; pointer-events: none; overflow: visible; }
+.pipe-rim, .pipe, .route { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pipe-rim { stroke: var(--pipe-rim); stroke-width: 12px; }
+.pipe { stroke: var(--pipe); stroke-width: 7px; }
+.pipe-rim.pend { opacity: .55; }
+.pipe.pend { stroke: var(--door); stroke-dasharray: 3 5; stroke-linecap: butt; opacity: .9; }
+.route { stroke: var(--squad); stroke-width: 2px; opacity: .9; }
+.route.back { stroke-dasharray: 3 3; opacity: .65; }
+.s1 { --squad: var(--sq-1); } .s2 { --squad: var(--sq-2); } .s3 { --squad: var(--sq-3); }
+/* 문 표시: 건설 모드에서는 끌 수 있는 손잡이, ?debug에서는 통과 수 */
+.zdoors, .zslots { position: absolute; inset: var(--zb); z-index: 3; pointer-events: none; }
+.zslots { z-index: 2; }
+.zdoor { position: absolute; transform: translate(-50%, -50%); background: var(--door); border: 2px solid var(--door-ink); border-radius: 3px; pointer-events: none; }
+.zdoor.h { width: 24px; height: 10px; } .zdoor.v { width: 10px; height: 24px; }
+.zdoor.grab { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.zdoor.grab::after { content: ""; position: absolute; inset: -12px; }
+.zdoor.pend { background: var(--accent-soft); border: 2px dashed var(--accent); }
+.zdoor.sel { box-shadow: 0 0 0 3px var(--accent); }
+.zdoor.lifted { opacity: .3; }
 .zdoor b { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--accent); color: var(--accent-ink); font-size: 10px; border-radius: 8px; padding: 0 4px; line-height: 14px; }
-.zdoor.unused { opacity: .35; }
+/* 문을 놓을 수 있는 빈 벽 (끄는 동안·문을 눌러 고른 동안만) */
+.zslot { position: absolute; transform: translate(-50%, -50%); border: 2px dashed var(--dir-right); border-radius: 4px; background: var(--slot-fill); pointer-events: none; }
+.zslot.h { width: 32px; height: 12px; } .zslot.v { width: 12px; height: 32px; }
+.zslot.hot { border-style: solid; border-color: var(--ready); background: var(--ready-soft); }
+.zslot.hot.bad { border-color: var(--danger); }
+.shaft.doordrag .zgrid { filter: brightness(.7); }
 
 @keyframes zfade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -723,15 +773,20 @@ body[data-screen="build"] #toasts { bottom: auto; top: 12px; }
 .dragghost small { display: block; font-size: 11px; font-weight: normal; color: var(--foe); }
 .dragghost small:empty { display: none; }
 .dragghost.k-trap { background: var(--zone-trap); } .dragghost.k-den { background: var(--zone-den); } .dragghost.k-lure { background: var(--zone-lure); } .dragghost.k-turn { background: var(--ready-soft); }
+.dragghost.door { background: var(--door); color: var(--door-ink); border-color: var(--door-ink); } .dragghost.door small { color: var(--door-ink); }
 .dragghost.bad { border-color: var(--danger); }
+.dragghost.door.bad { background: var(--danger); color: var(--text); } .dragghost.door.bad small { color: var(--text); }
+.bdoorline { font-size: 12px; color: var(--dim); text-align: center; line-height: 1.35; }
+.bdoorline b { color: var(--door); }
+.bdoorline b.bad { color: var(--danger); }
+.zl .pendx { pointer-events: auto; }
 .shaft.droping { user-select: none; -webkit-user-select: none; }
 .shaft.droping .zc:not(.drop):not(.gap) { filter: brightness(.55); }
 .shaft.droping .zc.drop { filter: brightness(1.3); box-shadow: inset 0 0 0 3px var(--ready); }
 .shaft.droping .zc.drop.hot { filter: brightness(1.6); box-shadow: inset 0 0 0 4px var(--accent); }
 .zc.pend { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; border: 2px dashed var(--accent); background-image: repeating-linear-gradient(135deg, var(--pend-hatch) 0 6px, transparent 6px 12px); animation: pend-in var(--dur-fx) var(--ease-pop-s); }
-.zc.pend .fn, .zc.pend .zi, .zc.pend .zp { opacity: .8; }
-.zc.pend .zn { display: none; } /* 미확정 칸은 글이 많아서 구역 이름 줄을 접는다 (× 와 안 겹치게) */
-.shaft.nodoors .zdoors { display: none; }
+.zl.pend .fn, .zl.pend .zi, .zl.pend .zp { opacity: .8; }
+.zl.pend .zn { display: none; } /* 미확정 칸은 글이 많아서 구역 이름 줄을 접는다 (× 와 안 겹치게) */
 .ptag { font-size: 9.5px; font-weight: bold; color: var(--foe); }
 .pendx { position: absolute; top: 2px; right: 2px; z-index: 3; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: var(--danger); color: var(--text); font-size: 14px; line-height: 22px; text-align: center; }
 .pendx::after { content: ""; position: absolute; inset: -8px; }
@@ -771,8 +826,7 @@ body.reduce .zc.pend, body.reduce .zc.built { animation: none; }
 .lockq { opacity: .6; border-style: dashed; }
 .lockq h3 { margin: 0; font-size: 15px; }
 .gbtn .gn { color: var(--accent); }
-.zc.k-fixed { background: var(--zone-fixed); } .zc.k-fixed .fn { color: var(--ice); }
-.zc .zp { font-size: 9px; font-weight: bold; color: var(--accent); }
+.zc.k-fixed { background: var(--zone-fixed); }
 .demand.fixed { border-color: var(--ice); }
 
 /* 군단 탭: 부대 카드 · 부족 카드 */
@@ -841,23 +895,20 @@ body.reduce .zc.pend, body.reduce .zc.built { animation: none; }
 /* 건설 화면: 층 탭 · 잠긴 층 · 계단 */
 .floortabs { flex: none; }
 .zyard.stair { cursor: default; color: var(--dim); }
-.zc.k-stairs { background: var(--zone-stairs); cursor: default; } .zc.k-stairs .fn { color: var(--ice); }
-.zc.gap { background: var(--bg); border-color: transparent; outline: 0; cursor: default; color: var(--dim); font-size: 10px; }
+.zc.k-stairs { background: var(--zone-stairs); cursor: default; }
 .zwrap.locked .zgrid { filter: grayscale(.8) brightness(.55); }
 .zlock { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: var(--lock-veil); border-radius: 0 0 8px 8px; text-align: center; padding: 0 16px; }
 .zlock b { font-size: 28px; }
 .zlock span { font-size: 13px; font-weight: bold; }
 
 /* 전투 화면: 층을 쌓은 판 · 퇴각 · 위기 */
-.bt-board.tall { min-height: calc(var(--rows, 12) * 38px + 24px); max-height: none; }
-.bt-board.tall .zc .zn { display: none; }
-.bt-board.tall .zc .zi { font-size: 9.5px; }
-.bt-board .zc.gap { background: var(--zone-stairs); border-color: var(--zone-stairs); color: var(--ice); font-weight: bold; }
 .bt-locked { flex: none; padding: 5px 10px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--dim); font-size: 12px; text-align: center; }
 .bt-mon.out { opacity: .3; filter: grayscale(1); border-style: dashed; }
 .bt-mon.retreating { animation: bt-retreat calc(var(--dur-fx) * 2) var(--ease-out) forwards; }
 @keyframes bt-retreat { 0% { transform: scale(1); opacity: 1; } 40% { transform: scale(1.5); opacity: 1; } 100% { transform: scale(1); opacity: .3; } }
 .bt-float.retreat { color: var(--dir-up); font-size: 12px; }
+.bt-float.flee { color: var(--ready); font-size: 12px; }
+.bt-sumline { margin: 2px 0 4px; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; font-weight: bold; text-align: center; overflow-wrap: anywhere; }
 .bt-float.alarm { color: var(--danger); font-size: 16px; }
 .bt-board.bt-alarm { animation: bt-alarm calc(var(--dur-fx) * 2) var(--ease-out); }
 @keyframes bt-alarm { 0% { box-shadow: 0 0 0 4px var(--danger); } 100% { box-shadow: 0 0 0 0 transparent; } }
