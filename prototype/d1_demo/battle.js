@@ -227,7 +227,7 @@
         Object.keys(monEls).forEach(function (k) {
           var o = monEls[k];
           if (o.m.id !== e.id) return;
-          nm = o.m.name;
+          nm = (api.unitName && api.unitName(o.m.id)) || o.m.name;
           o.el.classList.remove('retreating'); void o.el.offsetWidth; o.el.classList.add('retreating');
         });
         var a = Z.anchorOf(e.z);
@@ -420,12 +420,13 @@
         var by = {}, order = [];
         Object.keys(S.dens).forEach(function (z) {
           S.dens[z].forEach(function (m) {
-            if (!by[m.id]) { by[m.id] = { name: m.name, alive: 0, total: 0, guard: m.guard }; order.push(m.id); }
+            if (!by[m.id]) { by[m.id] = { id: m.id, name: api.unitName ? api.unitName(m.id) || m.name : m.name, alive: 0, total: 0, guard: m.guard }; order.push(m.id); }
             by[m.id].total++; if (m.hp > 0) by[m.id].alive++;
           });
         });
         return order.map(function (id) { return by[id]; });
       }
+      function nameOf(r) { return (api.unitName && api.unitName(r.id)) || r.name; }
       function coText(c) { return 'Lv ' + c.lv + ' (' + c.exp + '/' + c.need + ')'; }
       function finish() {
         U.phase = 'result';
@@ -449,22 +450,22 @@
         ];
         // 부대마다 경험치 (+ 퇴각·사망 표시)
         var unitRows = alive.length ? alive.map(function (u) {
-          var g = rep.expGains.filter(function (x) { return x.name === u.name; })[0];
+          var g = rep.expGains.filter(function (x) { return x.id === u.id; })[0];
           var down = u.total - u.alive; // 전투 중 쓰러진 인원 (사망이 아니면 전투 뒤 회복)
-          var out = cas.retreated.some(function (r) { return r.name === u.name; }), died = cas.died.filter(function (d) { return d.name === u.name; })[0];
+          var out = cas.retreated.some(function (r) { return r.id === u.id; }), died = cas.died.filter(function (d) { return d.id === u.id; })[0];
           return '<div class="stat"><span>' + esc(u.name) + (u.guard ? '' : ' ' + u.total + '명' + (down ? ' (쓰러짐 ' + down + ')' : '')) + (out ? ' <span class="chip warn">퇴각</span>' : '') +
             (died ? ' <span class="chip warn">사망 ' + died.n + '</span>' : '') + '</span><b>' + (g ? '경험치 +' + g.exp + (g.lvAfter > g.lvBefore ? ' · Lv ' + g.lvBefore + '→' + g.lvAfter : '') : '') + '</b></div>';
         }).join('') : '<div class="dim small-text">출진한 부대가 없어요. 현장의 [출진]에서 부대를 층에 세우면 싸워요.</div>';
         // 아군 피해: 퇴각(다음 주 쉼) · 쓰러짐(전투 뒤 회복) · 사망 을 나눠서
         var hurtRows = '';
         cas.retreated.forEach(function (r) {
-          hurtRows += '<div class="stat"><span class="lbl-retreat">퇴각</span><b>' + esc(r.name) + (r.big ? ' · 큰 피해' : '') + ' → 다음 주 쉬어요 💤</b></div>';
+          hurtRows += '<div class="stat"><span class="lbl-retreat">퇴각</span><b>' + esc(nameOf(r)) + (r.big ? ' · 큰 피해' : '') + ' → 다음 주 쉬어요 💤</b></div>';
         });
         cas.down.forEach(function (d) {
-          hurtRows += '<div class="stat"><span class="lbl-down">쓰러짐</span><b>' + esc(d.name) + ' ' + d.n + '명 → 전투 뒤 회복</b></div>';
+          hurtRows += '<div class="stat"><span class="lbl-down">쓰러짐</span><b>' + esc(nameOf(d)) + ' ' + d.n + '명 → 전투 뒤 회복</b></div>';
         });
         cas.died.forEach(function (d) {
-          hurtRows += '<div class="stat"><span class="lbl-died">사망</span><b>' + esc(d.name) + ' ' + d.n + '명' + (d.wiped ? ' · 전멸 → 기본 ' + d.refill + '명 무료 보충' : '') + '</b></div>';
+          hurtRows += '<div class="stat"><span class="lbl-died">사망</span><b>' + esc(nameOf(d)) + ' ' + d.n + '명' + (d.wiped ? ' · 전멸 → 기본 ' + d.refill + '명 무료 보충' : '') + '</b></div>';
         });
         if (!hurtRows) hurtRows = '<div class="stat"><span class="lbl-ok">모두 무사</span><b>퇴각·쓰러짐·사망 없음</b></div>';
         var restBox = (rep.restMsgs || []).length ? '<div class="small-text dim">' + rep.restMsgs.map(esc).join('<br>') + '</div>' +

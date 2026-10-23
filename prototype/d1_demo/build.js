@@ -254,7 +254,7 @@
       // 대기실 시트: 지금 이 구역에 서는 부대 (읽기만) + 출진 화면 바로가기
       function denHtml(z, k) {
         var us = RUN.site.units[z] || [], sl = Z.slotsOf(k, z), n = Z.floorOf(z), fi = P.floorInfo(n);
-        var names = us.map(function (id) { var m = P.unitById(id); return m ? esc(m.name) + (m.resting ? ' 💤' : '') : ''; }).filter(Boolean);
+        var names = us.map(function (id) { var m = P.unitById(id); return m ? esc(api.unitName ? api.unitName(id) : m.name) + (m.resting ? ' 💤' : '') : ''; }).filter(Boolean);
         return '<div class="lbl">이 대기실에 서는 부대 (' + us.length + '/' + sl + ')</div>' +
           '<div class="why">' + (names.length ? names.join(' · ') : '아직 없어요') + '</div>' +
           '<div class="why">부대는 대기실마다 정하지 않고 <b>층에 출진</b>시켜요. 출진한 부대가 이 층의 대기실에 나눠 서요 (' + n + '층 출진 ' + (fi ? fi.units.length + '/' + fi.cap : '-') + ').</div>' +

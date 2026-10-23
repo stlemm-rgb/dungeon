@@ -109,6 +109,13 @@
   function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
   function fmtN(n) { return String(Math.round(Number(n) * 10) / 10); }
   function questTag(q) { return q.floors + '층 의뢰'; }
+  // 부대 이름: 같은 부족 부대가 둘 이상이면 뒤에 #번호 (구분용. 친위대는 이름 그대로)
+  function uname(u) {
+    if (!u || u.kind === 'guard') return u ? u.name : '';
+    var same = P.squads().filter(function (x) { return x.tribe === u.tribe; }), i = -1;
+    same.forEach(function (x, n) { if (x.id === u.id) i = n; });
+    return same.length > 1 && i >= 0 ? u.name + ' #' + (i + 1) : u.name;
+  }
   // 판 미리보기·고정 구역 조각 (build.js 의 ZONEVIEW. 없으면 빈 글)
   function ZV() { return window.ZONEVIEW || {}; }
   function siteHtml(q) { return q && q.board && ZV().siteHtml ? ZV().siteHtml(q.board) : ''; }
@@ -260,7 +267,7 @@
   // 출진 칸 하나 (부대·친위대 보기 u, 없으면 빈 칸). 쉬는 부대는 💤 + 다음 주 복귀
   function slotHtml(u) {
     if (!u) return '<span class="uslot empty"><small>빈 칸</small></span>';
-    return '<span class="uslot filled' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '"><b>' + esc(u.name) + '</b>' +
+    return '<span class="uslot filled' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '"><b>' + esc(uname(u)) + '</b>' +
       '<small>' + (u.kind === 'guard' ? '친위대' : u.count + '명') + ' · Lv ' + u.lv + '</small>' +
       (u.resting ? '<small class="zz">💤 다음 주 복귀</small>' : '') + '</span>';
   }
@@ -300,7 +307,7 @@
     var pi = P.planInfo();
     if (pi) el.appendChild(div('invade', '<span>이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급 · 평균 Lv ' + pi.lv + '</span>'));
     var rests = P.squads().concat(P.guards()).filter(function (u) { return u.resting; });
-    if (rests.length) el.appendChild(div('invade now', '💤 쉬는 부대: ' + rests.map(function (u) { return esc(u.name); }).join(', ') + ' — 이번 주 전투에 안 나가요'));
+    if (rests.length) el.appendChild(div('invade now', '💤 쉬는 부대: ' + rests.map(function (u) { return esc(uname(u)); }).join(', ') + ' — 이번 주 전투에 안 나가요'));
 
     // 세로 지하 단면: 지상 / 1층 / 2층(의뢰가 2층이면 열림·🔒) / 3층(데모에 없음). 층마다 출진 칸·전투력
     var pr = P.questProgress(), fis = P.floorsInfo(), h = '<div class="surface"><span>지상</span><small>현장 입구</small></div>';
@@ -334,7 +341,7 @@
     function unitRow(u, fi) {
       var where = u.floor ? u.floor + '층 출진 중' : '대기';
       var why = fi.cap === 0 ? '대기실 없음' : u.resting ? '쉬는 중' : fi.units.length >= fi.cap && u.floor !== fi.n ? '한도 참' : '';
-      return '<div class="card srow' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '"><div class="sinfo"><div class="utop"><b>' + esc(u.name) + '</b>' +
+      return '<div class="card urow' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '"><div class="sinfo"><div class="utop"><b>' + esc(uname(u)) + '</b>' +
         (u.kind === 'guard' ? '<span class="chip accent">친위대</span>' : '') + '</div>' +
         '<div class="utags"><span class="chip">' + esc(u.tribeName) + '</span>' + (u.kind === 'guard' ? '' : '<span class="chip">' + u.count + '/' + u.cap + '명</span>') +
         '<span class="chip">Lv ' + u.lv + '</span><span class="chip' + (u.floor ? ' ok' : '') + '">' + where + '</span>' +
@@ -360,7 +367,7 @@
       var cells = '';
       for (var i = 0; i < fi.cap; i++) {
         var u = fi.units[i];
-        cells += u ? '<button class="card sslot filled' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '" data-out="' + u.id + '"><b>' + esc(u.name) + '</b>' +
+        cells += u ? '<button class="card sslot filled' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '" data-out="' + u.id + '"><b>' + esc(uname(u)) + '</b>' +
           '<small>' + (u.kind === 'guard' ? '친위대' : u.count + '명') + ' · Lv ' + u.lv + '</small>' +
           '<small>' + (u.placed ? esc(zoneName(u.placed)) + '에 서요' : '자리 대기') + '</small>' + (u.resting ? '<small class="zz">💤 다음 주 복귀</small>' : '') +
           '<small class="out">눌러서 빼기</small></button>' : '<div class="card sslot empty"><small>빈 칸</small><small>아래에서 골라요</small></div>';
@@ -549,7 +556,7 @@
       var open = !!unitsOpen[u.id], guard = u.kind === 'guard', t = tribeById(u.tribe);
       var h = '<div class="card ucard' + (open ? ' open' : '') + (guard ? ' guard' : '') + '" data-uid="' + u.id + '">' +
         '<button class="uhead" data-utoggle="' + u.id + '" aria-expanded="' + open + '"><div class="portrait">' + (guard ? '친위대' : '도트') + '</div>' +
-        '<div class="uinfo"><div class="utop"><b>' + esc(u.name) + '</b>' + (guard ? '<span class="chip accent">친위대</span>' : '') + '</div>' +
+        '<div class="uinfo"><div class="utop"><b>' + esc(uname(u)) + '</b>' + (guard ? '<span class="chip accent">친위대</span>' : '') + '</div>' +
         '<div class="utags"><span class="chip">' + esc(u.tribeName) + '</span>' + (guard ? '' : '<span class="chip">' + u.count + '/' + u.cap + '명</span>' + (u.free ? '<span class="chip">무료 기본</span>' : '')) +
         '<span class="chip">Lv ' + u.lv + '</span><span class="chip">등급 ' + P.monGrade(u.lv) + '</span>' +
         (u.floor ? '<span class="chip ok">' + u.floor + '층 출진' + (u.placed ? ' · ' + esc(zoneName(u.placed)) : '') + '</span>' : '<span class="chip">대기</span>') +
@@ -796,7 +803,7 @@
   // 다음 현장 예고(🔒 지하 3층 그림) · 지금까지의 기록 · [처음부터 다시] = P.reset(). 회사·군단 탭과 작품집은 그대로 볼 수 있다.
   function demoEndScreen(el) {
     var ds = P.demoState(), co = P.company();
-    el.appendChild(div('card demoend', '<h3>데모는 여기까지예요</h3><div class="small-text">' + esc(ds.msg || '플레이해 주셔서 고마워요!') + '</div>' +
+    el.appendChild(div('card demoend', '<h3>데모는 여기까지예요</h3><div class="small-text">' + esc(String(ds.msg || '').replace('데모는 여기까지예요.', '').trim() || '플레이해 주셔서 고마워요!') + '</div>' +
       '<div class="stat"><span>납품한 던전</span><b>' + RUN.works.length + '곳</b></div><div class="stat"><span>회사 레벨</span><b>Lv ' + co.lv + '</b></div>' +
       '<div class="stat"><span>걸린 기간</span><b>' + RUN.week + '주째</b></div><div class="stat"><span>군단 친위대</span><b>' + RUN.guards.length + '/' + P.GUARD_MAX + '명</b></div>'));
     el.appendChild(div('shaft demoshaft',
@@ -941,6 +948,7 @@
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
     // 건설 화면용 (build.js)
     head: head, questTag: questTag, stageToast: stageToast, fixedHtml: fixedHtml, stagesHtml: stagesHtml,
+    unitName: function (id) { var u = P.unitById(id); return u ? uname(u) : ''; },
     floor: function () { return curFloor; }, setFloor: function (n) { curFloor = n; },   // 지금 보는 층 (건설 화면 ↔ 출진 화면)
     // 튜토리얼 (build.js·battle.js): 단계 보이기 · 끝내기(본 것으로 기록) · 떠 있나 · 건설 화면 강조 구역
     tutStart: tutStart, tutDone: function (id) { if (tutActive(id)) tutEnd(true); }, tutActive: tutActive, tutZones: tutZones,

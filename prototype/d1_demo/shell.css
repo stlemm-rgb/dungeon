@@ -796,7 +796,7 @@ body.reduce .tut-hl { animation: none; }
 .uslot small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--dim); }
 .uslot.empty { border-style: dashed; background: none; }
 .uslot.guard { border-color: var(--accent); }
-.uslot.rest, .sslot.rest, .srow.rest { opacity: .6; }
+.uslot.rest, .sslot.rest, .urow.rest { opacity: .6; }
 .zz { color: var(--danger); }
 /* 잠긴 층 */
 .lockedfloor { gap: 12px; }
@@ -821,12 +821,12 @@ body.reduce .tut-hl { animation: none; }
 .sslot.filled.guard { border-color: var(--accent); }
 .sslot.filled .out { color: var(--accent); }
 .sslot.empty { border-style: dashed; background: none; }
-.srow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
-.srow.guard { border-color: var(--accent); }
-.srow .sinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.srow .nums { font-size: 12px; color: var(--dim); }
-.srow .btn { flex: none; }
-.srow .btn.poor { opacity: .45; }
+.urow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.urow.guard { border-color: var(--accent); }
+.urow .sinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.urow .nums { font-size: 12px; color: var(--dim); }
+.urow .btn { flex: none; }
+.urow .btn.poor { opacity: .45; }
 
 /* 건설 화면: 층 탭 · 잠긴 층 · 계단 */
 .bfloors { margin-top: -4px; }
