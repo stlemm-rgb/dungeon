@@ -1,17 +1,19 @@
-/* D1 건설 화면: 층별 구역 판 + 구역 시트 (시설 고르기 -> 미리보기 -> 짓기). 부대 출진은 shell.js의 출진 화면
+/* D1 건설 화면 = 건설 모드 (4차): 층별 구역 판 + 아래 시설 띠에서 끌어서 빈 구역에 올려놓기. 부대 출진은 shell.js의 출진 화면
  *
  * 구조 (shell.js의 SCREEN_PLUGINS 방식, battle.js와 같음)
  *  - 규칙은 zones.js(판·시설·이동), 상태와 바꾸는 함수는 progress.js (API.md: previewBuild·buildZone·powerInfo·floorInfo). 여기는 보여 주고 누름만 받는다.
- *  - 흐름: (2층 의뢰면 위에서 1층 · 2층 고르기) 구역 누르기 -> 시트가 열림 -> 시설 고르기(미리보기: 마석·가치·전투력 전후, 판에 흐리게 미리 보임) -> 짓기.
- *    몬스터 대기실 시트는 시설만 바꾸고, 부대는 [출진] 화면에서 정한다 (안내 + 바로가기 버튼).
- *  - 층: 1층 판(ZONES.floorMap(1))과 아래층 작은 판(floorMap(2))을 따로 그린다. 잠긴 층은 어둡게 + 🔒 + 열림 조건. 층이 열리면 1층 맨 아래는 계단, 보물방은 2층 맨 아래.
- *  - 돈: 건설·부대 조달은 마석(회사 금 아님). 모자라면 "마석 N 모자람". 쓴 마석은 돌려받지 못한다. 마석 0이어도 다음 주는 진행된다.
+ *  - 흐름: 시설 띠(함정·대기실·미끼, 입구 대기)에서 시설을 끌어 빈 구역에 놓는다 (눌러 고른 뒤 칸을 눌러도 됨). 놓을 수 있는 칸만 끄는 동안 밝게.
+ *    놓은 것은 "미확정"(점선·반투명·× 빼기, 여러 곳 가능). 아래 한 줄 합계(미확정 n곳 · 마석 a → b · 가치 · 전투력 · 대기실이면 부대 +1).
+ *    [건설] = 미확정을 차례로 P.buildZone 으로 확정 + 완공 표시(이펙트 자리만) / [끝내기] = 미확정 버리고 나감. 탭을 옮겨도 버림.
+ *    끄는 그림은 터치에서는 손가락보다 위(LIFT)에 띄운다 (손가락에 안 가림). 이미 지은 구역 위에 놓기(교체)는 데모에서 막음(토스트).
+ *  - 층: 지하 단면 전체를 세로로 이어 그린다 (층이 늘면 단면만 스크롤). 잠긴 층은 어둡게 + 🔒 + 열림 조건. 층이 열리면 1층 맨 아래는 계단, 보물방은 2층 맨 아래.
+ *  - 돈: 건설·부대 조달은 마석(회사 금 아님). 쓴 마석은 돌려받지 못한다. 마석 0이어도 다음 주는 진행된다.
  *  - 가치 = 지어 둔 시설 점수, 전투력 = 함정 점수 + 인계할 부대 점수를 침입자가 그 층 입구 기준으로 지나는 비율로 곱한 것 (API.md). 구역마다 전투력(powerInfo)을 판 위에 작게 보여 준다 (⚔).
  *  - 고정 구역(의뢰가 정함, 예: 얼어붙은 하역장)은 🔒로 보이고 못 짓고 못 바꾼다.
  *  - 문 위 숫자 = 침입자 20명이 오면 그 길로 지나갈 인원 (zones.js forecast).
  *  - 판 그리기(boardHtml)·의뢰 카드 조각(siteHtml·fixedHtml)은 shell.js·battle.js가 같이 쓴다 (window.ZONEVIEW).
  *    boardHtml({ floor: n }) = n층 한 장, boardHtml({ stack: true, rows }) = 열린 층을 위아래로 쌓은 판 (전투 화면, 층 사이 한 줄 = 계단)
- *  - 튜토리얼(첫 건설 전): 'zones' 단계 말풍선 + 첫 부지의 필수 길(P.tutorialPath, 입구·보물방 빼고)을 반짝이게 한다 (api.tutStart·api.tutZones). 처음 짓는 순간 단계가 끝난다.
+ *  - 튜토리얼(첫 건설 전): 'zones' 단계 말풍선 + 추천 칸 하나(P.tutorialPath 첫 칸) + 대기실 띠를 반짝이게 한다 (api.tutStart·api.tutZones). 첫 칸을 놓으면 'place'([건설] 반짝), 확정하면 'tohome'([홈] 반짝).
  *  - 곡선·시간은 shell.css의 var(--dur-*)/var(--ease-*) (MOTION에서 깔림)만.
  */
 (function () {
@@ -31,8 +33,8 @@
   function fmtN(n) { return String(Math.round(Number(n) * 10) / 10); }
   function sign(n) { return (n >= 0 ? '+' : '') + fmtN(n); }
 
-  // 구역 첫 칸에 쓸 글: 구역 이름 / 시설 / 한 줄 정보 / (있으면) 구역 전투력 ⚔
-  function labelHtml(z, k, units, pp) {
+  // 구역 첫 칸에 쓸 글: 구역 이름 / 시설 / 한 줄 정보 / (있으면) 구역 전투력 ⚔ / (미확정이면) 미확정 글 + × 빼기
+  function labelHtml(z, k, units, pp, pend) {
     var f = Z.FAC[k] || Z.FAC.empty, us = units[z] || [], h;
     if (Z.zoneType(z) === 'boss') {   // 층 맨 아래: 계단(아래층이 열렸을 때) 또는 보물방
       return isStairs(z) ? '<div class="fn">계단 ▼</div><div class="zi">' + (Z.floorOf(z) + 1) + '층으로</div>' : '<div class="fn">💰 보물방</div><div class="zi">지킬 곳</div>';
@@ -47,10 +49,12 @@
       } else if (f.kind === 'trap') h += '<div class="zi">피해 ' + Z.trapDmgOf(z) + '</div>';
     }
     if (pp && pp[z] && pp[z].power > 0) h += '<div class="zp">⚔ ' + fmtN(pp[z].power) + '</div>';
+    if (pend && pend[z]) h += '<div class="ptag">미확정</div><button class="pendx" type="button" data-unpend="' + z + '" aria-label="' + (Z.NAMES[z] || z) + ' 빼기">×</button>';
     return h;
   }
 
   // 판 전체 HTML. o = { zones, units, flow(없으면 문 숫자 안 보임), sel(눌린 구역), pv(미리보기 중인 구역), pp(구역별 전투력 { 구역: { power } }),
+  //   pend(미확정으로 놓은 구역 { 구역: 시설 }: 점선·반투명·"미확정"·× 빼기, 건설 모드), noYard(야외·계단 띠 안 그림, 현장 단면용),
   //   floor(n층 한 장, 기본 1), stack(true면 열린 층을 위아래로 쌓음) · rows(쌓을 때 줄 수, 없으면 전부), locked · lockText(잠긴 층: 어둡게 + 🔒 글) }
   function boardHtml(o) {
     curZ();
@@ -59,12 +63,14 @@
     if (o.stack && Z.stackMap) { var st = Z.stackMap(); map = o.rows ? st.slice(0, o.rows) : st; pairs = Z.flowPairs('all'); }
     else if (fi) { map = fi.MAP; off = fi.rowOff; pairs = Z.flowPairs(fn); }
     else { map = Z.MAP; pairs = Z.flowPairs(); }
-    function zcls(z) { return (o.sel === z ? ' sel' : '') + (o.pv === z ? ' pv' : ''); }
-    var h;
-    if (o.stack || fn === 1) h = '<div class="zyard' + zcls('Y') + '" data-z="Y">야외 · 집결지 — <b>' + (Z.FAC[zones.Y] || Z.FAC.forest).name + '</b></div>';
-    else h = '<div class="zyard stair">▲ ' + (fn - 1) + '층 계단에서 내려와요</div>';
+    function zcls(z) { return (o.sel === z ? ' sel' : '') + (o.pv === z ? ' pv' : '') + (o.pend && o.pend[z] ? ' pend' : ''); }
+    var h = '';
+    if (!o.noYard) {
+      if (o.stack || fn === 1) h = '<div class="zyard' + zcls('Y') + '" data-z="Y">야외 · 집결지 — <b>' + (Z.FAC[zones.Y] || Z.FAC.forest).name + '</b></div>';
+      else h = '<div class="zyard stair">▲ ' + (fn - 1) + '층 계단에서 내려와요</div>';
+    }
     var ratio = (o.stack || fn > 1) ? 1.25 : cellRatio(nc, map.length);
-    h += '<div class="zwrap' + (o.locked ? ' locked' : '') + '"><div class="zgrid" style="grid-template-columns:repeat(' + nc + ',minmax(0,1fr));--za:' + ratio + '">';
+    h += '<div class="zwrap' + (o.locked ? ' locked' : '') + (o.noYard ? ' flat' : '') + '"><div class="zgrid" style="grid-template-columns:repeat(' + nc + ',minmax(0,1fr));--za:' + ratio + '">';
     for (var r = 0; r < map.length; r++) for (var c = 0; c < nc; c++) {
       var z = map[r][c];
       if (z === null || z === undefined) { h += '<div class="zc gap">' + (c === (nc >> 1) ? '▼ 계단' : '') + '</div>'; continue; }
@@ -74,7 +80,7 @@
         var nb = map[r + d[0]] && map[r + d[0]][c + d[1]];
         return nb === z ? 'border-' + d[2] + '-color:transparent;' : '';
       }).join('');
-      h += '<div class="zc k-' + cellKind(z, k) + zcls(z) + '" data-z="' + z + '" style="' + edge + '">' + (first ? labelHtml(z, k, units, o.pp) : '') + '</div>';
+      h += '<div class="zc k-' + cellKind(z, k) + zcls(z) + '" data-z="' + z + '" style="' + edge + '">' + (first ? labelHtml(z, k, units, o.pp, o.pend) : '') + '</div>';
     }
     h += '</div><div class="zdoors">';
     pairs.forEach(function (p) {
@@ -155,21 +161,18 @@
   }
   window.ZONEVIEW = { boardHtml: boardHtml, cols: cols, boardOf: boardOf, siteHtml: siteHtml, fixedHtml: fixedHtml, miniHtml: miniHtml, floorMiniHtml: floorMiniHtml };
 
-  function zoneWhy(z) {
-    var t = Z.zoneType(z);
-    return (t === 'yard' ? '침입자가 들어오기 전에 지나는 곳.' : t === 'entry' ? '모든 침입자가 지나는 첫 관문. 데모에서는 분기로 고정이에요 (갈림길 규칙대로 나뉘어요).'
-      : t === 'boss' ? '' : Z.CENTER.indexOf(z) >= 0 ? '큰길: 침입자가 모두 모이는 길. 피할 수 없어요.'
-      : Z.EXITS[z] && Z.EXITS[z].length > 1 ? '갈림길: 지나간 침입자가 여러 길로 나뉘어요.' : '옆길.') +
-      (t === 'room' ? ' 큰 구역일수록 함정이 세고 부대 자리가 많아요.' : '');
-  }
-  // 시설 설명: zones.js 의 대기실 글이 옛 규칙일 수 있어 화면에서 덮는다 (부대는 출진 화면에서 정함)
-  function facText(k) {
-    var f = Z.FAC[k];
-    return f.kind === 'den' ? '칸당 부대 한 자리. 출진한 부대가 여기서 싸워요. 부대가 보이면 침입자가 다른 길이 있으면 피함. 바로 앞이 함정이면 기습 ×1.5' : f.st;
+  // 구역 설명 한 줄 (시설을 안 든 채 구역을 누르면 토스트). 입구는 분기·대기 둘 다 지을 수 있다 (데모 DEMO_FACILITIES.entry)
+  function zoneInfo(z) {
+    var t = Z.zoneType(z), k = RUN.site.zones[z], f = Z.FAC[k] || {};
+    var what = t === 'entry' ? '모든 침입자가 지나는 첫 관문이에요. 대기(전원 가운데 길로)를 지을 수 있어요'
+      : t === 'boss' ? (isStairs(z) ? '위아래 층을 잇는 계단이에요' : '침입자가 여기까지 오면 약탈해요')
+      : f.kind === 'fixed' ? '고정 구역이라 못 바꿔요'
+      : k === 'empty' ? '빈 구역이에요. 시설을 끌어다 놓으세요' : f.name + ' — 이미 지었어요';
+    return (Z.NAMES[z] || z) + ': ' + what;
   }
 
   // 제자리 갱신: target 의 자식들을 src 의 자식들과 맞춘다. 같은 종류 요소는 그대로 두고 속성·글자만 바꿔서,
-  // 시트가 다시 튀어나오거나 버튼이 새로 생기지 않게 한다 (애니메이션·스크롤·누름 상태 유지).
+  // 버튼이 새로 생기지 않게 한다 (애니메이션·스크롤·누름 상태 유지).
   function syncKids(target, src) {
     var i, a, b;
     for (i = 0; i < src.childNodes.length; i++) {
@@ -191,175 +194,303 @@
     syncKids(target, tmp);
   }
 
+  // ---------- 건설 모드 (현장 탭의 [건설]) ----------
+  // 흐름: 아래 시설 띠에서 시설을 끌어 빈 구역에 놓는다 (눌러서 고른 뒤 칸을 눌러도 된다) -> 놓은 것은 "미확정"(점선·반투명·× 빼기, 여러 곳 가능)
+  //  -> 아래 한 줄 합계 -> [건설]을 누르면 미확정을 차례로 P.buildZone 으로 확정 (+ 완공 표시) / [끝내기]는 미확정을 버리고 나감.
+  //  탭을 옮기거나 화면을 나가도 미확정은 버려진다 (이 화면 안에만 있는 값이라 저절로).
+  // 값은 P.previewBuild / P.buildZone 으로만 읽고 바꾼다. 여러 곳 합계용 API가 없어 곳마다 previewBuild 의 증가분을 더한다
+  //  (가치는 정확히 더해짐, 전투력은 근사: 서로 길을 바꾸는 미끼·대기실이 함께 놓이면 실제와 조금 다를 수 있다).
+  var TOOL_LABEL = { trap: '함정', den: '대기실', lure: '미끼', wait: '입구 대기' };
+  var TOOL_ORDER = ['trap', 'den', 'lure', 'wait'];
+  function josa(w) { var c = String(w).charCodeAt(String(w).length - 1) - 0xAC00; return c >= 0 && c % 28 !== 0 ? '은' : '는'; }   // 받침 있으면 은, 없으면 는
+  var LIFT = 64;   // 손가락(터치)보다 이만큼 위에 끄는 그림을 띄운다 (마우스는 0)
+
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
     return function (el) {
       curZ();
-      var sel = null;      // 시트가 열린 구역 (없으면 시트 닫힘)
-      var pick = null;     // 시트에서 고른 시설 (아직 안 지음, 미리보기 중)
-      var floors = RUN.site ? RUN.site.floors : 1;
-      var fl = Math.max(1, Math.min(floors, api.floor ? api.floor() : 1));   // 지금 보는 층
+      var q = RUN.quest;
+      var pend = {};        // 미확정 { 구역: { k: 시설, p: previewBuild 결과 } }
+      var order = [];       // 놓은 순서 (확정도 이 순서대로)
+      var armed = null;     // 눌러서 고른 시설 (칸을 누르면 놓음)
+      var drag = null;      // 끌기 중 { k, pid, sx, sy, x, y, lift, started, ghost, hot, node, raf }
+      var timers = [];
+      el.classList.add('fixed', 'buildmode');
 
-      el.appendChild(api.head('건설', 'field'));
-      var sumBox = api.div('bsum');
-      var floorPowBox = api.div('small-text dim bfloors');
-      var questBox = api.div('');
-      var noteBox = api.div('');      // 마석을 다 썼을 때 안내
-      var tabBox = api.div('seg floortabs');
-      var boardBox = api.div('zboard');
-      var sheetBox = api.div('');
-      el.appendChild(sumBox);
-      el.appendChild(floorPowBox);
-      el.appendChild(questBox);
-      el.appendChild(noteBox);
-      if (floors > 1) el.appendChild(tabBox);
-      el.appendChild(boardBox);
-      el.appendChild(api.div('dim small-text zhint', '구역을 눌러 시설을 고르세요. ⚔는 그 구역의 전투력(함정·부대 점수 × 침입자가 그 층 입구에서 이 구역을 지나는 비율)이라, 미끼로 길을 모으면 그 길의 ⚔가 커져요. 문 위 숫자는 침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 그 길로 지나갈 인원이에요. 쓴 마석은 돌려받지 못해요. 부대는 [출진] 화면에서 정해요 (공짜).'));
-      el.appendChild(sheetBox);
+      var hdrBox = api.div('fhdr');
+      var shaft = api.div('shaft');
+      var scroll = api.div('fscroll');
+      scroll.appendChild(shaft);
+      var toolsBox = api.div('tools');
+      var sumBox = api.div('bsumline');
+      var endBtn = document.createElement('button');
+      endBtn.className = 'bbtn'; endBtn.type = 'button'; endBtn.textContent = '끝내기'; endBtn.setAttribute('data-end', '');
+      var okBtn = document.createElement('button');
+      okBtn.className = 'bbtn main'; okBtn.type = 'button'; okBtn.textContent = '건설'; okBtn.setAttribute('data-confirm', '');
+      var btns = api.div('bbtns');
+      btns.appendChild(endBtn); btns.appendChild(okBtn);
+      var dock = api.div('bdock');
+      dock.appendChild(toolsBox); dock.appendChild(sumBox); dock.appendChild(btns);
+      el.appendChild(hdrBox); el.appendChild(scroll); el.appendChild(dock);
 
-      function ppMap() {
-        var m = {}; P.powerInfo().parts.forEach(function (p) { m[p.z] = p; });
-        return m;
-      }
+      // ----- 놓을 수 있나 -----
+      function spentOthers(z) { var s = 0; order.forEach(function (o) { if (o !== z) s += pend[o].p.cost; }); return s; }
+      function pendSpent() { return spentOthers(null); }
       function lockTextOf(n) {
         var fi = P.floorInfo(n);
         return '지하 ' + n + '층: ' + (fi && fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계 달성 시 열림' : '이 의뢰에서는 열리지 않아요');
       }
-
-      function drawSummary() {
-        var s = P.siteSummary(), q = RUN.quest, pr = P.questProgress();
-        morphHtml(sumBox, '<div>마석<b>' + money(s.budget) + '</b></div><div>던전 가치<b>' + s.value + '</b></div><div>전투력<b>' + s.power + '</b></div>');
-        morphHtml(floorPowBox, P.floorsInfo().map(function (f) { return f.open ? f.n + '층 ⚔ ' + f.power : '🔒 ' + f.n + '층'; }).join(' · ') + ' <span>(전투력은 층마다 그 층 입구 기준)</span>');
-        morphHtml(questBox, q && pr ? '<div class="card quest"><div class="qhead"><span class="chip accent">' + api.questTag(q) + '</span><b>' + esc(q.name) + '</b></div>' +
-          '<div class="small-text">' + esc(pr.line) + '</div>' + (pr.complete && !pr.canDeliver ? '<div class="blocker">' + esc(pr.why) + '</div>' : '') +
-          (pr.complete && pr.canDeliver ? '<div class="small-text ready">의뢰 완료! 현장에서 [납품하기]를 누르세요</div>' : '') + '</div>' : '');
-        morphHtml(noteBox, s.budget <= 0 ? '<div class="grantbar"><b>마석을 다 썼어요</b><span>지은 시설과 부대로 [다음 주]를 눌러 진행할 수 있어요. 전투마다 의뢰인이 마석을 조금 더 줘요. 출진에서 부대를 정하면 전투력이 올라요</span></div>' : '');
-        morphHtml(tabBox, P.floorsInfo().map(function (f) {
-          return '<button data-fl="' + f.n + '"' + (f.n === fl ? ' class="on"' : '') + '>' + (f.open ? '' : '🔒 ') + f.n + '층' + (f.open ? ' <small>⚔ ' + f.power + '</small>' : '') + '</button>';
-        }).join(''));
+      // z 구역에 시설 k를 놓을 수 있나. light = true면 previewBuild 를 안 부르고 비용만 본다 (끄는 동안 밝게 할 칸 고르기용)
+      function canPlace(z, k, light) {
+        var t = Z.zoneType(z), n = Z.floorOf(z), cur = RUN.site.zones[z], f = Z.FAC[k];
+        if (z === 'Y' || t === 'yard') return { ok: false, why: '야외에는 데모에서 지을 수 있는 시설이 없어요' };
+        if (!Z.floorOpen(n)) return { ok: false, why: '🔒 ' + lockTextOf(n) };
+        if (RUN.site.fixed && RUN.site.fixed[z]) return { ok: false, why: '고정 구역이라 바꿀 수 없어요' };
+        if (t === 'boss') return { ok: false, why: isStairs(z) ? '계단: 위아래 층을 이어요. 여기는 지을 수 없어요' : '보물방: 시설을 지을 수 없어요' };
+        if (!pend[z] && (t === 'entry' ? cur !== 'split' : cur !== 'empty')) return { ok: false, why: '이미 지은 구역이에요. 데모에서는 바꾸거나 허물 수 없어요' };
+        if (Z.facFor(z).indexOf(k) < 0) return { ok: false, why: t === 'entry' ? '입구에는 대기만 지을 수 있어요' : f && f.for === 'entry' ? TOOL_LABEL[k] + josa(TOOL_LABEL[k]) + ' 1층 입구 칸에만 지을 수 있어요' : TOOL_LABEL[k] + josa(TOOL_LABEL[k]) + ' 이 칸에 지을 수 없어요' };
+        var p = null, cost;
+        if (light) cost = P.buildCost(k, z);
+        else {
+          p = P.previewBuild(z, k);
+          if (!p.ok && (p.cost === undefined || !/^마석/.test(p.why || ''))) return { ok: false, why: p.why || '지금은 지을 수 없어요' };
+          cost = p.cost;
+        }
+        var need = spentOthers(z) + cost;
+        if (need > P.budgetLeft()) return { ok: false, why: '마석이 모자라요 (필요 ' + need + ', 남은 ' + P.budgetLeft() + ')' };
+        return { ok: true, p: p };
       }
 
-      function preview() { return sel && pick ? P.previewBuild(sel, pick) : null; }
-
+      // ----- 그리기 -----
+      function zonesNow() {
+        var zs = {};
+        Object.keys(RUN.site.zones).forEach(function (z) { zs[z] = RUN.site.zones[z]; });
+        order.forEach(function (z) { zs[z] = pend[z].k; });
+        return zs;
+      }
+      function drawHeader() {
+        morphHtml(hdrBox, api.siteHeader(q).replace('</b><span class="fmas">', '</b><span class="chip accent">건설 모드</span><span class="fmas">'));
+      }
       function drawBoard() {
-        var p = preview();
-        var zones = p && p.zones ? p.zones : RUN.site.zones, units = p && p.units ? p.units : RUN.site.units, locked = !Z.floorOpen(fl);
-        morphHtml(boardBox, boardHtml({ zones: zones, units: units, flow: P.forecast(zones, units).flow, sel: sel, pv: p && p.zones ? sel : null, pp: ppMap(),
-          floor: fl, locked: locked, lockText: locked ? lockTextOf(fl) : '' }));
+        var zs = zonesNow(), pm = {}, pp = {}, flow = P.forecast(zs, RUN.site.units).flow;
+        order.forEach(function (z) { pm[z] = pend[z].k; });
+        P.powerInfo().parts.forEach(function (p) { pp[p.z] = p; });
+        morphHtml(shaft, api.shaftHtml(function (n, locked, text) {
+          return boardHtml({ zones: zs, units: RUN.site.units, flow: flow, pp: pp, pend: pm, floor: n, noYard: true, locked: locked, lockText: text });
+        }));
+        api.bindShaft(shaft);
         api.tutZones().forEach(function (z) {
-          boardBox.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('tut-hl'); });
+          shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('tut-hl'); });
+        });
+        if (armed) markDrops(armed);
+      }
+      function toolKeys() {
+        return TOOL_ORDER.filter(function (k) {
+          return Z.ALL.some(function (z) { return z !== 'Y' && Z.floorOpen(Z.floorOf(z)) && Z.facFor(z).indexOf(k) >= 0; });
         });
       }
+      function drawTools() {
+        var left = P.budgetLeft() - pendSpent();
+        toolsBox.innerHTML = toolKeys().map(function (k) {
+          var f = Z.FAC[k], per = f.perCell !== undefined ? f.perCell : f.cost, poor = per > left;
+          return '<div class="tool k-' + f.kind + (armed === k ? ' on' : '') + (poor ? ' poor' : '') + (api.tutActive('zones') && k === 'den' ? ' tut-hl' : '') + '" data-tool="' + k + '" role="button" tabindex="0" aria-label="' +
+            TOOL_LABEL[k] + ' (끌어서 빈 구역에 놓기)"><b>' + TOOL_LABEL[k] + '</b><small>마석 ' + (f.perCell !== undefined ? '칸당 ' : '') + per + '</small></div>';
+        }).join('');
+      }
+      function totals() {
+        var t = { n: order.length, cost: 0, dv: 0, dp: 0, gift: 0 };
+        order.forEach(function (z) { var p = pend[z].p; t.cost += p.cost; t.dv += p.valueAfter - p.valueNow; t.dp += p.powerAfter - p.powerNow; t.gift += p.gift || 0; });
+        return t;
+      }
+      function drawSum() {
+        var t = totals(), left = P.budgetLeft(), h;
+        if (!t.n) {
+          h = armed ? '<b>' + TOOL_LABEL[armed] + '</b>을(를) 골랐어요 · 놓을 빈 구역을 누르세요 (마석 ' + money(left) + ')' : '시설을 끌어서 빈 구역에 놓으세요 (마석 ' + money(left) + ')';
+        } else {
+          h = '미확정 ' + t.n + '곳 · 마석 <b class="mas">' + money(left) + ' → ' + money(left - t.cost) + '</b> · 가치 ' + sign(t.dv) + ' · 전투력 ' + sign(t.dp) + (t.gift ? ' · 부대 +' + t.gift : '');
+        }
+        morphHtml(sumBox, '<div>' + h + '</div>');
+        okBtn.setAttribute('aria-disabled', t.n ? 'false' : 'true');
+        okBtn.classList.toggle('off', !t.n);
+      }
+      function redraw() { drawHeader(); drawBoard(); drawTools(); drawSum(); }
 
-      // 대기실 시트: 지금 이 구역에 서는 부대 (읽기만) + 출진 화면 바로가기
-      function denHtml(z, k) {
-        var us = RUN.site.units[z] || [], sl = Z.slotsOf(k, z), n = Z.floorOf(z), fi = P.floorInfo(n);
-        var names = us.map(function (id) { var m = P.unitById(id); return m ? esc(api.unitName ? api.unitName(id) : m.name) + (m.resting ? ' 💤' : '') : ''; }).filter(Boolean);
-        return '<div class="lbl">이 대기실에 서는 부대 (' + us.length + '/' + sl + ')</div>' +
-          '<div class="why">' + (names.length ? names.join(' · ') : '아직 없어요') + '</div>' +
-          '<div class="why">부대는 대기실마다 정하지 않고 <b>층에 출진</b>시켜요. 출진한 부대가 이 층의 대기실에 나눠 서요 (' + n + '층 출진 ' + (fi ? fi.units.length + '/' + fi.cap : '-') + ').</div>' +
-          '<button class="btn" data-sortie="' + n + '">출진에서 부대 정하기 →</button>';
+      // ----- 놓기·빼기·확정 -----
+      function place(z, k) {
+        var r = canPlace(z, k, false);
+        if (!r.ok) { api.toast(r.why); api.buzz('warn'); return false; }
+        if (!pend[z]) order.push(z);
+        pend[z] = { k: k, p: r.p };
+        api.buzz('tap');
+        api.tutDone('zones');   // 첫 칸을 놓았으면 끌기 안내는 끝 -> [건설] 안내
+        if (RUN.site.builds === 0) api.tutStart('place', { target: '#view [data-confirm]' });
+        redraw();
+        return true;
+      }
+      function unplace(z) {
+        if (!pend[z]) return;
+        delete pend[z]; order.splice(order.indexOf(z), 1);
+        api.buzz('tap'); redraw();
+      }
+      // 완공 표시 (이펙트 자리만: 꾸밈은 폴리싱 때). 그 구역 칸이 잠깐 반짝인다
+      function buildFx(zs) {
+        zs.forEach(function (z) { shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('built'); }); });
+        timers.push(setTimeout(function () { shaft.querySelectorAll('.zc.built').forEach(function (c) { c.classList.remove('built'); }); }, 1100));
+      }
+      function confirmBuild() {
+        if (!order.length) { api.toast('먼저 시설을 빈 구역에 놓아 주세요'); api.buzz('warn'); return; }
+        var made = [], cost = 0, gifts = 0, stages = [], failed = '';
+        order.slice().forEach(function (z) {
+          if (failed) return;
+          var d = pend[z], r = P.buildZone(z, d.k);
+          if (!r.ok) { failed = r.msg; return; }
+          made.push(z); cost += d.p.cost; gifts += r.gift || 0; stages = stages.concat(r.stages || []);
+          delete pend[z]; order.splice(order.indexOf(z), 1);
+        });
+        if (made.length) {
+          api.buzz('good');
+          api.toast(made.length + '곳 완공 (마석 -' + cost + ')' + (gifts ? ' · 기본 부대 +' + gifts : ''));
+          api.stageToast(stages.filter(function (n, i) { return stages.indexOf(n) === i; }));
+          var pr = P.questProgress();
+          if (pr && pr.complete) api.toast('의뢰 완료! 홈의 진행 띠에서 [납품하기]를 누르세요');
+        }
+        if (failed) { api.toast(failed); api.buzz('warn'); }
+        armed = null;
+        redraw();
+        buildFx(made);
+        if (made.length) { api.tutDone('place'); if (RUN.site.builds > 0) api.tutStart('tohome', { target: '#tabs [data-go="company"]' }); }
+      }
+      okBtn.addEventListener('click', confirmBuild);
+      endBtn.addEventListener('click', function () {
+        if (order.length) api.toast('미확정 ' + order.length + '곳은 버렸어요');
+        api.buzz('tap'); api.go('field', false);
+      });
+
+      // ----- 놓을 수 있는 칸 밝히기 -----
+      function dropMap(k) {
+        var m = {};
+        Z.ALL.forEach(function (z) { if (z !== 'Y' && !m.hasOwnProperty(z)) m[z] = canPlace(z, k, true).ok; });
+        return m;
+      }
+      var marks = null;   // { 구역: 놓을 수 있나 } 끄는 동안·시설을 골라 둔 동안만
+      function markDrops(k) {
+        marks = dropMap(k);
+        shaft.classList.add('droping');
+        shaft.querySelectorAll('.zc[data-z]').forEach(function (c) { c.classList.toggle('drop', !!marks[c.getAttribute('data-z')]); });
+      }
+      function clearMarks() {
+        marks = null;
+        shaft.classList.remove('droping');
+        shaft.querySelectorAll('.zc.drop, .zc.hot').forEach(function (c) { c.classList.remove('drop', 'hot'); });
+      }
+      function setHot(z) {
+        if (drag.hot === z) return;
+        if (drag.hot) shaft.querySelectorAll('.zc[data-z="' + drag.hot + '"]').forEach(function (c) { c.classList.remove('hot'); });
+        drag.hot = z;
+        var okHere = !!(z && marks && marks[z]);
+        if (okHere) shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('hot'); });
+        drag.ghost.classList.toggle('bad', !!z && !okHere);
+        drag.ghost.querySelector('small').textContent = okHere ? (Z.NAMES[z] || z) + ' · 마석 ' + P.buildCost(drag.k, z) : '';
       }
 
-      function drawSheet() {
-        if (!sel) { sheetBox.innerHTML = ''; return; }
-        var z = sel, k = RUN.site.zones[z], f = Z.FAC[k], t = Z.zoneType(z);
-        var now = P.forecast().at[z] || 0, pp = ppMap()[z];
-        var h = '<h3>' + Z.NAMES[z] + ' — ' + f.name + (t === 'room' ? ' (' + Z.sizeOf(z) + '칸)' : '') + '</h3>';
-        if (f.kind === 'fixed') {
-          var fd = (BD.FIXED_ZONES || {})[f.fixedId] || {};
-          h += '<div class="why"><b>고정 구역</b> — 의뢰가 정해 둔 곳이라 짓거나 바꿀 수 없어요.</div>' +
-            '<div class="why">' + esc(fd.look || '') + '</div><div class="why"><b>효과</b> ' + esc(f.st) + '</div>' +
-            '<div class="why">침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 이 구역에 <b>' + now + '명</b>이 와요.</div>' +
-            '<div class="zfoot"><div class="zact"><button class="btn" data-close>닫기</button></div></div>';
-          var sh0 = sheetBox.firstChild && sheetBox.firstChild.firstChild;
-          if (!sh0) { sheetBox.innerHTML = ''; sheetBox.appendChild(api.div('zsheetbg', '<div class="zsheet">' + h + '</div>')); } else morphHtml(sh0, h);
+      // ----- 끌기 (터치·마우스 모두 포인터 이벤트) -----
+      function cellAt(x, y) {
+        var e = document.elementFromPoint(x, y), c = e && e.closest ? e.closest('.zc[data-z]') : null;
+        return c && shaft.contains(c) ? c.getAttribute('data-z') : null;
+      }
+      function ghostMove() {
+        drag.ghost.style.left = drag.x + 'px';
+        drag.ghost.style.top = (drag.y - drag.lift) + 'px';
+        setHot(cellAt(drag.x, drag.y - drag.lift));
+      }
+      function tick() {   // 판 위·아래 끝에 가까우면 단면을 스크롤 (층이 많을 때)
+        if (!drag || !drag.started) return;
+        var r = scroll.getBoundingClientRect(), ty = drag.y - drag.lift;
+        // 그림이 판 가운데쯤에 한 번 들어온 뒤에만, 위·아래 끝에 닿으면 스크롤 (시설 띠에서 막 끌어 올릴 때 저절로 밀리지 않게)
+        if (ty > r.top + 36 && ty < r.bottom - 36) drag.inside = true;
+        else if (drag.inside && ty >= r.top && ty < r.top + 36) scroll.scrollTop -= 10;
+        else if (drag.inside && ty <= r.bottom && ty > r.bottom - 36) scroll.scrollTop += 10;
+        ghostMove();
+        drag.raf = requestAnimationFrame(tick);
+      }
+      function startDrag() {
+        drag.started = true;
+        armed = null;
+        toolsBox.querySelectorAll('.tool.on').forEach(function (c) { c.classList.remove('on'); });
+        drag.node.classList.add('lifted');
+        var g = api.div('dragghost k-' + Z.FAC[drag.k].kind, '<b>' + TOOL_LABEL[drag.k] + '</b><small></small>');
+        document.body.appendChild(g);
+        drag.ghost = g;
+        markDrops(drag.k);
+        drawSum();
+        api.buzz('tap');
+        drag.raf = requestAnimationFrame(tick);
+      }
+      function endDrag() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        if (drag && drag.raf) cancelAnimationFrame(drag.raf);
+        if (drag && drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+        if (drag && drag.node) drag.node.classList.remove('lifted');
+        clearMarks();
+      }
+      function onMove(e) {
+        if (!drag || e.pointerId !== drag.pid) return;
+        drag.x = e.clientX; drag.y = e.clientY;
+        if (!drag.started && Math.abs(drag.x - drag.sx) + Math.abs(drag.y - drag.sy) > 8) startDrag();
+        if (drag.started) ghostMove();
+      }
+      function onUp(e) {
+        if (!drag || e.pointerId !== drag.pid) return;
+        var d = drag;
+        d.x = e.clientX; d.y = e.clientY;
+        var z = d.started ? cellAt(d.x, d.y - d.lift) : null;
+        endDrag(); drag = null;
+        if (!d.started) {   // 그냥 누름 = 시설 고르기 / 고른 것 풀기 (이어서 칸을 누르면 놓음)
+          armed = armed === d.k ? null : d.k;
+          api.buzz('tap');
+          drawTools(); drawSum();
+          if (armed) markDrops(armed); else clearMarks();
           return;
         }
-        h += '<div class="why">' + zoneWhy(z) + '</div>';
-        if (t !== 'yard') h += '<div class="why">침입자 ' + Z.PREVIEW_INVADERS + '명이 오면 이 구역에 <b>' + now + '명</b>이 와요.' +
-          (pp ? ' · 이 구역 전투력 <b>' + fmtN(pp.power) + '</b> (점수 ' + fmtN(pp.score) + ' × 통과 ' + Math.round(pp.w * 100) + '%)' : '') + '</div>';
-        if (f.kind === 'den') h += denHtml(z, k);
-        h += '<div class="lbl">' + (f.kind === 'den' ? '시설 바꾸기' : '시설 고르기') + '</div><div class="zopts">';
-        var left = P.budgetLeft(), opts = Z.facFor(z);
-        if (!opts.length) h += '<div class="why">여기는 지을 수 있는 시설이 없어요.</div>';
-        opts.forEach(function (fk) {
-          var ff = Z.FAC[fk], raw = Z.costOf(fk, z), cv = P.buildCost(fk, z), vv = Z.valueOf(fk, z), cur = fk === k, poor = !cur && cv > left;
-          var costTxt = '마석 ' + cv + (Z.floorOf(z) > 1 && raw !== cv ? ' <small>(' + Z.floorOf(z) + '층 건설비)</small>' : '');
-          h += '<button data-pick="' + fk + '" class="' + (cur ? 'cur' : '') + (pick === fk ? ' on' : '') + (poor ? ' poor' : '') + '"' + (cur ? ' disabled' : '') + '>' +
-            '<b>' + ff.name + (cur ? ' (지금)' : '') + '</b><small>' + facText(fk) + (ff.kind === 'den' ? ' (' + Z.sizeOf(z) + '칸, 자리 ' + Z.slotsOf(fk, z) + ')' : ff.kind === 'trap' ? ' (피해 ' + Z.trapDmgOf(z) + ')' : '') + '</small>' +
-            '<small>' + costTxt + (vv ? ' · 가치 +' + vv : '') + (poor ? ' · <span class="lack">마석 ' + (cv - left) + ' 모자람</span>' : '') + '</small></button>';
-        });
-        h += '</div>';
-        var p = preview();
-        h += '<div class="zfoot">';
-        if (p && p.zones) {
-          var pf = Z.FAC[pick], after = P.forecast(p.zones, p.units).at[z] || 0, dv = p.valueAfter - p.valueNow, dp = p.powerAfter - p.powerNow;
-          h += '<div class="zpreview"><b>미리보기: ' + pf.name + '</b>' +
-            (p.budgetAfter < 0 ? '<div>마석 ' + money(left) + ' (비용 ' + p.cost + ')</div>' : '<div>마석 ' + money(left) + ' → <b>' + money(p.budgetAfter) + '</b> (-' + p.cost + ')</div>') +
-            (p.discount > 0 ? '<div class="discount">할인 -' + money(p.discount) + '</div>' : '') +
-            '<div>던전 가치 ' + p.valueNow + ' → <b>' + p.valueAfter + '</b> (' + sign(dv) + ')</div>' +
-            '<div>전투력 ' + p.powerNow + ' → <b>' + p.powerAfter + '</b> (' + sign(dp) + ')</div>' +
-            (t !== 'yard' ? '<div>이 구역에 오는 침입자 ' + now + '명 → <b>' + after + '명</b></div>' : '') +
-            (p.back ? '<div class="lack">출진 한도가 줄어 부대 ' + p.back + '개는 대기로 돌아가요</div>' : '') +
-            (p.why ? '<div class="lack">' + esc(p.why) + '</div>' : '<div class="dim">지은 뒤에는 마석을 돌려받지 못해요</div>') + '</div>';
-        } else if (p && p.why) h += '<div class="zpreview"><div class="lack">' + esc(p.why) + '</div></div>';
-        h += '<div class="zact"><button class="btn" data-close>닫기</button><button class="btn primary" data-build' + (p && p.ok ? '' : ' disabled') + '>' +
-          (p ? (p.ok ? '짓기 (마석 ' + p.cost + ')' : '짓기') : '시설을 고르세요') + '</button></div></div>';
-        // 시트는 처음 열 때만 만든다 (등장 애니메이션도 그때만). 이미 열려 있으면 안의 바뀐 부분만 제자리에서 고친다.
-        var sheet = sheetBox.firstChild && sheetBox.firstChild.firstChild;
-        if (!sheet) {
-          sheetBox.innerHTML = '';
-          sheetBox.appendChild(api.div('zsheetbg', '<div class="zsheet">' + h + '</div>'));
-        } else morphHtml(sheet, h);
+        if (z) place(z, d.k);
+        else drawSum();
       }
-
-      function redraw() { drawSummary(); drawBoard(); drawSheet(); }
-
-      // 층 고르기 (잠긴 층은 어둡게 보여 줌)
-      tabBox.addEventListener('click', function (e) {
-        var b = e.target.closest ? e.target.closest('[data-fl]') : null;
-        if (!b) return;
-        var n = +b.getAttribute('data-fl');
-        if (n === fl) return;
-        fl = n; if (api.setFloor) api.setFloor(n);
-        sel = null; pick = null; api.buzz('tap');
-        if (!Z.floorOpen(n)) api.toast('🔒 ' + lockTextOf(n));
-        redraw();
+      function onCancel(e) {
+        if (!drag || e.pointerId !== drag.pid) return;
+        endDrag(); drag = null; drawSum();
+      }
+      toolsBox.addEventListener('pointerdown', function (e) {
+        var t = e.target.closest ? e.target.closest('[data-tool]') : null;
+        if (!t || drag) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        drag = { k: t.getAttribute('data-tool'), pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
+          lift: e.pointerType === 'mouse' ? 0 : LIFT, started: false, ghost: null, hot: null, node: t, raf: 0 };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onCancel);
       });
-      // 판을 누르면 시트를 연다 (보물방·계단은 시설이 없음, 잠긴 층은 못 지음)
-      boardBox.addEventListener('click', function (e) {
-        var c = e.target.closest ? e.target.closest('[data-z]') : null;
+
+      // ----- 판 누르기: × 빼기 / 고른 시설 놓기 / 안내 -----
+      shaft.addEventListener('click', function (e) {
+        var x = e.target.closest ? e.target.closest('[data-unpend]') : null;
+        if (x) { unplace(x.getAttribute('data-unpend')); return; }
+        var lk = e.target.closest ? e.target.closest('.zlock') : null;
+        if (lk) { api.toast('🔒 ' + (lk.querySelector('span') || lk).textContent); api.buzz('warn'); return; }
+        var c = e.target.closest ? e.target.closest('.zc[data-z]') : null;
         if (!c) return;
         var z = c.getAttribute('data-z');
-        if (!Z.floorOpen(fl)) { api.toast('🔒 ' + lockTextOf(fl)); api.buzz('warn'); return; }
-        if (z !== 'Y' && Z.zoneType(z) === 'boss') { api.toast(isStairs(z) ? '계단: 위아래 층을 이어요. 여기는 지을 수 없어요' : '보물방: 침입자가 여기까지 오면 금을 약탈해요'); api.buzz('tap'); return; }
-        sel = z; pick = null; api.buzz('tap'); redraw();
-      });
-      // 시트 안 누름
-      sheetBox.addEventListener('click', function (e) {
-        if (e.target.classList && e.target.classList.contains('zsheetbg')) { sel = null; pick = null; redraw(); return; }
-        var b = e.target.closest ? e.target.closest('button') : null;
-        if (!b || b.disabled) return;
-        var r;
-        if (b.hasAttribute('data-close')) { sel = null; pick = null; api.buzz('tap'); redraw(); return; }
-        if (b.hasAttribute('data-pick')) { var fk = b.getAttribute('data-pick'); pick = pick === fk ? null : fk; api.buzz('tap'); redraw(); return; }
-        if (b.hasAttribute('data-sortie')) { if (api.setFloor) api.setFloor(+b.getAttribute('data-sortie')); api.buzz('tap'); api.go('sortie', true); return; }
-        if (b.hasAttribute('data-build')) {
-          r = P.buildZone(sel, pick);
-          api.toast(r.msg);
-          if (!r.ok) { api.buzz('warn'); redraw(); return; }
-          api.buzz('good');
-          api.stageToast(r.stages);
-          api.tutDone('zones'); // 첫 건설을 했으면 안내 끝
-          if (Z.FAC[pick].kind !== 'den') sel = null; // 대기실을 지었으면 시트를 열어 둬서 바로 출진 안내를 보게
-          pick = null;
-          if (!Z.floorOpen(fl)) fl = 1;
-          redraw();
-        }
+        if (armed) { place(z, armed); return; }
+        api.toast(pend[z] ? (Z.NAMES[z] || z) + ': 미확정이에요. × 로 뺄 수 있어요' : zoneInfo(z)); api.buzz('tap');
       });
 
-      if (RUN.quest && RUN.site.builds === 0) api.tutStart('zones', { keep: true }); // 첫 건설 전 안내 (강조는 redraw 가 api.tutZones 로)
+      api.onLeave(function () {
+        if (drag) { endDrag(); drag = null; }
+        timers.forEach(clearTimeout);
+      });
+
+      if (q && RUN.site.builds === 0) api.tutStart('zones', { keep: true });   // 첫 건설 전 안내 (추천 칸 강조는 drawBoard 가 api.tutZones 로, 대기실 띠는 drawTools 가)
       redraw();
     };
   };

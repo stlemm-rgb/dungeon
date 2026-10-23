@@ -1,23 +1,25 @@
-/* D1 첫 데모 화면 (순수 JS, 임시 숫자·임시 문구). 하단 탭 5개 구조 + 새 로직(progress.js, API.md) 연결 (3차: 세로 층·층별 출진·퇴각·위기 카드·데모 끝)
+/* D1 첫 데모 화면 (순수 JS, 임시 숫자·임시 문구). 하단 탭 5개 구조 + 새 로직(progress.js, API.md) 연결 (4차: 탭 구조 · 회사 진행 띠 · 현장 단면 · 건설 모드 끌어 놓기)
  *
- * 3차 요약
- *  - 현장 탭 = 지하 단면: 층마다 출진 칸(P.floorInfo: 한도·친위대 칸·쉬는 부대 💤)·층 전투력(⚔)·[건설][출진] 입구. 잠긴 층은 🔒 + 열림 조건(단계) + 작은 판 그림.
- *  - 출진 화면(SCREENS.sortie): 층 고르기 · 자동 편성 켜기/끄기(P.setAutoDeploy) · 출진 칸(눌러서 빼기, P.withdrawUnit) · 대기/다른 층 부대 목록([출진] P.sortieUnit). 안 되면 이유 토스트.
- *  - 보고 있는 층(curFloor)은 이 파일이 들고 build.js에는 api.floor()/setFloor(n)으로 알려 준다. 입구·버튼의 data-floor="n"이 누를 때 그 층으로 맞춘다.
- *  - 납품 직후 정산 화면의 'deliver' 안내는 이제 P.deliver()가 튜토리얼을 안 끄므로 그냥 tutOn()으로 뜬다 (정식). 데모 의뢰를 다 납품하면 정산 끝에 [정산 마치기] -> P.leaveSettle() -> 현장 탭 자리에 "데모는 여기까지" 화면.
+ * 4차 요약 (2026-10-23 사용자 결정, docs/GAME_PLAN.md "하단 탭·홈 대시보드·건설 모드")
+ *  - 하단 탭: 마계 · 군단 · 회사(가운데) · 현장 · 내 집. 가운데 칸 = 회사가 아닌 화면에서는 [홈](회사로), 회사 화면에서는 [다음 주 ▶](P.startBattle). 다음 주는 여기서만.
+ *  - 회사(홈) = 사무실 무대(캐릭터 걷기·터치 대사·입구)는 그대로 + 위에 얇은 진행 띠(의뢰·납품 기준 n/5·가치/전투력 막대·마석·주·침입자 예고·출진 요약). 의뢰 완료면 띠가 "의뢰 완료 → 납품" + [납품하기].
+ *  - 현장 = 위 두 줄 요약 / 지하 단면(구역 판이 바로 보임, 층이 늘면 단면만 세로 스크롤) / 아래 [출진][건설] / 포로 수용소(취소선). 층 머리에는 출진 n/한도 · ⚔ 만.
+ *  - 출진 = 별도 화면(SCREENS.sortie, 현장 [출진]에서). 건설 모드 = 별도 화면(build.js, 현장 [건설]에서): 아래 시설 띠에서 끌어서 빈 구역에 놓기, 미확정 표시, [건설]로 확정.
+ *  - 튜토리얼: 한 번에 하나만 반짝. 회사 [다음 주] 전에 현장 탭 -> [건설] -> 추천 칸 + 대기실 끌기 -> [건설] -> [홈] -> [다음 주]. (lines.js tofield·build·zones·place·tohome·nextweek)
+ *  - 납품 직후 정산 화면의 'deliver' 안내는 P.deliver()가 튜토리얼을 안 끄므로 그냥 tutOn()으로 뜬다. 데모 의뢰를 다 납품하면 정산 끝에 [정산 마치기] -> P.leaveSettle() -> 현장 탭 자리에 "데모는 여기까지" 화면.
+ *  - 보고 있는 층(curFloor)은 출진 화면이 쓴다 (build.js에는 api.floor()/setFloor(n)).
  *
  * 화면 목록과 이동 규칙
- *  - 한 페이지 안에서 주소 끝의 해시(#field 등)로 화면을 바꾼다. 브라우저 뒤로 가기 = 이전 화면
+ *  - 한 페이지 안에서 주소 끝의 해시(#company 등)로 화면을 바꾼다. 브라우저 뒤로 가기 = 이전 화면
  *    (나중에 안드로이드 뒤로 버튼과 연결). 예전 이름 #home = 현장, #units = 군단은 그대로 받아서 옮겨 준다 (build.js가 'home'으로 돌아옴).
- *  - 하단 탭 5개 (GAME_STRUCTURE 1절): 회사 · 군단 · 현장(가운데) · 마계 · 내 집. 모두 같은 모양(특정 탭 강조 없음, 지금 보는 탭만 윗줄 표시).
+ *  - 하단 탭 5개 (GAME_STRUCTURE 1절): 마계 · 군단 · 회사(가운데) · 현장 · 내 집. 지금 보는 탭만 윗줄 표시(건설 모드는 현장 탭).
  *    데모에서 열린 탭 = 회사 · 현장 · 군단(첫 전투 뒤 열림, 그 전엔 🔒 + 조건). 마계·내 집은 이름에 가로 취소선, 누르면 "준비 중" 토스트.
- *    탭 막대가 보이는 화면: company · corps · field. 전투 화면은 같은 막대 자리에 배속 · 전투 시작 · 안내가 들어간다 (battle.js).
+ *    탭 막대가 보이는 화면: company · corps · field · build. 전투 화면은 같은 막대 자리에 배속 · 전투 시작 · 안내가 들어간다 (battle.js).
  *  - 보이는 방식 (GAME_STRUCTURE 2절): 데모에 없는 입구 = 취소선 + 준비 중(.entry.soon), 플레이하면 열리는 입구 = 🔒 + 열림 조건(.entry.lock). 두 가지를 섞지 않는다.
  *  - 탭 안 입구: 회사 = 의뢰 게시판(board) · 작품집(gallery) · 비서실·응접실·소장실·직원실 / 군단 = 부족 · 친위대 · 훈련 · 대장간 · 몬스터 숙소 /
- *    현장 = 건설(build) · 출진 · 포로 수용소 + 지하 층 단면 / 설정(settings, 위 톱니) · 메뉴(도감·업적) · 상점(위 버튼)
- *  - 현장 맨 위 [다음 주] 버튼 (언제든 PROGRESS.startBattle) 바로 아래에 의뢰 진행표 고정 (납품 기준 n/5 · 가치 · 전투력). 의뢰 완료면 [납품하기]가 그 자리에 뜬다 (자동 납품 없음).
- *  - 진행 화면 (탭 막대 숨김): contract(첫 의뢰) -> field -> build / battle -> (의뢰 완료 뒤 [납품하기]) result(납품·정산·친위대·새 의뢰 후보 한 화면) -> field
- *    contract와 result는 같은 함수(deliverScreen). 첫 시작(report 없음)에는 정산·친위대 없이 후보만 보인다.
+ *    현장 = 건설(build) · 출진(sortie) · 포로 수용소 / 설정(settings, 위 톱니) · 메뉴(도감·업적) · 상점(위 버튼)
+ *  - 진행 화면 (탭 막대 숨김): contract(첫 의뢰) -> company / field -> build / battle -> result(납품·정산·친위대·새 의뢰 후보 한 화면) -> field
+ *    contract와 result는 같은 함수(deliverScreen). 첫 시작(report 없음)에는 정산·친위대 없이 후보만 보인다. 납품은 회사 진행 띠의 [납품하기]에서만 (자동 납품 없음).
  *  - "다음 주"를 누르면 이번 주 전투가 시작되고(PROGRESS.startBattle) 결과를 반영할 때까지 전투 화면에서 못 나간다.
  *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고,
  *    값을 바꾸는 것은 PROGRESS의 정해진 함수(buildZone·startBattle·applyBattle·deliver·pickQuest …)로만 한다.
@@ -42,13 +44,13 @@
   // ---------- 하단 탭 5개 (GAME_STRUCTURE 1·2절) ----------
   // state: open = 열림 · gate = 진행하면 열림(🔒 + 조건, 지금 열렸는지는 tabState가 정함) · soon = 데모에 없음(취소선 + 준비 중)
   var TABS = [
-    { id: 'company', label: '회사', state: 'open' },
-    { id: 'corps',   label: '군단', state: 'gate' },
-    { id: 'field',   label: '현장', state: 'open' },
     { id: 'demon',   label: '마계', state: 'soon' },
+    { id: 'corps',   label: '군단', state: 'gate' },
+    { id: 'company', label: '회사', state: 'open' },   // 가운데: 회사가 아닌 화면에서는 [홈], 회사 화면에서는 [다음 주 ▶]
+    { id: 'field',   label: '현장', state: 'open' },
     { id: 'house',   label: '내 집', state: 'soon' }
   ];
-  var TAB_IDS = ['company', 'corps', 'field']; // 탭 막대가 보이는 화면 (마계·내 집은 화면이 없다)
+  var TAB_IDS = ['company', 'corps', 'field', 'build']; // 탭 막대가 보이는 화면 (마계·내 집은 화면이 없다. build = 현장 탭의 건설 모드)
   // 예전 주소 이름 -> 새 화면 (build.js·battle.js가 'home'으로 돌아오기 때문)
   var ALIAS = { home: 'field', dungeon: 'field', units: 'corps', shop: 'company', leaders: 'company', workshop: 'company', records: 'company' };
 
@@ -130,7 +132,7 @@
       if (stg && stg.opens) toast('지하 ' + stg.opens + '층이 열렸어요');
     });
   }
-  // 납품: 의뢰 완료(납품 기준 5단계 다 채움) 뒤 현장 진행표의 [납품하기]로만. 자동 납품은 없다.
+  // 납품: 의뢰 완료(납품 기준 5단계 다 채움) 뒤 회사 진행 띠의 [납품하기]로만. 자동 납품은 없다.
   function deliverNow() {
     if (!P.checkQuest()) { toast(P.questBlockers()[0] || '아직 납품 기준을 다 채우지 못했어요'); buzz('warn'); return false; }
     var rep = P.deliver();   // 튜토리얼은 여기서 안 꺼진다 (정산 화면 'deliver' 안내가 뜸). 다음 의뢰를 고를 때·정산을 마칠 때 꺼짐 (API.md 10절)
@@ -141,7 +143,7 @@
     return true;
   }
 
-  // 다음 주: 현장 맨 위 버튼. 언제든 누르면 이번 주 전투를 시작한다 (마석 0·건설 0이어도). 안 되면 이유를 토스트로
+  // 다음 주: 회사 화면의 하단 가운데 탭. 언제든 누르면 이번 주 전투를 시작한다 (마석 0·건설 0이어도). 안 되면 이유를 토스트로
   function startWeek() {
     var r = P.startBattle();
     if (!r.ok) { showMsgs(r.msgs); buzz('warn'); return; }
@@ -217,13 +219,43 @@
     return '회사 금 +' + money(rw.gold || 0) + (rw.gems ? ' · 신석 +' + rw.gems : '') + ' · 회사 경험치 +' + (rw.companyExp || 0);
   }
 
-  // ---------- 회사 탭: 하청 건설사 건물 단면 ----------
+  // ---------- 진행 띠 (회사 위) · 현장 요약 (현장 위) 공통 조각 ----------
+  // 막대 한 개: 이름 · 막대 · 지금/다음 단계 기준. 기준을 채웠으면 초록
+  function barHtml(label, now, need, cls) {
+    var r = need ? Math.max(0, Math.min(1, now / need)) : 0;
+    return '<div class="sbar' + (cls ? ' ' + cls : '') + (need != null && now >= need ? ' ok' : '') + '"><span>' + label + '</span><div class="sbar-t"><i style="width:' + Math.round(r * 100) + '%"></i></div><b>' + fmtN(now) + '/' + fmtN(need) + '</b></div>';
+  }
+  // 출진 요약: "출진 1층 2/3 · 2층 1/2" (열린 층만)
+  function deployText() {
+    var fis = P.floorsInfo().filter(function (f) { return f.open; });
+    return '출진 ' + fis.map(function (f) { return f.n + '층 ' + f.units.length + '/' + f.cap; }).join(' · ');
+  }
+  function restingUnits() { return P.squads().concat(P.guards()).filter(function (u) { return u.resting; }); }
+  // 회사 화면 맨 위 얇은 진행 띠. 의뢰 완료면 "의뢰 완료 → 납품" + [납품하기]로 바뀐다 (자동 납품 없음)
+  function homeStripHtml(q) {
+    var pr = P.questProgress();
+    if (!pr) return '';
+    var h = '<div class="strip' + (pr.complete ? ' done' : '') + '" data-strip><div class="srow1"><b class="sname">' + esc(q.name) + (pr.complete ? '' : ' · 납품 기준 ' + pr.stage + '/' + pr.total) + '</b>' +
+      '<span class="smas">마석 ' + money(pr.budget) + (P.weeklyBudget() ? ' <small>매주 +' + P.weeklyBudget() + '</small>' : '') + '</span><span class="swk">' + RUN.week + '주째</span></div>';
+    if (pr.complete) {
+      h += '<div class="sdone"><b>의뢰 완료 → 납품</b><button class="btn primary" data-deliver' + (pr.canDeliver ? '' : ' aria-disabled="true"') + '>납품하기</button></div>';
+      if (!pr.canDeliver) h += '<div class="pwhy">' + esc(pr.why) + '</div>';
+    } else {
+      var nx = pr.next;
+      h += '<div class="sbars">' + barHtml('가치', pr.cur.value, nx.value) + barHtml('전투력', pr.cur.power, nx.power, 'p') + (nx.floor2 ? barHtml('2층 전투력', pr.cur.floor2, nx.floor2, 'p') : '') + '</div>';
+    }
+    var pi = P.planInfo(), rests = restingUnits();
+    h += '<div class="snote">' + (pi ? '이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급 · ' : '') + deployText() + (rests.length ? ' · <b class="zz">💤 쉬는 부대 ' + rests.length + '</b>' : '') + '</div>';
+    return h + '</div>';
+  }
+
+  // ---------- 회사 탭: 사무실 무대(그대로) + 위에 얇은 진행 띠 ----------
   SCREENS.company = function (el) {
     topbar(el);
     var co = P.company(), lv = co.lv, rk = rankOf(lv);
+    if (RUN.quest && RUN.phase === 'play') el.appendChild(div('', homeStripHtml(RUN.quest)));   // 위에 얇은 진행 띠 (무대는 그대로 아래에)
     el.appendChild(div('card rankcard', '<div class="rankrow"><b class="ranktitle">' + esc(rk.title || '') + '</b><span class="chip accent">회사 Lv ' + lv + '</span></div>' +
-      '<div class="dim small-text">' + esc(rk.desc || '') + '</div>' +
-      '<div class="xprow small-text dim"><span>회사 경험치</span><b>' + co.exp + '/' + co.need + '</b></div><div class="xpbar"><i style="width:' + pct(co.exp, co.need) + '"></i></div>'));
+      '<div class="rankdesc small-text dim"><span>' + esc(rk.desc || '') + '</span><b>경험치 ' + co.exp + '/' + co.need + '</b></div><div class="xpbar"><i style="width:' + pct(co.exp, co.need) + '"></i></div>'));
 
     // 무대: 아이소메트릭 방 (그림 = stage.js SVG) + 캐릭터 자리. 바깥 틀(.stage)은 남는 높이를 채우고 방(.stagebox)은 비율을 지킨 채 가운데에 놓는다
     var stage = div('stage'), box = div('stagebox', ST.roomSvg());
@@ -241,90 +273,77 @@
       entry({ kind: 'soon', name: '응접실' }) + entry({ kind: 'soon', name: '소장실' }) + entry({ kind: 'soon', name: '직원실' })));
   };
 
-  // ---------- 현장 탭: 다음 주 버튼 + 의뢰 진행표(고정) + 세로 지하 단면 ----------
-  function pcell(label, now, need) {
-    var ok = need != null && now >= need;
-    return '<div class="pcell' + (ok ? ' ok' : '') + '"><span>' + label + '</span><b>' + fmtN(now) + '/' + (need == null ? '-' : fmtN(need)) + '</b></div>';
+  // ---------- 현장 탭: 위 두 줄 요약 + 지하 단면(구역 판이 바로 보임) + 아래 [출진][건설] ----------
+  // 위 두 줄 (현장·건설 모드 공통): 의뢰 이름·주·마석 / 납품 기준·가치·전투력 (의뢰 완료면 "홈에서 납품"). 숫자는 모두 P.questProgress / P.budgetLeft
+  function siteHeader(q) {
+    var pr = P.questProgress(), l2 = '';
+    if (pr) l2 = pr.complete ? '<b class="ready">의뢰 완료</b> · 홈에서 납품하세요'
+      : '납품 기준 ' + pr.stage + '/' + pr.total + ' · 가치 ' + fmtN(pr.cur.value) + '/' + fmtN(pr.next.value) + ' · 전투력 ' + fmtN(pr.cur.power) + '/' + fmtN(pr.next.power);
+    return '<div class="fh1"><b>' + esc(q.name) + ' · ' + RUN.week + '주째</b><span class="fmas">마석 ' + money(P.budgetLeft()) + (P.weeklyBudget() ? ' <small>매주 +' + P.weeklyBudget() + '</small>' : '') + '</span></div><div class="fh2">' + l2 + '</div>';
   }
-  // 진행표 (P.questProgress): 납품 기준 n/5 · 가치 · 전투력 · (2층 전투력) · 마석. 5단계를 채우면 의뢰 완료 + [납품하기]
-  function progressHtml(q) {
-    var pr = P.questProgress();
-    if (!pr) return '';
-    var h = '<div class="prog' + (pr.complete ? ' done' : '') + '" data-prog><div class="ptitle"><span class="chip accent">' + questTag(q) + '</span><b>' + esc(q.name) + '</b></div>';
-    if (pr.complete) {
-      h += '<div class="pdone"><b>의뢰 완료</b><button class="btn primary" data-deliver' + (pr.canDeliver ? '' : ' aria-disabled="true"') + '>납품하기</button></div>';
-      if (!pr.canDeliver) h += '<div class="pwhy">' + esc(pr.why) + '</div>';
-    } else {
-      var nx = pr.next;
-      h += '<div class="prow"><div class="pcell"><span>납품 기준</span><b>' + pr.stage + '/' + pr.total + '</b></div>' +
-        pcell('가치', pr.cur.value, nx.value) + pcell('전투력', pr.cur.power, nx.power) + (nx.floor2 ? pcell('2층 전투력', pr.cur.floor2, nx.floor2) : '') + '</div>';
-      if (pr.floorLock) h += '<div class="pwhy">🔒 지하 ' + pr.floorLock.floor + '층: ' + pr.floorLock.atStage + '단계 달성 시 열림</div>';
-    }
-    h += '<div class="pbudget"><span>🟣 마석 <small class="dim">(건설·부대 조달)</small></span><b>' + money(pr.budget) + ' / ' + money(pr.budgetStart) + '</b></div>';
-    return h + '</div>';
+  // 층 머리: 층 이름 · 출진 n/한도 · ⚔ (층 안에 건설·출진 버튼은 두지 않는다)
+  function floorHeadHtml(fi) {
+    var cap = fi.cap ? '출진 ' + fi.units.length + '/' + fi.cap + (fi.fighting < fi.units.length ? ' (이번 주 ' + fi.fighting + ')' : '') : '출진 칸 없음 · 대기실을 지어요';
+    return '<div class="fhead"><b>지하 ' + fi.n + '층</b><span class="fcap">' + cap + '</span><span class="fpow">⚔ ' + fmtN(fi.power) + '</span></div>';
   }
-
-  // 출진 칸 하나 (부대·친위대 보기 u, 없으면 빈 칸). 쉬는 부대는 💤 + 다음 주 복귀
-  function slotHtml(u) {
-    if (!u) return '<span class="uslot empty"><small>빈 칸</small></span>';
-    return '<span class="uslot filled' + (u.kind === 'guard' ? ' guard' : '') + (u.resting ? ' rest' : '') + '"><b>' + esc(uname(u)) + '</b>' +
-      '<small>' + (u.kind === 'guard' ? '친위대' : u.count + '명') + ' · Lv ' + u.lv + '</small>' +
-      (u.resting ? '<small class="zz">💤 다음 주 복귀</small>' : '') + '</span>';
+  // 지하 단면 전체: 지상 -> 열린 층(머리 + 구역 판) -> 잠긴 층(🔒 + 열림 조건, 판은 어둡게) -> 이 의뢰에 없는 층 -> 지하 3층(준비 중).
+  // 구역 판 그리기는 boardFn(층 번호, 잠김, 잠김 글)이 맡는다 (현장 = 읽기만, 건설 모드 = build.js 가 미확정·끌어 놓기 칸을 붙임)
+  function lockTextOf(fi, pr) { return '지하 ' + fi.n + '층: ' + (fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계 달성 시 열림' + (pr ? ' (지금 ' + pr.stage + '단계)' : '') : '이 의뢰에서는 열리지 않아요'); }
+  function shaftHtml(boardFn) {
+    var pr = P.questProgress(), fis = P.floorsInfo(), h = '<div class="surface"><span>지상</span><small>현장 입구</small></div>';
+    fis.forEach(function (fi) {
+      if (fi.open) h += '<div class="floor f' + fi.n + '" data-floor-box="' + fi.n + '">' + floorHeadHtml(fi) + boardFn(fi.n, false, '') + '</div>';
+      else h += '<div class="floor f' + fi.n + ' lockedfloor" data-floor-box="' + fi.n + '"><div class="fhead"><b>🔒 지하 ' + fi.n + '층</b><span class="fcap">' + (fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계에서 열림' : '열리지 않아요') + '</span></div>' + boardFn(fi.n, true, lockTextOf(fi, pr)) + '</div>';
+    });
+    if (fis.length < 2) h += '<div class="floor f2 gate" data-f="none"><span class="nm">지하 2층</span><small>이 의뢰는 1층 현장이에요</small></div>';
+    h += '<div class="floor f3 gate soon" data-f="soon"><span class="nm">지하 3층</span></div>';
+    return h;
   }
-  // 지하 한 층 (열림): 머리(층 이름·전투력 ⚔) · 출진 칸(한도만큼) · 입구([건설] [출진])
-  function floorHtml(fi, stairs) {
-    var n = fi.n, slots = '';
-    for (var i = 0; i < fi.cap; i++) slots += slotHtml(fi.units[i]);
-    var body = fi.cap
-      ? '<button class="sortiebar" data-go="sortie" data-floor="' + n + '" aria-label="' + n + '층 출진 칸">' + slots + '</button>'
-      : '<button class="sortiebar none" data-go="sortie" data-floor="' + n + '"><span class="nocap">출진 칸 0 — 이 층에 몬스터 대기실이 없어요. [건설]에서 대기실을 지으면 칸이 생겨요</span></button>';
-    var sub = '출진 ' + fi.units.length + '/' + fi.cap + (fi.fighting < fi.units.length ? ' (이번 주 싸움 ' + fi.fighting + ')' : '');
-    return '<div class="floor f' + n + '" data-floor-box="' + n + '"><div class="fhead"><b>지하 ' + n + '층' + (stairs ? ' <small class="dim">계단 ▼ 아래로</small>' : '') + '</b>' +
-      '<span class="fpow">⚔ ' + fi.power + '</span></div><div class="fsub">' + sub + ' · 한도 ' + fi.capMax + '</div>' + body +
-      '<div class="entries">' +
-        entry({ kind: 'open', go: 'build', name: '건설', sub: n + '층 시설', attrs: ' data-floor="' + n + '"' }) +
-        entry({ kind: 'open', go: 'sortie', name: '출진', sub: '부대·친위대', attrs: ' data-floor="' + n + '"' }) +
-        (n === 1 ? entry({ kind: 'soon', name: '포로 수용소' }) : '') + '</div></div>';
+  // 단면 안 눌림: 이 의뢰에 없는 층 · 지하 3층 안내 토스트
+  function bindShaft(shaft) {
+    shaft.querySelectorAll('.floor.gate[data-f]').forEach(function (g) {
+      g.addEventListener('click', function () {
+        toast(g.getAttribute('data-f') === 'soon' ? soonText('지하 3층') : '2층은 2층 의뢰에서 열려요');
+        buzz('tap');
+      });
+    });
   }
-  // 잠긴 층: 🔒 + 열림 조건(단계) + 작은 판 그림
-  function lockedFloorHtml(fi, pr) {
-    var cond = fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계 달성 시 열림' + (pr ? ' (지금 ' + pr.stage + '단계)' : '') : '이 의뢰에서는 열리지 않아요';
-    return '<div class="floor f' + fi.n + ' gate lockedfloor" data-f="lock" data-n="' + fi.n + '"><div class="flockmini">' + (ZV().floorMiniHtml ? ZV().floorMiniHtml(fi.n) : '') + '</div>' +
-      '<div class="flocktxt"><span class="nm">🔒 지하 ' + fi.n + '층</span><small>' + cond + '</small></div></div>';
+  // 지을 수 있는 빈 구역 수 (열린 층의 방 중 빈 구역, 고정 구역 제외)
+  function emptyZoneCount() {
+    var Zn = window.ZONES, n = 0;
+    (Zn.ALL || []).forEach(function (z) {
+      if (Zn.zoneType(z) === 'room' && !RUN.site.fixed[z] && Zn.floorOpen(Zn.floorOf(z)) && RUN.site.zones[z] === 'empty') n++;
+    });
+    return n;
   }
 
   SCREENS.field = function (el) {
     var q = RUN.quest;
-    topbar(el);
-    if (RUN.phase === 'demoEnd') { demoEndScreen(el); return; }
-    var top = div('fieldtop');
-    top.appendChild(div('', '<button class="btn primary big weekbtn" data-week>다음 주 ▶<small>' + RUN.week + '주째 시작</small></button>'));
-    if (q) top.appendChild(div('', progressHtml(q)));
-    el.appendChild(top);
-    if (!q) { el.appendChild(div('', '<button class="btn primary big" data-go="contract">의뢰 고르기</button>')); return; }
-
-    // 이번 주 침입자 알림 한 줄 (데모는 대량 출현을 꺼서 일반 침입만)
-    var pi = P.planInfo();
-    if (pi) el.appendChild(div('invade', '<span>이번 주 침입자 ' + pi.count + '명 · 최고 ' + pi.top + '급 · 평균 Lv ' + pi.lv + '</span>'));
-    var rests = P.squads().concat(P.guards()).filter(function (u) { return u.resting; });
-    if (rests.length) el.appendChild(div('invade now', '💤 쉬는 부대: ' + rests.map(function (u) { return esc(uname(u)); }).join(', ') + ' — 이번 주 전투에 안 나가요'));
-
-    // 세로 지하 단면: 지상 / 1층 / 2층(의뢰가 2층이면 열림·🔒) / 3층(데모에 없음). 층마다 출진 칸·전투력
-    var pr = P.questProgress(), fis = P.floorsInfo(), h = '<div class="surface"><span>지상</span><small>현장 입구</small></div>';
-    fis.forEach(function (fi) { h += fi.open ? floorHtml(fi, fi.n < RUN.site.floorsOpen) : lockedFloorHtml(fi, pr); });
-    if (fis.length < 2) h += '<div class="floor f2 gate" data-f="none"><span class="nm">지하 2층</span><small>이 의뢰는 1층 현장이에요</small></div>';
-    h += '<div class="floor f3 gate soon"><span class="nm">지하 3층</span></div>';
-    var shaft = div('shaft', h);
-    el.appendChild(shaft);
-    // 지하 3층·잠긴 층 칸을 누르면 안내 토스트
-    shaft.querySelector('.floor.f3').addEventListener('click', function () { toast(soonText('지하 3층')); buzz('tap'); });
-    shaft.querySelectorAll('.floor.gate[data-f]').forEach(function (g) {
-      g.addEventListener('click', function () {
-        var k = g.getAttribute('data-f'), n = +g.getAttribute('data-n') || 2, fi = fis[n - 1];
-        toast(k === 'lock' ? '🔒 지하 ' + n + '층: ' + (fi && fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계 달성 시 열림' : '열리지 않아요') : '2층은 2층 의뢰에서 열려요');
-        buzz('tap');
-      });
+    if (RUN.phase === 'demoEnd') { topbar(el); demoEndScreen(el); return; }
+    if (!q) { topbar(el); el.appendChild(div('', '<button class="btn primary big" data-go="contract">의뢰 고르기</button>')); return; }
+    el.classList.add('fixed');   // 화면을 꽉 채우고 단면만 세로로 스크롤 (위 요약·아래 버튼은 고정)
+    el.appendChild(div('fhdr', siteHeader(q)));
+    var shaft = div('shaft nodoors', shaftHtml(function (n, locked, text) {   // 문 표시·통과 인원은 건설 모드에서만
+      return ZV().boardHtml ? ZV().boardHtml({ zones: RUN.site.zones, units: RUN.site.units, floor: n, noYard: true, locked: locked, lockText: text }) : '';
+    }));
+    var scroll = div('fscroll');
+    scroll.appendChild(shaft);
+    el.appendChild(scroll);
+    bindShaft(shaft);
+    // 구역을 누르면 이름·시설 한 줄 (건설은 [건설] 모드에서)
+    shaft.addEventListener('click', function (e) {
+      var lk = e.target.closest ? e.target.closest('.zlock') : null;   // 잠긴 층: 열림 조건
+      if (lk) { toast('🔒 ' + (lk.querySelector('span') || lk).textContent); buzz('tap'); return; }
+      var c = e.target.closest ? e.target.closest('.zc[data-z]') : null;
+      if (!c) return;
+      var z = c.getAttribute('data-z'), f = window.ZONES.FAC[RUN.site.zones[z]];
+      if (f) { toast(zoneName(z) + ' — ' + f.name); buzz('tap'); }
     });
+    var empties = emptyZoneCount();
+    el.appendChild(div('factions',
+      '<button class="fbtn" data-go="sortie">출진<small>' + (RUN.site.auto ? '자동 편성 켬' : '자동 편성 꺼짐') + '</small></button>' +
+      '<button class="fbtn main" data-go="build">건설<small>빈 구역 ' + empties + '곳</small></button>'));
+    el.appendChild(div('soonline', '<button class="soonbtn" data-toast="' + esc(soonText('포로 수용소')) + '">포로 수용소</button>'));
   };
 
   // ---------- 출진 화면 (현장 탭 입구): 층 고르기 · 자동 편성 · 출진 칸 · 대기/다른 층 부대 ----------
@@ -687,7 +706,7 @@
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { hold.addEventListener(ev, stopHold); });
     el.appendChild(hold);
     el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 주·회사 금·신석·부대·친위대·의뢰가 모두 처음으로 돌아갑니다.'));
-    el.appendChild(div('mt-auto dim small-text', '버전: D1 첫 데모 (3차: 세로 층·출진·퇴각·위기 카드, 임시 숫자)'));
+    el.appendChild(div('mt-auto dim small-text', '버전: D1 첫 데모 (4차: 탭 구조·회사 진행 띠·건설 모드 끌어 놓기, 임시 숫자)'));
   };
 
   // 건설 화면은 build.js (구역 판). SCREEN_PLUGINS.build 가 아래에서 SCREENS.build 로 등록된다.
@@ -780,7 +799,7 @@
       el.appendChild(questCard(q, function (qq) {
         if (picked) return;
         picked = true;
-        if (P.pickQuest(qq, ids.slice())) { buzz('good'); toast('새 부지에서 시작: ' + qq.name); go('field', true); }
+        if (P.pickQuest(qq, ids.slice())) { buzz('good'); toast('새 부지에서 시작: ' + qq.name); go(tutOn() ? 'company' : 'field', true); }   // 첫 의뢰(튜토리얼) = 회사에서 시작 -> 현장 탭 안내
         else picked = false;
       }));
     });
@@ -859,7 +878,7 @@
   }
   function tutDraw() {
     var c = tut.cur;
-    if (!c) { tutEl.hidden = true; tutEl.innerHTML = ''; return; }
+    if (!c) { tutEl.hidden = true; tutEl.innerHTML = ''; document.body.style.setProperty('--tut-h', '0px'); return; }
     var l = c.lines[c.i], last = c.i >= c.lines.length - 1;
     if (tutEl.hidden || !tutEl.firstChild) {
       tutEl.innerHTML = '<div class="tut-face" aria-hidden="true"><b>마왕</b>도트<br>48×48</div>' +
@@ -872,6 +891,7 @@
     tutEl.querySelector('.tut-text').textContent = l.text; // 글자 그대로 (줄바꿈은 CSS pre-line)
     tutEl.querySelector('.tut-count').textContent = c.lines.length > 1 ? (c.i + 1) + '/' + c.lines.length : '';
     tutEl.querySelector('.tut-next').textContent = last ? '닫기' : '다음 ▶';
+    document.body.style.setProperty('--tut-h', tutEl.offsetHeight + 'px'); // 토스트가 말풍선을 가리지 않게 그 높이만큼 올린다 (shell.css #toasts)
   }
   function tutEnd(mark) {
     var c = tut.cur;
@@ -924,19 +944,27 @@
     if (!tutOn()) return;
     if (name === 'contract' && RUN.phase === 'choose') tutStart('welcome', { target: '#view .card.contract' });
     else if (name === 'result' && RUN.phase === 'settle') tutStart('deliver', { target: '#view .payout' });
-    else if (name === 'field' && RUN.phase === 'play' && RUN.quest) {
-      if (P.checkQuest() || (P.questProgress() && P.questProgress().complete)) tutStart('complete', { target: '#view [data-deliver]' });
-      else if (RUN.site.builds === 0) tutStart('build', { target: '#view [data-go="build"]' });
-      else tutStart('nextweek', { target: '#view [data-week]' });
+    else if (RUN.phase === 'play' && RUN.quest) {
+      // 한 번에 하나만 반짝: 회사 [다음 주] 전에 현장 탭 -> [건설] -> (건설 화면: 추천 칸 + 대기실 끌기 -> [건설]) -> [홈] -> [다음 주]
+      var done = P.checkQuest() || (P.questProgress() && P.questProgress().complete);
+      if (name === 'company') {
+        if (done) tutStart('complete', { target: '#view [data-deliver]' });
+        else if (RUN.site.builds === 0) tutStart('tofield', { target: '#tabs [data-go="field"]' });
+        else tutStart('nextweek', { target: '#tabs [data-week]' });
+      } else if (name === 'field') {
+        if (done || RUN.site.builds > 0) tutStart('tohome', { target: '#tabs [data-go="company"]' });
+        else tutStart('build', { target: '#view [data-go="build"]' });
+      }
     }
     tutApply();
   }
-  // 건설 화면 강조 구역: P.tutorialPath() 중 입구(E)·보물방(B)은 빼고 지을 수 있는 칸만. 'zones' 단계가 떠 있을 때만
+  // 건설 화면 강조 구역: P.tutorialPath() 중 입구(E)·보물방(B)은 빼고 지을 수 있는 칸 하나(첫 칸). 'zones' 단계가 떠 있을 때만
   function tutZones() {
     if (!tutActive('zones') || typeof P.tutorialPath !== 'function') return [];
     try {
       var p = P.tutorialPath();
-      return Array.isArray(p) ? p.filter(function (z) { return z !== 'E' && z !== 'B'; }) : [];
+      p = Array.isArray(p) ? p.filter(function (z) { return z !== 'E' && z !== 'B'; }) : [];
+      return p.slice(0, 1);
     } catch (e) { return []; }
   }
 
@@ -946,8 +974,9 @@
   var leaveHooks = [];
   var API = {
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
-    // 건설 화면용 (build.js)
+    // 건설 화면용 (build.js): 위 요약 두 줄 · 지하 단면(구역 판은 build.js가 그림) · 단면 안내 눌림
     head: head, questTag: questTag, stageToast: stageToast, fixedHtml: fixedHtml, stagesHtml: stagesHtml,
+    siteHeader: siteHeader, shaftHtml: shaftHtml, bindShaft: bindShaft,
     unitName: function (id) { var u = P.unitById(id); return u ? uname(u) : ''; },
     floor: function () { return curFloor; }, setFloor: function (n) { curFloor = n; },   // 지금 보는 층 (건설 화면 ↔ 출진 화면)
     // 튜토리얼 (build.js·battle.js): 단계 보이기 · 끝내기(본 것으로 기록) · 떠 있나 · 건설 화면 강조 구역
@@ -956,7 +985,7 @@
     bar: function () { return tabsEl; },
     // 전투 화면용: 결과 반영(한 번만, 결과표 내용을 돌려줌) / 결과표에서 현장으로
     finishBattle: function (result) { return P.applyBattle(result); },
-    backHome: function () { go('field', false); }
+    backHome: function () { go('company', false); }   // 결과표 뒤 = 홈 (진행 띠에서 바로 [다음 주] · [납품하기])
   };
   var plugins = window.SCREEN_PLUGINS || {};
   Object.keys(plugins).forEach(function (k) { SCREENS[k] = plugins[k](API); });
@@ -973,7 +1002,7 @@
     else if (RUN.phase === 'choose' && (to === 'build' || to === 'battle' || to === 'sortie')) to = 'contract'; // 의뢰 없이 건설·출진·전투 불가
     else if (RUN.phase === 'play' && to === 'contract') to = 'field';
     else if (to === 'battle' && !(RUN.phase === 'play' && RUN.battling)) to = 'field'; // 다음 주를 눌러야만 전투
-    else if (bootCheck && to === 'field' && RUN.phase === 'choose') to = 'contract'; // 켜자마자 의뢰가 없으면 바로 고르게
+    else if (bootCheck && (to === 'field' || to === 'company') && RUN.phase === 'choose') to = 'contract'; // 켜자마자 의뢰가 없으면 바로 고르게
     else if (to === 'corps' && !corpsOpen()) to = 'field';             // 군단은 첫 전투 뒤에 열림
     else if (to === 'gallery' && !deliveredOnce()) to = 'company';     // 작품집은 첫 납품 뒤에 열림
     bootCheck = false;
@@ -982,16 +1011,16 @@
   }
   var bootCheck = true;
   var lastName = '';
-  var lastTab = 'field';   // 설정 등에서 뒤로 갈 곳 (마지막으로 본 탭 화면)
+  var lastTab = 'company';   // 설정 등에서 뒤로 갈 곳 (마지막으로 본 탭 화면)
   var corpsWas = null;     // 군단 탭이 방금 열렸는지 알아채는 용 (열리면 토스트 한 번)
 
   function render() {
     leaveHooks.splice(0).forEach(function (fn) { fn(); });
-    var name = guardScreen((location.hash || '#field').slice(1));
+    var name = guardScreen((location.hash || '#company').slice(1));   // 켜면 회사(홈)부터
     tutLeave(name);
     var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
     lastName = name;
-    if (TAB_IDS.indexOf(name) >= 0) lastTab = name;
+    if (TAB_IDS.indexOf(name) >= 0 && name !== 'build') lastTab = name;
     P.setBattle(name === 'battle'); // 전투 화면에 있는 동안은 건설 불가
     document.body.setAttribute('data-screen', name);
     drawTabs(name); // 전투 화면은 이 막대 자리를 battle.js가 채우므로 화면보다 먼저
@@ -1005,8 +1034,9 @@
     tutCheck(name);
   }
 
-  // 하단 막대: 탭 화면(회사·군단·현장)에서 5개 탭. 전부 같은 모양, 지금 보는 탭만 윗줄 표시. 전투 화면에서는 비워 두고 battle.js가 채움. 그 외 화면은 숨김.
+  // 하단 막대: 탭 화면(회사·군단·현장·건설 모드)에서 5개 탭 (마계 · 군단 · 회사 · 현장 · 내 집). 지금 보는 탭만 윗줄 표시(건설 모드 = 현장). 전투 화면에서는 비워 두고 battle.js가 채움. 그 외 화면은 숨김.
   //  열림 = 눌러 이동 · 🔒 = 열림 조건 토스트 · 취소선 = 준비 중 토스트
+  //  가운데 칸(회사): 회사 화면이면 [다음 주 ▶] (진행 중인 의뢰가 있을 때), 다른 화면이면 [홈] (회사로). 설명 글은 붙이지 않는다.
   function tabState(t) { return t.state === 'gate' ? (corpsOpen() ? 'open' : 'lock') : t.state; }
   function drawTabs(name) {
     tabsEl.className = '';
@@ -1015,12 +1045,17 @@
     corpsWas = now;
     if (name === 'battle') { tabsEl.hidden = false; tabsEl.className = 'inbattle'; tabsEl.innerHTML = ''; return; }
     tabsEl.hidden = TAB_IDS.indexOf(name) < 0;
+    var shown = name === 'build' ? 'field' : name;   // 건설 모드는 현장 탭
     tabsEl.innerHTML = TABS.map(function (t) {
+      if (t.id === 'company') {
+        if (name === 'company' && RUN.phase === 'play' && RUN.quest) return '<button class="tab-week" data-week><span class="nm">다음 주 ▶</span></button>';
+        return '<button class="open' + (name === 'company' ? ' on' : '') + '" data-go="company"><span class="nm">홈</span></button>';
+      }
       var st = tabState(t);
       var attr = st === 'open' ? ' data-go="' + t.id + '"'
         : st === 'lock' ? ' data-toast="' + esc('🔒 ' + t.label + ': ' + condText(t.id)) + '"'
         : ' data-toast="' + esc(soonText(t.label)) + '"';
-      return '<button class="' + st + (st === 'open' && t.id === name ? ' on' : '') + '"' + attr + '><span class="nm">' + (st === 'lock' ? '🔒 ' : '') + t.label + '</span></button>';
+      return '<button class="' + st + (st === 'open' && t.id === shown ? ' on' : '') + '"' + attr + '><span class="nm">' + (st === 'lock' ? '🔒 ' : '') + t.label + '</span></button>';
     }).join('');
   }
 

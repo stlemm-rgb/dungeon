@@ -1,6 +1,6 @@
 /* D1 전투 화면: 매주 전투 6단계 (계산은 battle_sim.js, 숫자는 battle_data.js, 판은 zones.js·build.js의 boardHtml)
  *
- *  ① 들어오면 멈춘 상태. "전투 시작"은 하단 탭의 가운데 "다음 주" 버튼과 같은 자리(api.bar = 탭 막대 자리에 배속 · 전투 시작 · 안내)
+ *  ① 들어오면 멈춘 상태. "전투 시작"은 하단 탭의 가운데(회사) "다음 주" 버튼과 같은 자리(api.bar = 탭 막대 자리에 배속 · 전투 시작 · 안내)
  *  ② 무리가 대기 장소(야외)에 등급 낮은 무리부터 차례로 등장, 아래 안내 줄 "D급 OO 10명 평균 레벨 N · 짐꾼 N명"
  *  ③ 가장 높은 등급 무리가 나오면 비서가 침입자 카드로 효과를 확정 (카드 전용 화면, 눌러야 닫힘)
  *  ④ 10명 = 1분대가 작은 얼굴 도트로 실제 구역 판을 따라 이동. 함정·대기실 몬스터가 작동
@@ -11,7 +11,7 @@
  *  - 화면 배치: 맨 위 한 줄(시간·진행바·처치·금·신석·보물방·퇴각) / 가운데 판(남는 높이를 채움) / 아래 한 줄 안내 + 버튼 줄(api.bar)
  *  - 판 = ZONES.stackMap()(열린 층을 위아래로 쌓음, 층 사이 한 줄 = 계단, 좌표가 분대·대기실 좌표와 같음). 2층이 열리면 줄이 늘어 칸을 줄이고(.tall) 구역 이름은 숨긴다.
  *    아직 잠긴 층은 판 아래에 🔒 한 줄로만 알린다 (전투는 열린 층까지)
- *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표(회사 금·의뢰인 마석 보급·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 현장으로
+ *  ⑥ 끝(모두 처치·보물방 도달·퇴각, 1분 지나면 퇴각) -> 결과표(회사 금·의뢰인 마석 보급·부대 경험치·아군 퇴각/쓰러짐/사망·쉬는 부대 안내·납품 기준 단계) -> 홈으로 (회사 진행 띠에서 [다음 주]·[납품하기])
  *     두 번째 현장 첫 전투 결과표에는 "데모 끝까지 왔어요" 한 줄 (계속 진행 가능)
  *  - D1: 전투 입력은 P.battleInput(plan) 그대로 (부대 인원만큼 싸우는 개체). 대기실 부대는 부대마다 한 줄, 인원 수만큼 점 (친위대는 큰 점).
  *    얼어붙은 하역장(chill 사건)을 지난 분대는 느려지고 얼음 테두리로 보인다. 아군 퇴각(mretreat 사건): 그 부대 점이 커졌다 흐려지고 "퇴각" 글자 (S.dens[z][i].out 이면 흐리게)
@@ -432,7 +432,7 @@
         startBtn.disabled = true; speedBtn.disabled = true; cardsBtn.disabled = true;
         var alive = unitAlive();
         var rep = api.finishBattle(SIM.result(S));
-        if (!rep) { api.go('field', false); return; }
+        if (!rep) { api.go('company', false); return; }
         var ok = rep.defended, pr = rep.progress, cas = rep.casualties || { down: [], retreated: [], died: [] }, q = RUN.quest;
         var rows = [
           ['처치', rep.kills + ' / ' + rep.total + '명 (짐꾼 ' + rep.porterKills + ')'],
@@ -473,7 +473,7 @@
         }).join('');
         // 두 번째 현장 이후 첫 전투 = 데모가 목표로 한 끝 장면. 계속 진행도 가능
         var demoLine = RUN.doneQuests.length >= 1 && q && rep.week === q.startWeek
-          ? '<div class="bt-hint demo">데모 끝까지 왔어요! 계속하려면 [현장으로]를 누르세요. 납품 기준 3단계에서 2층이 열리고, 의뢰를 끝까지 납품하면 데모가 끝나요.</div>' : '';
+          ? '<div class="bt-hint demo">데모 끝까지 왔어요! 계속하려면 [홈으로]를 누르세요. 납품 기준 3단계에서 2층이 열리고, 의뢰를 끝까지 납품하면 데모가 끝나요.</div>' : '';
         var box = div('bt-result',
           '<div class="card bt-resbox"><h3 class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '방어 성공!' : '보물방 침입 ' + rep.reached + '분대') + '</h3>' +
           '<div class="dim small-text bt-ressub">' + rep.week + '주째 일반 침입' + (ok ? ' · 보물방 방어 +1회' : '') + '</div>' +
@@ -484,9 +484,9 @@
           (rep.levelMsgs.length ? '<div class="small-text bt-lv">' + rep.levelMsgs.join('<br>') + '</div>' : '') +
           (pr ? '<div class="bt-sub">납품 기준</div><div class="small-text">' + pr.line + '</div>' + stageLines +
             (pr.floorLock ? '<div class="small-text dim">🔒 지하 ' + pr.floorLock.floor + '층: 납품 기준 ' + pr.floorLock.atStage + '단계 달성 시 열림</div>' : '') +
-            (pr.complete ? '<div class="bt-hint">의뢰 완료! 현장의 [납품하기]를 누르세요</div>' : '') : '') +
+            (pr.complete ? '<div class="bt-hint">의뢰 완료! 홈의 진행 띠에서 [납품하기]를 누르세요</div>' : '') : '') +
           demoLine + (rep.hint ? '<div class="bt-hint">' + rep.hint + '</div>' : '') +
-          '<button class="btn primary big" type="button" data-home>현장으로</button></div>');
+          '<button class="btn primary big" type="button" data-home>홈으로</button></div>');
         box.querySelector('[data-home]').addEventListener('click', function () { buzz('tap'); api.backHome(); });
         box.querySelector('.card').animate([{ transform: 'scale(.7)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
         el.appendChild(box);
