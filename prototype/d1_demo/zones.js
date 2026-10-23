@@ -16,7 +16,9 @@
  *    forecast = 길만 계산해서 "침입자 n명이 각 문을 몇 명 지나가나" 미리 보기 (전투 없음).
  *  - 몬스터 가치는 A7이 종류 표를 썼지만 C1 몬스터는 하나씩 능력치가 달라서 임시 식으로 바꿈 (monValue).
  *  - 전투(battle_sim.js)는 routeOf(분대마다 길)·anchorOf·doorOf(칸 좌표)로 같은 판·같은 길 규칙을 따른다.
- *  - 튜토리얼 첫 부지(tutorialZones): fork3 판, 입구를 '대기'로 시작 -> 전원 가운데 길(E-CB-CC-CD-B) 한 줄. (입구 고정은 progress.js)
+ *  - (C1 이름) tutorialZones: fork3 판 입구를 '대기'로 시작하던 C1 튜토리얼용. D1은 안 씀.
+ *  - D1 3차 뒤 (사용자 플레이 소감 2026-10-23): 첫 의뢰 = 외길(line) 판. 튜토리얼 강조 = mustPass() (침입자 모두가 반드시 지나는 큰길).
+ *    입구 시설 '대기'(wait)를 데모에서 다시 엶 (갈림길 판에서 전원을 가운데로, BATTLE_DATA.DEMO_FACILITIES)
  *  - 상태는 갖지 않는다(지금 판 id만). 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
  */
 (function () {
@@ -235,6 +237,21 @@
   // 튜토리얼 첫 부지: 처음 부지와 같고 입구만 entry 시설로 (무료로 깔아 둠, 건설 횟수 아님). progress.js가 fork3 판을 끼운 뒤 부른다
   function tutorialZones(entry) { var L = defaultZones(); L.E = entry; return L; }
 
+  // 반드시 지나는 구역: 그 구역을 막으면 입구(E)에서 보물방(goal)까지 갈 길이 없어지는 구역 (판 모양만 봄, 시설·부대·미끼와 상관없음).
+  //  입구·보물방은 뺀다. 길 순서(ORDER). 외길 판 = 큰길 R1~R5, 세 갈래 판 = 없음(빈 배열). 튜토리얼 강조(progress.js tutorialPath)가 쓴다
+  function mustPass() {
+    function reach(block) {
+      var seen = { E: true }, q = ['E'];
+      while (q.length) {
+        var z = q.shift();
+        if (z === cur.goal) return true;
+        (cur.EXITS[z] || []).forEach(function (b) { if (b !== block && !seen[b]) { seen[b] = true; q.push(b); } });
+      }
+      return false;
+    }
+    return cur.ORDER.filter(function (z) { return z !== 'E' && z !== cur.goal && !reach(z); });
+  }
+
   // 보물방 바로 앞 구역들 (보물방 = 가장 깊이 열린 층의 맨 아래)
   function bossFront() { return Object.keys(cur.EXITS).filter(function (z) { return cur.EXITS[z].indexOf(cur.goal) >= 0; }); }
 
@@ -371,7 +388,7 @@
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
     fixedFac: fixedFac, isFixedFac: isFixedFac, passRatios: passRatios, trapScore: trapScore,
     monValue: monValue, defaultZones: defaultZones, tutorialZones: tutorialZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
-    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf, bossFront: bossFront,
+    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf, bossFront: bossFront, mustPass: mustPass,
     hasBoard: hasBoard, useBoard: useBoard, useSite: useSite, boardInfo: boardInfo, boardId: function () { return cur.id; },
     // 층 (2차)
     floorOf: floorOf, floorOpen: floorOpen, isStairs: isStairs, densOf: densOf, denSlots: denSlots, floorInfo: floorInfo, floorMap: floorMap,

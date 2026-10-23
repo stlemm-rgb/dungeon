@@ -131,8 +131,12 @@ window.BATTLE_DATA = {
   DEMO_OFF: { gacha: true, adSurge: true, surge: true, chores: true, idle: true, workshop: true },
 
   // 데모 시설: 방(room)에 지을 수 있는 시설 id (zones.js FAC). 입구는 분기(split, 갈림길)로 고정, 야외는 숲만
-  DEMO_FACILITIES: { room: ['empty', 'trap', 'den', 'lure'], entry: ['split'], yard: ['forest'] },
+  //  입구 '대기'(wait, 전원 가운데 길로)는 사용자 플레이 소감(2026-10-23) 뒤 다시 엶: 갈림길 판(두 번째 의뢰)에서 "입구에 대기 -> 전원 가운데" 대응 수단
+  DEMO_FACILITIES: { room: ['empty', 'trap', 'den', 'lure'], entry: ['split', 'wait'], yard: ['forest'] },
   DEN_SLOTS_PER_CELL: 1,       // 몬스터 대기실 칸 하나에 부대(또는 친위대) 하나
+  // 몬스터 대기실을 지으면 기본 부대(MON_SQUAD_FREE와 같은 부족·인원, 무료)가 같이 들어옴 (사용자 플레이 소감 2026-10-23: 대기실 수에 비해 부대가 너무 적음).
+  //  한 현장에서 받은 부대 수 <= 동시에 있었던 대기실 수의 최고치 (철거·재건·옮겨 짓기로는 더 안 생김. progress.js site.denGifts). 0이면 끔
+  DEN_GIFT: 1,
 
   // 고정 구역 (의뢰마다 정해짐, 바꿀 수 없음). refs/draft_fixed_zones.md. zones.js가 FAC에 'fz_' + id 시설로 넣는다
   //  slow = 지나간 침입자 이동 감소 비율, span = 이 구역 포함 몇 구역 동안 (2 = 이 구역 + 다음 구역을 벗어날 때까지)
@@ -207,7 +211,8 @@ window.BATTLE_DATA = {
   // 의뢰인 마석 보급: 전투가 끝날 때마다 마석 +이만큼 (임시, 사용자 확인 필요).
   //  근거(측정 2026-10-23): 마석을 부대 조달에 다 쓰면 가치 기준(시설로만 오름)을 영영 못 채우는 막힘이 언덕 오르기 플레이 20판 중 20판에서 나옴.
   //  10이면 함정 1칸(가치 +10)씩은 늘 지을 수 있어 막힘이 풀림
-  WEEKLY_BUDGET: 10,
+  //  3차 뒤(사용자 플레이 소감 2026-10-23): 10이면 시설(큰길 3칸 = 30)을 못 지어 몇 주 동안 "다음 주"만 누름 -> 매주 큰길 시설 하나 = 30 (측정은 아래 QUESTS 주석)
+  WEEKLY_BUDGET: 30,
   // 층별 출진 한도 (부대·친위대 하나 = 한 칸). 실제 한도 = min(이 값, 그 층 몬스터 대기실 자리 합). 표에 없는 층은 1층 값
   FLOOR_CAP: { 1: 3, 2: 2 },
   // 층별 건설비 배율 (깊은 층이 비쌈). 표에 없는 층은 1
@@ -239,13 +244,24 @@ window.BATTLE_DATA = {
   //   침입자 체력 ×2.4·공격 ×2로 올리면 fe 퇴각이 늘어 쉬는 주 때문에 첫 납품이 4주 넘게 늘어남)
   //  2층 의뢰 (q1을 fe로 납품 뒤, 2층 열리면 2층 합류점 대기실 + 함정 + 부대 하나 2층으로): 첫 전투 때 3단계 미만 16/16 (🔒 2층 보임),
   //   3단계(2층 열림)까지 평균 2.1주, 완료 6.1주. 4·5단계 가치 210·280은 마석 200 + 추가 150(2층 ×1.2)으로 못 닿아 190·230으로 낮춤
+  //  ---- 3차 뒤 사용자 플레이 소감 (2026-10-23): q1 판 fork3 -> line(외길), 고정 구역 CC -> R3(큰길 가운데, 모두 지나며 다음 큰길 R4까지 느려짐),
+  //   마석 보급 10 -> 30, 대기실을 지으면 기본 부대 +1 (DEN_GIFT). 단계 기준은 그대로 ----
+  //   외길은 큰길(3칸, 통과 비율 1)에 지은 시설이 전부 걸려 같은 마석으로 전투력이 크게 나옴 -> 마석 260 그대로면 모든 정책이 첫 전투 전에 5단계(1주, 너무 빠름)
+  //   측정(node 실제 전투, 20시드, 카드는 위기 때 방향 무작위. "주" = 납품하는 주, 전투 수 = 주 - 1):
+  //    정책 fe = 튜토리얼 강조 칸 순서대로(R1 함정 · R2 대기실 · R4·R5 함정 · 곁방 함정, 조달 없음) · feden = 대기실 먼저(R1 대기실 · R2·R4 함정 · R5 대기실 · 곁방) ·
+  //    greedy·greedy30·rand = 위와 같은 정책(외길 판 기준)
+  //    마석 90: fe 3 · feden 4 · greedy 4 · rand 6.9(18/20) | 100: fe 3 · feden 4 · greedy 3 · rand 7.3(18/20) | 110: fe 3 · feden 4 · greedy 3 · greedy30 3 · rand 6.8(18/20)
+  //    120: fe 2 · feden 3 · greedy 3 · rand 6.5(16/20) | 150: fe 1 (첫 전투 전 완료, 너무 빠름) · 나머지 2
+  //   -> 110 (큰길 시설 3개 + 20, 안내를 따르는 정책 모두 3~4주째 납품, 전투 2~3번). 방어율은 fe·greedy 100% (외길이라 함정이 다 걸림, 침입자 강함은 그대로 둠)
+  //   q2 (마석 200 그대로면): 2층이 열린 뒤 2층 대기실을 지으면 부대가 같이 와서 2층 전투력 조건이 바로 참 -> greedy 2주째 납품(전투 1번, 예전 측정 6.1주).
+  //    마석 150: greedy 3주 · greedy30 2.8주, 첫 전투 때 단계 1~2 (🔒 2층 보임 유지). 120: greedy 4 · greedy30 5 -> 150 (임시, 사용자 플레이로 다시 볼 것)
   QUESTS: [
     { key: 'q1', name: '작은 돌 성채', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 1, minCompanyLv: 1, noDeath: true,
-      board: 'fork3', fixed: { CC: 'frozen_dock' }, budget: 260,
+      board: 'line', fixed: { R3: 'frozen_dock' }, budget: 110,
       reward: { gold: 600, gems: 6, companyExp: 10 },
       stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 100 }, { value: 105, power: 130 }, { value: 130, power: 160 }] },
     { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2, noDeath: true,
-      board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 200,
+      board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 150,
       reward: { gold: 900, gems: 8, companyExp: 15 },
       stages: [{ value: 60, power: 70 }, { value: 100, power: 110 }, { value: 140, power: 150, opens: 2, budget: 150 },
         { value: 190, power: 200, floor2: 50 }, { value: 230, power: 250, floor2: 90 }] }
