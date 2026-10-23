@@ -120,6 +120,16 @@ footer { text-align: center; font-size: 10px; color: var(--muted); }
   h1 { font-size: 22px; margin-bottom: 4px; }
   .intro { font-size: 12px; }
   .board-heading { margin-bottom: 8px; }
-  #board-wrap { width: min(100%, calc((100svh - 270px) * .75)); margin: 6px auto 0; }
+  #board-wrap { width: min(100%, calc((100svh - 330px) * var(--board-ratio, .75))); margin: 6px auto 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+
+.board-selector { display: flex; gap: 6px; margin-bottom: 6px; }
+.board-selector button { flex: 1; }
+.clash-bubble rect { fill: var(--ink); stroke: var(--bg); stroke-width: 2; }
+.clash-bubble text { fill: var(--bg); font-size: 20px; text-anchor: middle; }
+#batch-result, #result-summary { font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  header .intro, header .eyebrow { display: none; }
+  main { padding-top: 8px; }
+}

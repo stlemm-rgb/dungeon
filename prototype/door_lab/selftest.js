@@ -252,9 +252,10 @@ test('살아 있는 몬스터와 싸우는 분대는 이동 정지', () => {
   squad.inspectRemaining = 0;
   lab.advanceBattle(b, .5);
   assert.equal(squad.progress, 0);
-  assert.equal(squad.state, '교전');
-  assert.ok(squad.hp < 100);
+  assert.equal(squad.state, '⚔ 조우');
+  assert.ok(squad.encounter);
   assert.ok(b.monsterHP.reduce((n, hp) => n + hp, 0) < 102);
+  assert.ok(b.squads[1].inspectRemaining < .6, '다른 분대는 계속 진행');
 });
 test('같은 함정은 같은 분대에 두 번까지만 발동', () => {
   const b = lab.createBattle(lab.INITIAL_DOORS);
@@ -271,7 +272,7 @@ test('같은 함정은 같은 분대에 두 번까지만 발동', () => {
   assert.equal(squad.traps[3], 2);
   assert.equal(squad.hp, 60);
 });
-test('60초 초과는 방어 성공이 아니며 남은 인원 별도 집계', () => {
+test('60초 초과도 방어 성공이며 남은 인원 별도 집계', () => {
   const b = lab.createBattle(lab.INITIAL_DOORS);
   b.time = 59.9;
   lab.advanceBattle(b, 2);
@@ -280,7 +281,7 @@ test('60초 초과는 방어 성공이 아니며 남은 인원 별도 집계', (
   assert.equal(result.time, 60);
   assert.equal(result.timeout, 30);
   assert.equal(result.defeated, 0);
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
   assert.ok(b.squads.every(s => s.state === '시간 초과'));
 });
 test('고리에서 아는 지름길로 가장 짧게 복귀하며 실제 경로 목록에 포함', () => {
@@ -292,6 +293,8 @@ test('고리에서 아는 지름길로 가장 짧게 복귀하며 실제 경로 
   const battle = lab.createBattle(doors, 1);
   battle.monsterHP.fill(0);
   const squad = battle.squads[0];
+  squad.hp = 1000;
+  battle.squads.slice(1).forEach(s => { s.hp = 0; });
   const actual = [squad.room];
   while (!battle.done) {
     const passages = squad.passages;
@@ -359,11 +362,11 @@ test('조사 중에도 함정 진입 피해와 몬스터 교전 처리', () => {
   fighter.room = 6; fighter.stepIndex = 3; fighter.visited.add(6);
   lab.advanceBattle(battle, .3);
   assert.equal(fighter.progress, 0);
-  assert.equal(fighter.state, '조사 · 교전');
-  assert.ok(fighter.hp < 100);
+  assert.equal(fighter.state, '⚔ 조우');
+  assert.ok(fighter.encounter);
   assert.ok(battle.monsterHP.reduce((n, hp) => n + hp, 0) < 102);
   lab.advanceBattle(battle, .5);
-  assert.equal(fighter.state, '교전');
+  assert.equal(fighter.state, '⚔ 조우');
   assert.equal(fighter.progress, 0);
 });
 
@@ -374,7 +377,9 @@ test('화면의 시드 변경·전투 중 잠금·비교 표 표시와 debug 경
     const elements = new Map();
     const frames = [];
     let now = 0;
+    const html = require('node:fs').readFileSync(require.resolve('./index.html'), 'utf8');
     const element = id => {
+      assert.ok(id === 'actors' || html.includes(`id="${id}"`), `HTML에 ${id} 필요`);
       if (!elements.has(id)) elements.set(id, {
         textContent: '', innerHTML: '', disabled: false, events: {},
         classList: { toggle() {} },
@@ -393,27 +398,35 @@ test('화면의 시드 변경·전투 중 잠금·비교 표 표시와 debug 경
     });
     return { element, finish() { now += 60000; frames.shift()(now); } };
   }
-  for (const search of ['', '?debug']) {
+  for (const search of ['', '?debug', '?board=5x7', '?board=5x7&debug']) {
+    const instance = search.includes('5x7') ? lab.createLab('5x7') : lab;
+    const debug = search.includes('debug');
     const ui = mount(search);
     const el = ui.element;
     assert.equal(el('seed').textContent, '시드 7');
-    assert.equal(el('board').innerHTML.includes('class="route '), search === '?debug');
+    assert.equal(el('board').innerHTML.includes('class="route '), debug);
     // 아직 전투 결과가 없어도 버튼을 누르는 즉시 변경 표시가 떠야 한다.
     el('new-invaders').events.click();
     assert.equal(el('seed').textContent, '시드 42');
     assert.match(el('comparison-note').textContent, /침입자 바뀜/);
-    if (search === '?debug') {
+    if (debug) {
       const drawn = (el('board').innerHTML.match(/class="route /g) || []).length;
-      assert.equal(drawn, lab.routesOf(lab.INITIAL_DOORS, 42).reduce((n, r) => n + r.steps.length, 0));
+      assert.equal(drawn, instance.routesOf(instance.INITIAL_DOORS, 42).reduce((n, r) => n + r.steps.length, 0));
     }
+    el('measure-seeds').events.click();
+    assert.match(el('batch-result').textContent, /시드 0~99/);
     el('fight').events.click();
+    assert.equal(el('board-3x4').disabled, true);
+    assert.equal(el('measure-seeds').disabled, true);
     assert.equal(el('new-invaders').disabled, true);
     el('new-invaders').events.click();
     assert.equal(el('seed').textContent, '시드 42');
     ui.finish();
     assert.equal(el('new-invaders').disabled, false);
     assert.match(el('comparison-note').textContent, /동일 침입자/);
-    const result = lab.battleResult(simulate(lab.INITIAL_DOORS, 60, 42));
+    const measured = instance.createBattle(instance.INITIAL_DOORS, 42);
+    instance.advanceBattle(measured, 60);
+    const result = instance.battleResult(measured);
     assert.ok(el('result-body').innerHTML.includes(`<td>${result.reached}명</td>`));
     el('new-invaders').events.click(); // 동일한 난수가 나와도 시드는 반드시 바뀐다.
     assert.equal(el('seed').textContent, '시드 43');
@@ -425,6 +438,87 @@ test('화면의 시드 변경·전투 중 잠금·비교 표 표시와 debug 경
     ui.finish();
     assert.match(el('comparison-note').textContent, /동일 침입자/);
     assert.ok(el('result-body').innerHTML.includes('<td>43</td><td>43</td>'));
+    assert.ok(el('squad-results').innerHTML.includes('분대 3'));
+    el('board-5x7').events.click();
   }
 });
+const large = lab.createLab('5x7');
+test('5×7 처음 배치: 34방·36문 연결, 입구 C1·보물방 C7, 시설 수', () => {
+  assert.equal(large.ROOM_IDS.length, 34);
+  assert.equal(large.INITIAL_DOORS.length, large.ROOM_IDS.length + 2);
+  assert.equal(large.reachableRooms(large.INITIAL_DOORS).size, 34);
+  assert.ok(large.validateLayout(large.INITIAL_DOORS).ok);
+  assert.equal(large.ENTRY, 2); assert.equal(large.TREASURE, 32);
+  for (const [facility, count] of [['trap', 5], ['monster', 3], ['bait', 2]])
+    assert.equal(Object.values(large.FACILITIES).filter(f => f === facility).length, count);
+  assert.ok(large.INITIAL_DOORS.flatMap(from => large.EDGES.map(e => large.moveDoor(large.INITIAL_DOORS, from, e.id))).filter(r => r.ok).length > 1);
+});
+test('고정 B4·C4는 한 방, 안쪽 벽과 문 통과 없음', () => {
+  assert.equal(large.roomOf(16), large.roomOf(17));
+  assert.ok(!large.EDGES.some(e => e.id === '16-17'));
+  assert.equal(large.moveDoor(large.INITIAL_DOORS, '0-1', '16-17').code, 'target');
+  for (const route of large.routesOf(large.INITIAL_DOORS)) {
+    assert.ok(!route.rooms.includes(17));
+    assert.ok(route.steps.every(step => large.INITIAL_DOORS.includes(step.edge)));
+  }
+});
+test('조우 시드 재현, 압도적 힘 95% 이상·동등한 힘 30~70%', () => {
+  let strong = 0, equal = 0;
+  for (let seed = 0; seed < 100; seed++) {
+    const result = lab.resolveEncounter(100, 1, 100, 1, seed);
+    assert.deepEqual(result, lab.resolveEncounter(100, 1, 100, 1, seed));
+    if (result.monsterWin) equal++;
+    if (lab.resolveEncounter(100, 1, 300, 1, seed).monsterWin) strong++;
+    if (result.monsterWin) assert.equal(result.monsterHP, 50);
+    else assert.equal(result.invaderHP, 50);
+  }
+  assert.ok(strong >= 95); assert.ok(equal >= 30 && equal <= 70);
+});
+test('체력 절반은 유지, 절반 아래는 함정만으로 퇴각', () => {
+  const b = lab.createBattle(lab.INITIAL_DOORS), s = b.squads[0];
+  s.hp = 70; lab.enterRoom(b, s, 3);
+  assert.equal(s.hp, 50); assert.equal(s.result, null);
+  lab.enterRoom(b, s, 8);
+  assert.equal(s.result, '퇴각'); assert.equal(s.cause, 'trap');
+});
+test('조우 즉시 피해 확정, 1초+1초 동안 해당 분대만 정지', () => {
+  const b = lab.createBattle(lab.INITIAL_DOORS), s = b.squads[0];
+  lab.enterRoom(b, s, 6);
+  const hp = s.hp, den = b.monsterHP.slice();
+  lab.advanceBattle(b, .9);
+  assert.equal(s.state, '⚔ 조우'); assert.equal(s.progress, 0);
+  assert.ok(b.squads[1].progress > 0);
+  lab.advanceBattle(b, .2);
+  assert.match(s.state, /✔|💨/); assert.equal(s.progress, 0);
+  assert.equal(s.hp, hp); assert.deepEqual(b.monsterHP, den);
+  lab.advanceBattle(b, .9); assert.equal(s.encounter, null);
+});
+test('보물방 진입 즉시 방어 실패, 다른 분대는 종료 퇴각', () => {
+  const b = lab.createBattle(lab.INITIAL_DOORS);
+  lab.enterRoom(b, b.squads[0], lab.TREASURE);
+  lab.advanceBattle(b, 1 / 60);
+  assert.ok(b.done); assert.equal(lab.battleResult(b).success, false);
+  assert.ok(b.squads.slice(1).every(s => s.cause === 'battleEnd'));
+});
+test('5×7 통과 30회 한도·대기실별 독립 체력', () => {
+  const b = large.createBattle(large.INITIAL_DOORS);
+  const other = b.dens[19].slice();
+  large.enterRoom(b, b.squads[0], 10);
+  assert.deepEqual(b.dens[19], other);
+  b.squads[1].passages = 30;
+  large.advanceBattle(b, 1 / 60);
+  assert.equal(b.squads[1].cause, 'limit');
+});
+test('두 판의 시드 100개 측정은 화면 없이 결정적, 입력 보존', () => {
+  for (const instance of [lab, large]) {
+    const doors = instance.INITIAL_DOORS.slice();
+    const before = doors.slice();
+    const first = instance.measureSeeds(doors);
+    assert.deepEqual(first, instance.measureSeeds(doors)); assert.deepEqual(doors, before);
+    assert.equal(first.count, 100); assert.ok(first.averageTime <= 60);
+    assert.ok(first.averagePassages <= instance.LIMIT);
+    assert.ok(first.defenseRate >= 0 && first.defenseRate <= 1);
+  }
+});
+console.log('5×7 처음 배치 측정:', JSON.stringify(large.measureSeeds(large.INITIAL_DOORS)));
 console.log(`\n전체 ${passed}개 검사 통과`);
