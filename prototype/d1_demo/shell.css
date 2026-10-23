@@ -724,10 +724,11 @@ body[data-screen="build"] #toasts { bottom: auto; top: 12px; }
 .dragghost small:empty { display: none; }
 .dragghost.k-trap { background: var(--zone-trap); } .dragghost.k-den { background: var(--zone-den); } .dragghost.k-lure { background: var(--zone-lure); } .dragghost.k-turn { background: var(--ready-soft); }
 .dragghost.bad { border-color: var(--danger); }
+.shaft.droping { user-select: none; -webkit-user-select: none; }
 .shaft.droping .zc:not(.drop):not(.gap) { filter: brightness(.55); }
 .shaft.droping .zc.drop { filter: brightness(1.3); box-shadow: inset 0 0 0 3px var(--ready); }
 .shaft.droping .zc.drop.hot { filter: brightness(1.6); box-shadow: inset 0 0 0 4px var(--accent); }
-.zc.pend { border: 2px dashed var(--accent); background-image: repeating-linear-gradient(135deg, var(--pend-hatch) 0 6px, transparent 6px 12px); animation: pend-in var(--dur-fx) var(--ease-pop-s); }
+.zc.pend { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; border: 2px dashed var(--accent); background-image: repeating-linear-gradient(135deg, var(--pend-hatch) 0 6px, transparent 6px 12px); animation: pend-in var(--dur-fx) var(--ease-pop-s); }
 .zc.pend .fn, .zc.pend .zi, .zc.pend .zp { opacity: .8; }
 .zc.pend .zn { display: none; } /* 미확정 칸은 글이 많아서 구역 이름 줄을 접는다 (× 와 안 겹치게) */
 .shaft.nodoors .zdoors { display: none; }

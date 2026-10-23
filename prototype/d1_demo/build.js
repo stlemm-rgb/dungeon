@@ -201,7 +201,7 @@
   // 값은 P.previewBuild / P.buildZone 으로만 읽고 바꾼다. 여러 곳 합계용 API가 없어 곳마다 previewBuild 의 증가분을 더한다
   //  (가치는 정확히 더해짐, 전투력은 근사: 서로 길을 바꾸는 미끼·대기실이 함께 놓이면 실제와 조금 다를 수 있다).
   var TOOL_LABEL = { trap: '함정', den: '대기실', lure: '미끼', wait: '입구 대기' };
-  var TOOL_ORDER = ['trap', 'den', 'lure', 'wait'];
+  var TOOL_ORDER = ['trap', 'den', 'lure'];   // 입구 대기는 띠에서 뺌 (사용자 10-23)
   function josa(w) { var c = String(w).charCodeAt(String(w).length - 1) - 0xAC00; return c >= 0 && c % 28 !== 0 ? '은' : '는'; }   // 받침 있으면 은, 없으면 는
   var LIFT = 64;   // 손가락(터치)보다 이만큼 위에 끄는 그림을 띄운다 (마우스는 0)
 
@@ -234,7 +234,8 @@
       el.appendChild(hdrBox); el.appendChild(scroll); el.appendChild(dock);
 
       // ----- 놓을 수 있나 -----
-      function spentOthers(z) { var s = 0; order.forEach(function (o) { if (o !== z) s += pend[o].p.cost; }); return s; }
+      var moving = null;    // 미확정 시설을 다시 끄는 중이면 그 원래 구역 (값 계산에서 빼고 본다)
+      function spentOthers(z) { var s = 0; order.forEach(function (o) { if (o !== z && o !== moving) s += pend[o].p.cost; }); return s; }
       function pendSpent() { return spentOthers(null); }
       function lockTextOf(n) {
         var fi = P.floorInfo(n);
@@ -326,6 +327,14 @@
         if (RUN.site.builds === 0) api.tutStart('place', { target: '#view [data-confirm]' });
         redraw();
         return true;
+      }
+      // 미확정 시설을 다른 칸으로 옮기기 (다시 끌기). 못 놓으면 원래 자리로 되돌린다
+      function movePend(from, to) {
+        if (!pend[from] || from === to) return;
+        if (pend[to]) { api.toast('이미 미확정으로 놓은 칸이에요'); api.buzz('warn'); return; }
+        var keep = pend[from], idx = order.indexOf(from);
+        delete pend[from]; order.splice(idx, 1);
+        if (!place(to, keep.k)) { pend[from] = keep; order.splice(idx, 0, from); redraw(); }
       }
       function unplace(z) {
         if (!pend[z]) return;
@@ -433,6 +442,7 @@
         if (drag && drag.raf) cancelAnimationFrame(drag.raf);
         if (drag && drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
         if (drag && drag.node) drag.node.classList.remove('lifted');
+        moving = null;
         clearMarks();
       }
       function onMove(e) {
@@ -447,6 +457,7 @@
         d.x = e.clientX; d.y = e.clientY;
         var z = d.started ? cellAt(d.x, d.y - d.lift) : null;
         endDrag(); drag = null;
+        if (d.from && !d.started) return;   // 미확정 칸을 그냥 누름 = 아래 click 이 안내
         if (!d.started) {   // 그냥 누름 = 시설 고르기 / 고른 것 풀기 (이어서 칸을 누르면 놓음)
           armed = armed === d.k ? null : d.k;
           api.buzz('tap');
@@ -454,6 +465,7 @@
           if (armed) markDrops(armed); else clearMarks();
           return;
         }
+        if (d.from) { if (z && z !== d.from) movePend(d.from, z); else drawSum(); return; }
         if (z) place(z, d.k);
         else drawSum();
       }
@@ -472,6 +484,22 @@
         window.addEventListener('pointercancel', onCancel);
       });
 
+      // 미확정 칸을 잡아 다른 칸으로 다시 끌기 (그냥 누르면 아래 click 이 안내)
+      shaft.addEventListener('pointerdown', function (e) {
+        if (drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        if (e.target.closest && e.target.closest('[data-unpend]')) return;
+        var c = e.target.closest ? e.target.closest('.zc.pend[data-z]') : null;
+        if (!c) return;
+        var z = c.getAttribute('data-z');
+        if (!pend[z]) return;
+        moving = z;
+        drag = { k: pend[z].k, from: z, pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
+          lift: e.pointerType === 'mouse' ? 0 : LIFT, started: false, ghost: null, hot: null, node: c, raf: 0 };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onCancel);
+      });
+
       // ----- 판 누르기: × 빼기 / 고른 시설 놓기 / 안내 -----
       shaft.addEventListener('click', function (e) {
         var x = e.target.closest ? e.target.closest('[data-unpend]') : null;
@@ -482,7 +510,7 @@
         if (!c) return;
         var z = c.getAttribute('data-z');
         if (armed) { place(z, armed); return; }
-        api.toast(pend[z] ? (Z.NAMES[z] || z) + ': 미확정이에요. × 로 뺄 수 있어요' : zoneInfo(z)); api.buzz('tap');
+        api.toast(pend[z] ? (Z.NAMES[z] || z) + ': 미확정이에요. 끌어서 옮기거나 × 로 뺄 수 있어요' : zoneInfo(z)); api.buzz('tap');
       });
 
       api.onLeave(function () {
