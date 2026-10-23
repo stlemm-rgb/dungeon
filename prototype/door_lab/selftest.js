@@ -22,25 +22,34 @@ test('3×4 판의 안쪽 벽 17개, 문 12개, 처음 배치 유효', () => {
   assert.equal(lab.validateLayout(lab.INITIAL_DOORS).ok, true);
   assert.equal(lab.reachableRooms(lab.INITIAL_DOORS).size, 12);
   assert.deepEqual(lab.routesOf(lab.INITIAL_DOORS).map(lab.countPassages), [5, 5, 9]);
+  const moves = lab.INITIAL_DOORS.flatMap(from => lab.EDGES.map(e => lab.moveDoor(lab.INITIAL_DOORS, from, e.id)));
+  assert.ok(moves.filter(move => move.ok).length > 1, '처음 배치에서 여러 합법 이동 가능');
 });
-test('입구와 보물방 연결을 끊는 문 이동 거절, 원본 보존', () => {
-  const doors = ['0-1', '0-3', '1-2', '1-4', '2-5', '3-4', '3-6', '4-5', '4-7', '5-8', '6-7', '7-10'];
-  assert.equal(lab.validateLayout(doors).ok, true);
-  const before = doors.slice();
-  const result = lab.moveDoor(doors, '7-10', '6-9');
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'disconnected');
-  assert.equal(lab.isConnected(result.doors), false);
-  assert.deepEqual(doors, before);
+test('보물방 길이 살아 있어도 문 없는 방·고립된 방 무리는 거절', () => {
+  const group = ['0-1', '0-3', '1-2', '1-4', '2-5', '3-4', '3-6', '4-7', '5-8', '6-9', '7-10', '8-11'];
+  for (const [layout, from, to] of [[lab.INITIAL_DOORS, '4-7', '3-4'], [group, '3-6', '4-5']]) {
+    const doors = layout.slice();
+    assert.equal(lab.validateLayout(doors).ok, true);
+    const result = lab.moveDoor(doors, from, to);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'disconnected');
+    assert.match(result.reason, /방이 다른 방과 끊겨요/);
+    assert.equal(lab.isConnected(result.doors), true);
+    assert.deepEqual(doors, layout);
+  }
+});
+test('보물방이 끊긴 배치도 거절', () => {
+  const doors = lab.INITIAL_DOORS.map(id => id === '9-10' ? '3-4' : id === '10-11' ? '6-7' : id);
+  assert.equal(lab.isConnected(doors), false);
+  assert.equal(lab.validateLayout(doors).code, 'disconnected');
 });
 test('왕복 포함 19회가 되는 문 이동 거절', () => {
-  const doors = ['0-1', '0-3', '1-2', '1-4', '2-5', '3-4', '3-6', '4-7', '6-7', '6-9', '7-8', '7-10'];
-  assert.equal(lab.validateLayout(doors).ok, true);
-  const result = lab.moveDoor(doors, '0-3', '8-11');
-  assert.equal(lab.isConnected(result.doors), true);
+  const doors = ['0-1', '0-3', '1-2', '1-4', '2-5', '3-6', '4-5', '4-7', '5-8', '6-9', '7-10', '8-11'];
+  assert.equal(lab.reachableRooms(doors).size, 12);
+  const result = lab.validateLayout(doors);
   assert.equal(result.ok, false);
   assert.equal(result.code, 'limit');
-  assert.equal(lab.countPassages(result.routes[1]), 19);
+  assert.deepEqual(result.routes.map(lab.countPassages), [19, 9, 19]);
 });
 test('막다른 방은 들어온 길로 되짚고, 보물방 첫 진입에서 멈춤', () => {
   const route = lab.exploreRoute(['0-1', '1-4', '4-7', '7-10'], 1, noFacilities);
@@ -58,14 +67,13 @@ test('미끼는 방향·분대 번호보다 우선', () => {
   }
   assert.equal(lab.exploreRoute(['3-4', '4-5'], 1, { start: 4, facilities: lab.FACILITIES }).rooms[1], 5);
 });
-test('동점은 왼쪽·위·오른쪽·아래 정렬 후 분대 번호로 첫 방 교대', () => {
+test('분대마다 고정 습관으로 서로 다른 첫 갈림 선택', () => {
   const doors = ['0-1', '1-2', '1-4'];
   assert.deepEqual([1, 2, 3].map(k => lab.exploreRoute(doors, k, noFacilities).rooms[1]), [0, 2, 4]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 1, {}), [3, 1, 5, 7]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 2, {}), [1, 3, 5, 7]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 3, {}), [5, 3, 1, 7]);
-  // 첫 선택 뒤 남은 방에서는 번호를 다시 돌리지 않는다.
-  assert.deepEqual(lab.exploreRoute(doors, 2, noFacilities).rooms, [1, 2, 1, 0, 1, 4, 1]);
+  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 1, {}), [3, 1, 7, 5]);
+  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 2, {}), [5, 1, 7, 3]);
+  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 3, {}), [7, 3, 5, 1]);
+  assert.deepEqual(lab.HABITS, ['왼쪽 먼저', '오른쪽 먼저', '아래 먼저']);
 });
 test('방문 기록은 분대마다 독립, 같은 입력과 문 배열 순서는 같은 경로', () => {
   const before = lab.INITIAL_DOORS.slice();
@@ -95,19 +103,23 @@ test('문 옮기기는 기존 자리 닫기와 새 자리 열기를 함께 검�
     assert.equal(lab.moveDoor(lab.INITIAL_DOORS, from, to).ok, false);
   }
 });
-test('12문 배치 6,188개 전수 검사: 연결·18회 제한·합법 고립 방', () => {
-  let layouts = 0, valid = 0, isolatedFacility = null, nearLimit = null;
+test('12문 배치 6,188개 전수 검사: 모든 방 연결·18회 제한·고립 거절', () => {
+  let layouts = 0, valid = 0, isolated = 0, nearLimit = null;
   function combinations(start, chosen) {
     if (chosen.length === 12) {
       layouts++;
       const v = lab.validateLayout(chosen);
+      const reachable = lab.reachableRooms(chosen);
+      if (reachable.size !== 12) {
+        isolated++;
+        assert.equal(v.ok, false);
+        assert.equal(v.code, 'disconnected');
+      }
       if (v.ok) {
         valid++;
-        assert.equal(lab.isConnected(chosen), true);
+        assert.equal(reachable.size, 12);
         assert.ok(v.routes.every(r => r.reached && lab.countPassages(r) <= 18));
         if (v.routes.some(r => lab.countPassages(r) === 17)) nearLimit = chosen.slice();
-        const reachable = lab.reachableRooms(chosen);
-        if (Object.keys(lab.FACILITIES).some(room => !reachable.has(Number(room)))) isolatedFacility = chosen.slice();
         for (const route of v.routes) {
           assert.ok(route.rooms.every(room => reachable.has(room)));
           for (const step of route.steps) assert.ok(chosen.includes(step.edge));
@@ -124,13 +136,7 @@ test('12문 배치 6,188개 전수 검사: 연결·18회 제한·합법 고립 �
   assert.ok(valid > 0);
   // 격자 이분 그래프의 입구·보물방 색이 달라 경로 길이는 항상 홀수다.
   assert.ok(nearLimit, '18회 제한 바로 아래의 가능한 경로(17회)는 허용');
-  assert.ok(isolatedFacility, '고립된 시설이 있는 배치 허용');
-  const reachable = lab.reachableRooms(isolatedFacility);
-  const b = simulate(isolatedFacility, 60);
-  for (const squad of b.squads) {
-    assert.ok([...squad.visited].every(room => reachable.has(room)));
-    assert.ok(Object.keys(squad.traps).every(room => reachable.has(Number(room))));
-  }
+  assert.ok(isolated > 0, '문 없는 방과 고립된 방 무리 모두 거절');
 });
 test('전투는 예고와 같은 경로, 시드 고정, 새 전투에 이력 미보존', () => {
   const one = simulate(lab.INITIAL_DOORS);
@@ -149,14 +155,17 @@ test('전투는 예고와 같은 경로, 시드 고정, 새 전투에 이력 미
 test('되짚는 방으로 이동할 때 1.5배, 빈 대기실에서도 1.5배', () => {
   const b = lab.createBattle(lab.INITIAL_DOORS);
   const squad = b.squads[0];
+  squad.inspectRemaining = 0;
   lab.advanceBattle(b, 1);
   assert.ok(Math.abs(squad.progress - .5) < 1e-8);
   const revisit = lab.createBattle(lab.INITIAL_DOORS);
+  revisit.squads[0].inspectRemaining = 0;
   revisit.squads[0].visited.add(0);
   lab.advanceBattle(revisit, 1);
   assert.ok(Math.abs(revisit.squads[0].progress - .75) < 1e-8);
   const empty = lab.createBattle(lab.INITIAL_DOORS);
   const s = empty.squads[0];
+  s.inspectRemaining = 0;
   s.room = 6; s.stepIndex = 3; s.visited.add(6);
   empty.monsterHP.fill(0);
   lab.advanceBattle(empty, 1);
@@ -166,6 +175,7 @@ test('살아 있는 몬스터와 싸우는 분대는 이동 정지', () => {
   const b = lab.createBattle(lab.INITIAL_DOORS);
   const squad = b.squads[0];
   squad.room = 6; squad.stepIndex = 3; squad.visited.add(6);
+  squad.inspectRemaining = 0;
   lab.advanceBattle(b, .5);
   assert.equal(squad.progress, 0);
   assert.equal(squad.state, '교전');
@@ -198,5 +208,88 @@ test('60초 초과는 방어 성공이 아니며 남은 인원 별도 집계', (
   assert.equal(result.defeated, 0);
   assert.equal(result.success, false);
   assert.ok(b.squads.every(s => s.state === '시간 초과'));
+});
+test('고리에서 아는 지름길로 가장 짧게 복귀하며 실제 경로 목록에 포함', () => {
+  const doors = ['0-1', '0-3', '3-4', '1-4', '1-2', '4-7', '2-5', '5-8', '8-11', '10-11', '3-6', '6-9'];
+  assert.equal(lab.validateLayout(doors).ok, true);
+  const route = lab.exploreRoute(doors, 1, noFacilities);
+  assert.deepEqual(route.rooms, [1, 0, 3, 6, 9, 6, 3, 4, 7, 4, 1, 2, 5, 8, 11, 10]);
+  assert.deepEqual(route.steps.filter(s => s.backtrack).map(s => [s.from, s.to]), [[9, 6], [6, 3], [7, 4], [4, 1]]);
+  const battle = lab.createBattle(doors);
+  battle.monsterHP.fill(0);
+  const squad = battle.squads[0];
+  const actual = [squad.room];
+  while (!battle.done) {
+    const passages = squad.passages;
+    lab.advanceBattle(battle, 1 / 60);
+    if (squad.passages !== passages) actual.push(squad.room);
+  }
+  assert.deepEqual(squad.route.rooms, route.rooms);
+  assert.deepEqual(actual, route.rooms);
+});
+test('맵핑은 가까운 목적지 우선, 같은 거리면 최근에 들른 방', () => {
+  const graph = lab.graphOf(['1-4', '4-5', '0-1', '2-5']);
+  const visited = new Set([1, 4, 5]);
+  assert.deepEqual(lab.mappedReturn(graph, 4, visited, new Map([[1, 1], [4, 3], [5, 2]])), [5]);
+  assert.deepEqual(lab.mappedReturn(graph, 4, visited, new Map([[1, 2], [4, 3], [5, 1]])), [1]);
+  assert.deepEqual(lab.mappedReturn(graph, 5, visited, new Map([[1, 20], [4, 3], [5, 2]])), []);
+  const detour = lab.graphOf(['0-1', '1-4', '0-3', '3-6', '6-7', '4-7', '4-5']);
+  // 안 가 본 이웃이 이미 있으면 복귀하지 않고 그 방에서 탐험을 계속한다.
+  assert.deepEqual(lab.mappedReturn(detour, 0, new Set([0, 3, 4, 6, 7]),
+    new Map([[0, 5], [3, 4], [6, 3], [7, 2], [4, 1]])), []);
+  // 돌아가는 길의 모든 방은 해당 분대가 이미 방문한 방이어야 한다.
+  const known = lab.graphOf(['1-4', '0-3', '3-6', '6-7', '4-7', '4-5']);
+  assert.deepEqual(lab.mappedReturn(known, 0, new Set([0, 3, 4, 6, 7]),
+    new Map([[0, 5], [3, 4], [6, 3], [7, 2], [4, 1]])), [3, 6, 7, 4]);
+});
+test('입구와 처음 들어간 방에서만 0.6초 조사, 재방문은 즉시 이동', () => {
+  assert.equal(lab.INSPECT_TIME, .6);
+  const b = lab.createBattle(lab.INITIAL_DOORS);
+  const s = b.squads[0];
+  lab.advanceBattle(b, .3);
+  assert.equal(s.progress, 0);
+  assert.equal(s.state, '조사');
+  lab.advanceBattle(b, .3);
+  assert.ok(s.inspectRemaining < 1e-9);
+  lab.advanceBattle(b, 2);
+  assert.equal(s.room, 0);
+  assert.equal(s.inspectRemaining, lab.INSPECT_TIME);
+  lab.advanceBattle(b, .6);
+  assert.equal(s.progress, 0);
+  lab.advanceBattle(b, .5);
+  assert.ok(Math.abs(s.progress - .25) < 1e-8);
+  const revisit = lab.createBattle(lab.INITIAL_DOORS);
+  const r = revisit.squads[0];
+  r.inspectRemaining = 0;
+  r.visited.add(0);
+  lab.advanceBattle(revisit, 4 / 3);
+  assert.equal(r.room, 0);
+  assert.equal(r.inspectRemaining, 0);
+  lab.advanceBattle(revisit, .5);
+  assert.ok(Math.abs(r.progress - .25) < 1e-8);
+});
+test('조사 중에도 함정 진입 피해와 몬스터 교전 처리', () => {
+  const trap = lab.createBattle(lab.INITIAL_DOORS);
+  const s = trap.squads[0];
+  s.room = 0; s.stepIndex = 1; s.visited.add(0); s.inspectRemaining = 0;
+  lab.advanceBattle(trap, 2);
+  assert.equal(s.room, 3);
+  assert.equal(s.inspectRemaining, lab.INSPECT_TIME);
+  assert.equal(s.hp, 80);
+  lab.advanceBattle(trap, .3);
+  assert.equal(s.progress, 0);
+  assert.equal(s.traps[3], 1);
+  const battle = lab.createBattle(lab.INITIAL_DOORS);
+  battle.squads.slice(1).forEach(squad => { squad.hp = 0; });
+  const fighter = battle.squads[0];
+  fighter.room = 6; fighter.stepIndex = 3; fighter.visited.add(6);
+  lab.advanceBattle(battle, .3);
+  assert.equal(fighter.progress, 0);
+  assert.equal(fighter.state, '조사 · 교전');
+  assert.ok(fighter.hp < 100);
+  assert.ok(battle.monsterHP.reduce((n, hp) => n + hp, 0) < 102);
+  lab.advanceBattle(battle, .5);
+  assert.equal(fighter.state, '교전');
+  assert.equal(fighter.progress, 0);
 });
 console.log(`\n전체 ${passed}개 검사 통과`);

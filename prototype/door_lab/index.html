@@ -19,24 +19,25 @@
       <div class="toolbar">
         <button id="undo" type="button" disabled>되돌리기</button>
         <button id="reset" type="button">처음 배치</button>
-        <button id="routes-toggle" type="button" aria-pressed="false">경로 숨기기</button>
+        <button id="routes-toggle" type="button" aria-pressed="false" data-debug hidden>경로 숨기기</button>
       </div>
       <div id="board-wrap">
         <svg id="board" viewBox="0 0 360 480" role="group" aria-label="3열 4행 던전. 문을 끌거나, 문 선택 후 빈 벽을 누르세요."></svg>
       </div>
+      <button id="fight" class="primary" type="button">전투 시작 · 최대 60초</button>
       <div id="message" role="status" aria-live="polite">입구는 위쪽, 보물방은 맨 아래 가운데입니다.</div>
-      <div id="route-counts" class="squad-grid" aria-label="분대별 예상 문 통과"></div>
-      <p class="hint">실선 → 탐험 · 점선 ⇢ 되짚기 · 문 위 숫자 = 세 분대 통과 합계</p>
+      <div id="route-counts" class="squad-grid" aria-label="분대별 탐험 습관"></div>
+      <p class="hint" data-debug hidden>실선 → 탐험 · 점선 ⇢ 맵핑 복귀 · 문 위 숫자 = 세 분대 통과 합계</p>
       <details class="rules">
         <summary>조작과 이동 규칙</summary>
         <p>문 선택 → 빈 벽 선택도 가능합니다. 취소는 Esc 또는 선택한 문을 다시 누르세요. 키보드는 Tab과 Enter로 선택합니다.</p>
-        <p>안 가 본 방 → 미끼 우선. 미끼 점수가 같으면 왼쪽·위·오른쪽·아래로 정렬하고 분대 번호로 첫 방을 번갈아 고릅니다. 나머지는 그 순서로 탐험합니다. 막히면 되짚고, 보물방에 들어가면 멈춥니다.</p>
-        <p>입구와 보물방 연결 필수 · 분대마다 문 통과 18회 이하. 고립된 방은 허용하며 시설 효과가 없습니다.</p>
+        <p>안 가 본 방 → 미끼 우선. 그다음 분대 1은 왼쪽·위·아래·오른쪽, 분대 2는 오른쪽·위·아래·왼쪽, 분대 3은 아래·왼쪽·오른쪽·위 순서로 고릅니다.</p>
+        <p>첫 방문에는 0.6초 동안 조사하며 ?가 뜹니다. 막히면 가 본 방만 지나는 가장 짧은 길로, 안 가 본 이웃이 남은 가까운 방까지 돌아갑니다. 거리가 같으면 최근에 들른 방을 고릅니다. 가 본 방과 빈 대기실에서는 1.5배로 이동하고, 보물방에 들어가면 멈춥니다.</p>
+        <p>모든 방이 입구와 이어져야 합니다. 분대마다 문 통과는 18회 이하입니다.</p>
       </details>
     </section>
     <section class="panel battle-panel" aria-labelledby="battle-title">
       <div class="board-heading"><h2 id="battle-title">같은 침입자로 비교</h2><span class="badge">3분대 × 10명</span></div>
-      <button id="fight" class="primary" type="button">전투 시작 · 최대 60초</button>
       <div class="time-row"><span id="battle-state" role="status">준비 완료</span><strong id="clock">0.0 / 60초</strong></div>
       <progress id="time-progress" max="60" value="0" aria-label="전투 경과 시간"></progress>
       <div id="battle-squads" class="squad-grid"></div>
@@ -55,7 +56,7 @@
       <summary>측정 기록 <span>새로고침하면 초기화</span></summary>
       <dl><div><dt>편집 횟수</dt><dd id="edit-count">0회</dd></div><div><dt>거절된 놓기</dt><dd id="reject-count">0회</dd></div><div><dt>편집 시간</dt><dd id="edit-time">0초</dd></div><div><dt>전투 횟수</dt><dd id="fight-count">0회</dd></div></dl>
     </details>
-    <footer>시설은 고정입니다. 경로를 숨기고 먼저 예상해 보세요.</footer>
+    <footer>시설은 고정입니다. 통로와 분대 습관을 보고 탐험 순서를 예상해 보세요.</footer>
   </main>
   <div id="drag-ghost" aria-hidden="true" hidden>문</div>
 </body>

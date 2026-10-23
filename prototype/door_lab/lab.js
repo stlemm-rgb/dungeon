@@ -7,6 +7,9 @@
   const TREASURE = 10;
   const LIMIT = 18;
   const SEED = 7;
+  const INSPECT_TIME = 0.6; // 첫 방문 조사 시간(초), 재미 확인용 임시 값.
+  const HABITS = Object.freeze(['왼쪽 먼저', '오른쪽 먼저', '아래 먼저']);
+  const DIRECTIONS = [[0, 1, 3, 2], [2, 1, 3, 0], [3, 0, 2, 1]];
   // 실험용 임시 전투 수치. 경로 규칙과 분리해 비교 중에는 항상 동일하게 쓴다.
   const BALANCE = Object.freeze({ moveSeconds: 2, speedBoost: 1.5, duration: 60,
     people: 10, personHP: 10, trapDamage: 20, monsterHP: 34,
@@ -53,15 +56,35 @@
     return 3; // 아래
   }
   function orderedCandidates(from, candidates, squad, facilities) {
-    // 미끼 점수 동점만 번갈아 고른다. 첫 선택 뒤 나머지는 화면 방향 순서.
-    const groups = [[], []];
-    for (const to of candidates) groups[facilities[to] === 'bait' ? 0 : 1].push(to);
-    return groups.flatMap(group => {
-      group.sort((a, b) => direction(from, a) - direction(from, b));
-      if (!group.length) return [];
-      const first = group.splice((squad - 1) % group.length, 1)[0];
-      return [first, ...group];
-    });
+    const priority = DIRECTIONS[squad - 1];
+    return candidates.slice().sort((a, b) =>
+      Number(facilities[b] === 'bait') - Number(facilities[a] === 'bait') ||
+      priority.indexOf(direction(from, a)) - priority.indexOf(direction(from, b)));
+  }
+  function mappedReturn(graph, current, visited, lastVisit) {
+    // 너비 우선 탐색은 이미 아는 방만 통과. 같은 거리의 목적지는 최근 방문 우선.
+    const parent = new Map([[current, null]]);
+    let layer = [current];
+    while (layer.length) {
+      const frontiers = layer.filter(room => graph[room].some(to => !visited.has(to)));
+      if (frontiers.length) {
+        const target = frontiers.sort((a, b) => lastVisit.get(b) - lastVisit.get(a))[0];
+        const path = [];
+        for (let room = target; room !== current; room = parent.get(room)) path.push(room);
+        return path.reverse();
+      }
+      const nextLayer = [];
+      for (const room of layer) {
+        for (const to of graph[room]) {
+          if (visited.has(to) && !parent.has(to)) {
+            parent.set(to, room);
+            nextLayer.push(to);
+          }
+        }
+      }
+      layer = nextLayer;
+    }
+    return [];
   }
   function exploreRoute(doors, squad = 1, options = {}) {
     const start = options.start ?? ENTRY;
@@ -71,29 +94,23 @@
     const visited = new Set([start]);
     const rooms = [start];
     const steps = [];
-    function frame(room) {
-      return { room, choices: orderedCandidates(room,
-        graph[room].filter(to => !visited.has(to)), squad, facilities), cursor: 0 };
+    const lastVisit = new Map([[start, 0]]);
+    function append(to, backtrack) {
+      const from = rooms[rooms.length - 1];
+      steps.push({ from, to, edge: edgeKey(from, to), backtrack });
+      rooms.push(to);
+      visited.add(to);
+      lastVisit.set(to, steps.length);
     }
-    const stack = [frame(start)];
-    while (stack.length && rooms[rooms.length - 1] !== goal) {
-      const top = stack[stack.length - 1];
-      let next;
-      while (top.cursor < top.choices.length) {
-        const candidate = top.choices[top.cursor++];
-        if (!visited.has(candidate)) { next = candidate; break; }
-      }
-      if (next !== undefined) {
-        steps.push({ from: top.room, to: next, edge: edgeKey(top.room, next), backtrack: false });
-        rooms.push(next);
-        visited.add(next);
-        stack.push(frame(next));
-      } else {
-        stack.pop();
-        if (!stack.length) break;
-        const parent = stack[stack.length - 1].room;
-        steps.push({ from: top.room, to: parent, edge: edgeKey(top.room, parent), backtrack: true });
-        rooms.push(parent);
+    while (rooms[rooms.length - 1] !== goal) {
+      const current = rooms[rooms.length - 1];
+      const choices = orderedCandidates(current,
+        graph[current].filter(to => !visited.has(to)), squad, facilities);
+      if (choices.length) append(choices[0], false);
+      else {
+        const path = mappedReturn(graph, current, visited, lastVisit);
+        if (!path.length) break;
+        for (const to of path) append(to, true);
       }
     }
     return { squad, rooms, steps, reached: rooms[rooms.length - 1] === goal };
@@ -112,8 +129,11 @@
     if (doors.length !== 12 || new Set(doors).size !== 12 || doors.some(id => !validIDs.has(id))) {
       return { ok: false, code: 'tokens', reason: '안쪽 벽에 문 12개를 유지해야 합니다.' };
     }
-    if (!isConnected(doors)) {
-      return { ok: false, code: 'disconnected', reason: '입구 → 보물방 연결이 끊깁니다.' };
+    const reachable = reachableRooms(doors);
+    if (reachable.size !== ROWS * COLS) {
+      const room = Array.from({ length: ROWS * COLS }, (_, i) => i).find(i => !reachable.has(i));
+      return { ok: false, code: 'disconnected',
+        reason: `(${Math.floor(room / COLS)},${room % COLS}) 방이 다른 방과 끊겨요.` };
     }
     const routes = routesOf(doors);
     const over = routes.find(route => countPassages(route) > LIMIT);
@@ -143,7 +163,7 @@
       squads: validation.routes.map(route => ({ id: route.squad, route,
         hp: BALANCE.people * BALANCE.personHP, attack: BALANCE.personAttack * (.95 + random() * .1),
         room: ENTRY, stepIndex: 0, progress: 0, passages: 0, arrived: false,
-        visited: new Set([ENTRY]), traps: {}, state: '이동' })) };
+        visited: new Set([ENTRY]), traps: {}, inspectRemaining: INSPECT_TIME, state: '조사' })) };
     addLog(battle, '침입자 30명이 위쪽 입구로 들어왔습니다.');
     return battle;
   }
@@ -160,7 +180,9 @@
   }
   function enterRoom(battle, squad, room) {
     squad.room = room;
+    squad.inspectRemaining = squad.visited.has(room) ? 0 : INSPECT_TIME;
     squad.visited.add(room);
+    squad.state = squad.inspectRemaining > 0 ? '조사' : '이동';
     const facility = FACILITIES[room];
     if (facility === 'trap' && (squad.traps[room] || 0) < 2) {
       squad.traps[room] = (squad.traps[room] || 0) + 1;
@@ -199,7 +221,13 @@
         if (before && !monsterCount(battle)) addLog(battle, '대기실 몬스터가 모두 쓰러졌습니다.');
       }
       for (const squad of battle.squads) {
-        if (squad.hp <= 0 || squad.arrived || fighters.includes(squad)) continue;
+        if (squad.hp <= 0 || squad.arrived) continue;
+        if (squad.inspectRemaining > 1e-9) {
+          squad.inspectRemaining = Math.max(0, squad.inspectRemaining - dt);
+          squad.state = fighters.includes(squad) ? '조사 · 교전' : '조사';
+          continue;
+        }
+        if (fighters.includes(squad)) continue;
         const step = squad.route.steps[squad.stepIndex];
         if (!step) continue;
         squad.state = '이동';
@@ -231,9 +259,9 @@
       time: Number(battle.time.toFixed(2)), success: alive === 0, seed: SEED };
   }
 
-  const api = { COLS, ROWS, ENTRY, TREASURE, LIMIT, SEED, EDGES, INITIAL_DOORS,
+  const api = { COLS, ROWS, ENTRY, TREASURE, LIMIT, SEED, INSPECT_TIME, HABITS, EDGES, INITIAL_DOORS,
     FACILITIES, BALANCE, edgeKey, graphOf, reachableRooms, isConnected,
-    orderedCandidates, exploreRoute, countPassages, routesOf, doorPassages,
+    orderedCandidates, mappedReturn, exploreRoute, countPassages, routesOf, doorPassages,
     validateLayout, moveDoor, seededRandom, createBattle, advanceBattle, battleResult, peopleOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.DoorLab = api;
@@ -248,7 +276,9 @@
     if (!svg) return;
     let doors = INITIAL_DOORS.slice();
     let history = [];
-    let hidden = false;
+    const debug = new URLSearchParams(window.location.search).has('debug');
+    let hidden = !debug;
+    document.querySelectorAll('[data-debug]').forEach(el => { el.hidden = !debug; });
     let selection = null;
     let drag = null;
     let battle = null;
@@ -281,7 +311,7 @@
       return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, vertical: edge.b - edge.a === 1 };
     }
     function routeMarkup(routes) {
-      if (hidden) return '';
+      if (!debug || hidden) return '';
       return routes.map((route, i) => {
         const shift = (i - 1) * 6;
         return `<g class="s${i + 1}">${route.steps.map(step => {
@@ -303,8 +333,7 @@
       const shownDoors = candidate && candidate.code !== 'target' ? candidate.doors : doors;
       const routes = routesOf(shownDoors);
       const counts = doorPassages(routes);
-      const reachable = reachableRooms(shownDoors);
-      const defs = `<defs>${[0, 1, 2].map(i => `<marker id="arrow-${i}" class="s${i + 1}" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 Z"/></marker>`).join('')}</defs>`;
+      const defs = !debug || hidden ? '' : `<defs>${[0, 1, 2].map(i => `<marker id="arrow-${i}" class="s${i + 1}" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 Z"/></marker>`).join('')}</defs>`;
       const rooms = Array.from({ length: 12 }, (_, room) => {
         const p = center(room);
         const facility = FACILITIES[room];
@@ -312,8 +341,11 @@
         let symbol = facility === 'trap' ? '×' : facility === 'monster' ? '♟' : facility === 'bait' ? '◇' : '';
         if (room === ENTRY) { label = '입구'; symbol = '↓'; }
         if (room === TREASURE) { label = '보물방'; symbol = '◆'; }
-        return `<g class="${reachable.has(room) ? '' : 'isolated'}"><rect class="room ${label ? 'special-room' : ''}" x="${p.x - 54}" y="${p.y - 54}" width="108" height="108"/><text class="room-coord" x="${p.x - 43}" y="${p.y + 42}">(${Math.floor(room / 3)},${room % 3})</text><text class="room-label" x="${p.x}" y="${p.y - 24}">${label}</text><text class="room-symbol" x="${p.x}" y="${p.y + 26}">${symbol}</text></g>`;
-      }).join('');
+        return {
+          surface: `<rect class="room ${label ? 'special-room' : ''}" x="${p.x - 54}" y="${p.y - 54}" width="108" height="108"/>`,
+          labels: `<text class="room-coord" x="${p.x - 43}" y="${p.y + 42}">(${Math.floor(room / 3)},${room % 3})</text><text class="room-label" x="${p.x}" y="${p.y - 24}">${label}</text><text class="room-symbol" x="${p.x}" y="${p.y + 26}">${symbol}</text>`
+        };
+      });
       const walls = `<rect class="wall" x="18" y="24" width="324" height="432"/>` + EDGES.map(e => {
         const p = edgePoint(e);
         return `<path class="wall" d="${p.vertical ? `M${p.x},${p.y - 54}v108` : `M${p.x - 54},${p.y}h108`}"/>`;
@@ -323,11 +355,15 @@
         const invalid = active && candidate && !candidate.ok;
         return `<rect class="drop-zone ${active ? 'candidate' : ''} ${invalid ? 'invalid' : ''}" x="${p.x - (p.vertical ? 7 : 23)}" y="${p.y - (p.vertical ? 23 : 7)}" width="${p.vertical ? 14 : 46}" height="${p.vertical ? 46 : 14}" rx="4"/>`;
       }).join('') : '';
+      const pipes = EDGES.filter(e => shownDoors.includes(e.id)).map(e => {
+        const a = center(e.a), b = center(e.b);
+        return `<g><path class="pipe-rim" d="M${a.x},${a.y}L${b.x},${b.y}"/><path class="pipe" d="M${a.x},${a.y}L${b.x},${b.y}"/></g>`;
+      }).join('');
       const tokens = EDGES.filter(e => shownDoors.includes(e.id)).map(e => {
         const p = edgePoint(e);
         return `<rect class="door ${e.id === from ? 'departing selected' : ''}" x="${p.x - (p.vertical ? 7 : 20)}" y="${p.y - (p.vertical ? 20 : 7)}" width="${p.vertical ? 14 : 40}" height="${p.vertical ? 40 : 14}" rx="3"/>`;
       }).join('');
-      const labels = hidden ? '' : EDGES.filter(e => shownDoors.includes(e.id)).map(e => {
+      const labels = !debug || hidden ? '' : EDGES.filter(e => shownDoors.includes(e.id)).map(e => {
         const p = edgePoint(e), x = p.x + (p.vertical ? 18 : 0), y = p.y + (p.vertical ? 0 : -18);
         return `<g><circle class="door-count-bg" cx="${x}" cy="${y}" r="9"/><text class="door-count" x="${x}" y="${y}">${counts[e.id] || 0}</text></g>`;
       }).join('');
@@ -336,8 +372,8 @@
         const name = `(${Math.floor(e.a / 3)},${e.a % 3}) ↔ (${Math.floor(e.b / 3)},${e.b % 3})`;
         return `<path class="edge-hit" data-edge="${e.id}" role="button" tabindex="${running() ? '-1' : '0'}" aria-disabled="${!!running()}" aria-label="${doors.includes(e.id) ? '문' : '빈 벽'} ${name}" d="${p.vertical ? `M${p.x},${p.y - 22}v44` : `M${p.x - 22},${p.y}h44`}"/>`;
       }).join('');
-      svg.innerHTML = defs + rooms + walls + zones + tokens + `<path class="outside-arrow" d="M180 2v22m-5 -6l5 6 5 -6"/><text class="outside-label" x="233" y="13">침입자 진입 ↓</text><g class="paths">${routeMarkup(routes)}</g><g class="door-counts">${labels}</g>${hits}<g class="actors" id="actors"></g>`;
-      $('route-counts').innerHTML = routes.map((route, i) => `<div class="squad-card s${i + 1} ${route.steps.length > LIMIT ? 'over' : ''}"><strong>분대 ${i + 1}</strong><span>${hidden ? '경로 숨김' : `${countPassages(route)} / 18회`}</span></div>`).join('');
+      svg.innerHTML = defs + rooms.map(room => room.surface).join('') + walls + `<g class="pipes">${pipes}</g>` + rooms.map(room => room.labels).join('') + zones + tokens + `<path class="outside-arrow" d="M180 2v22m-5 -6l5 6 5 -6"/><text class="outside-label" x="233" y="13">침입자 진입 ↓</text><g class="paths">${routeMarkup(routes)}</g><g class="door-counts">${labels}</g>${hits}<g class="actors" id="actors"></g>`;
+      $('route-counts').innerHTML = routes.map((route, i) => `<div class="squad-card s${i + 1} ${debug && route.steps.length > LIMIT ? 'over' : ''}"><strong>분대 ${i + 1}</strong><small>${HABITS[i]}</small>${debug && !hidden ? `<span>${countPassages(route)} / 18회</span>` : ''}</div>`).join('');
       $('undo').disabled = !history.length || !!running();
       $('reset').disabled = !!running();
       renderActors();
@@ -351,7 +387,7 @@
         const progress = s.arrived ? 0 : s.progress;
         const x = a.x + (b.x - a.x) * progress + (s.id - 2) * 13;
         const y = a.y + (b.y - a.y) * progress;
-        return `<g class="s${s.id}"><circle class="actor" cx="${x}" cy="${y}" r="9"/><text class="actor-number" x="${x}" y="${y}">${s.id}</text></g>`;
+        return `<g class="s${s.id}"><circle class="actor" cx="${x}" cy="${y}" r="9"/><text class="actor-number" x="${x}" y="${y}">${s.id}</text>${!s.arrived && s.inspectRemaining > 1e-9 ? `<text class="inspect-mark" x="${x}" y="${y - 14}">?</text>` : ''}</g>`;
       }).join('');
     }
     function clearBattleView() {
@@ -370,7 +406,7 @@
         doors = result.doors;
         metrics.edits++;
         clearBattleView();
-        message('문을 옮겼습니다. 바뀐 경로를 확인해 보세요.');
+        message('문을 옮겼습니다. 탐험 순서를 예상해 보세요.');
       } else {
         metrics.rejected++;
         message(result.reason, true);
@@ -425,7 +461,7 @@
       drag.target = target;
       if (target) {
         const result = moveDoor(doors, drag.from, target);
-        message(result.ok ? '미리보기 · 놓으면 이 경로가 됩니다.' : result.reason, !result.ok);
+        message(result.ok ? '미리보기 · 놓으면 이 통로가 열립니다.' : result.reason, !result.ok);
       } else message('밝은 빈 벽으로 끌어 놓으세요.');
       renderBoard();
     });
@@ -494,6 +530,7 @@
       renderBoard(); showMetrics();
     });
     $('routes-toggle').addEventListener('click', () => {
+      if (!debug) return;
       hidden = !hidden;
       $('routes-toggle').textContent = hidden ? '경로 보기' : '경로 숨기기';
       $('routes-toggle').setAttribute('aria-pressed', String(hidden));
@@ -503,7 +540,7 @@
       const rows = [
         ['보물방 도달', r => `${r.reached}명`], ['쓰러뜨린 인원', r => `${r.defeated}명`],
         ['시간 초과', r => `${r.timeout}명`], ['함정 발동', r => `${r.traps}회`],
-        ...[0, 1, 2].map(i => [`분대 ${i + 1} 문 통과`, r => `${r.passages[i]}회`]),
+        ...(debug ? [0, 1, 2].map(i => [`분대 ${i + 1} 문 통과`, r => `${r.passages[i]}회`]) : []),
         ['걸린 시간', r => `${r.time.toFixed(1)}초`],
         ['판정', r => r.success ? '방어 성공' : r.timeout ? '시간 초과 있음' : '보물방 도달']
       ];
@@ -512,7 +549,7 @@
     function renderBattle() {
       $('clock').textContent = `${Math.min(60, battle.time).toFixed(1)} / 60초`;
       $('time-progress').value = battle.time;
-      $('battle-squads').innerHTML = battle.squads.map(s => `<div class="squad-card s${s.id}"><strong>분대 ${s.id} · ${peopleOf(s)}명</strong><span>${s.state} · ${s.passages}회</span></div>`).join('');
+      $('battle-squads').innerHTML = battle.squads.map(s => `<div class="squad-card s${s.id}"><strong>분대 ${s.id} · ${peopleOf(s)}명</strong><small>${HABITS[s.id - 1]}</small><span>${s.state}${debug ? ` · ${s.passages}회` : ''}</span></div>`).join('');
       $('monster-state').textContent = `대기실 몬스터 ${monsterCount(battle)} / 3마리 · 체력 ${battle.monsterHP.map(hp => Math.ceil(hp)).join(' / ')}`;
       $('event-log').innerHTML = battle.logs.slice(-3).map(log => `<div>${log}</div>`).join('');
       renderActors();
