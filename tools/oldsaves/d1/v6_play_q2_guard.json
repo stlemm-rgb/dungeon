@@ -1,0 +1,378 @@
+{
+ "v": 6,
+ "seed": 816083738,
+ "week": 2,
+ "gold": 796,
+ "gems": 6,
+ "company": {
+  "lv": 2,
+  "exp": 4
+ },
+ "phase": "play",
+ "quest": {
+  "id": 2,
+  "key": "q2",
+  "kind": "normal",
+  "grade": "",
+  "name": "지하 보물고",
+  "tutorial": false,
+  "client": {
+   "name": "은발 마왕",
+   "kind": "마왕"
+  },
+  "attr": {
+   "id": "phys",
+   "label": "물리",
+   "effect": "침입자가 두꺼운 갑옷을 입고 옴: 받는 피해 -10%",
+   "counter": "아직 없음 (연구실에서 해금 예정)"
+  },
+  "floors": 2,
+  "board": "fork3",
+  "fixed": {
+   "CB": "frozen_dock"
+  },
+  "budget": 150,
+  "reward": {
+   "gold": 900,
+   "gems": 8,
+   "companyExp": 15
+  },
+  "stages": [
+   {
+    "value": 60,
+    "power": 70
+   },
+   {
+    "value": 100,
+    "power": 110
+   },
+   {
+    "value": 140,
+    "power": 150,
+    "opens": 2,
+    "budget": 150
+   },
+   {
+    "value": 190,
+    "power": 200,
+    "floor2": 50
+   },
+   {
+    "value": 230,
+    "power": 250,
+    "floor2": 90
+   }
+  ],
+  "stage": 0,
+  "stageWeeks": [],
+  "startWeek": 2,
+  "noDeath": true
+ },
+ "offers": null,
+ "report": null,
+ "qid": 3,
+ "siteNo": 2,
+ "doneQuests": [
+  "q1"
+ ],
+ "site": {
+  "board": "fork3",
+  "zones": {
+   "Y": "forest",
+   "TL": "empty",
+   "E": "split",
+   "TR": "empty",
+   "LB": "empty",
+   "CB": "fz_frozen_dock",
+   "RB": "empty",
+   "LC": "empty",
+   "CC": "empty",
+   "RC": "empty",
+   "LD": "empty",
+   "CD": "empty",
+   "RD": "empty",
+   "LE": "empty",
+   "B": "boss",
+   "RE": "empty",
+   "2L": "empty",
+   "2E": "split",
+   "2R": "empty",
+   "2H": "empty",
+   "2DL": "empty",
+   "2DR": "empty",
+   "2B": "boss"
+  },
+  "fixed": {
+   "CB": "frozen_dock"
+  },
+  "units": {},
+  "squads": [
+   {
+    "id": "s1",
+    "tribe": "stone",
+    "count": 3,
+    "lv": 1,
+    "exp": 0,
+    "free": true
+   }
+  ],
+  "nextSquadNo": 2,
+  "floors": 2,
+  "floorsOpen": 1,
+  "deploy": {
+   "1": [],
+   "2": []
+  },
+  "pins": {},
+  "auto": true,
+  "rest": {},
+  "budget": 150,
+  "budgetStart": 150,
+  "budgetAdded": 0,
+  "spent": 0,
+  "builds": 0,
+  "value": 0,
+  "power": 0,
+  "denGifts": 0
+ },
+ "guards": [
+  {
+   "id": "g1",
+   "tribe": "stone",
+   "name": "버팀돌",
+   "intro": "검수관이 벽으로 착각해 두드려도 “근무 중입니다”만 반복하는 대장.",
+   "lv": 10,
+   "exp": 2,
+   "from": "작은 돌 성채",
+   "fromSquad": "s1@1"
+  }
+ ],
+ "nextGuardNo": 2,
+ "tribes": {
+  "stone": 1
+ },
+ "contracts": [
+  "stone",
+  "ember"
+ ],
+ "works": [
+  {
+   "no": 1,
+   "key": "q1",
+   "name": "작은 돌 성채",
+   "client": "은발 마왕",
+   "attr": "phys",
+   "value": 205,
+   "power": 668,
+   "week": 2
+  }
+ ],
+ "stats": {
+  "battles": 1,
+  "delivers": 1
+ },
+ "surgeWeek": 4,
+ "adWeek": 0,
+ "plan": {
+  "week": 2,
+  "surge": false,
+  "ad": false,
+  "groups": [
+   {
+    "name": "떠돌이 사냥꾼 무리",
+    "grade": "D",
+    "count": 10,
+    "top": false,
+    "lv": 4,
+    "roll": 1,
+    "porters": 1
+   },
+   {
+    "name": "황금 곰팡이 모험단",
+    "grade": "C",
+    "count": 10,
+    "top": true,
+    "lv": 6,
+    "roll": 1,
+    "porters": 5
+   }
+  ],
+  "card": "paladin",
+  "order": [
+   4,
+   0,
+   1,
+   3,
+   5,
+   2
+  ],
+  "seed": -1002673428,
+  "value": 0,
+  "dlv": 0,
+  "power": 0.6,
+  "attr": "phys",
+  "trapBoost": 0
+ },
+ "battling": false,
+ "bsave": null,
+ "lastBattle": {
+  "budgetGain": 30,
+  "budgetAfter": 80,
+  "week": 1,
+  "surge": false,
+  "ad": false,
+  "kills": 20,
+  "porterKills": 8,
+  "total": 20,
+  "gold": 196,
+  "gems": 2,
+  "exp": 20,
+  "reached": 0,
+  "squads": 2,
+  "retreated": 0,
+  "timeout": false,
+  "loot": 0,
+  "repair": 0,
+  "goldBefore": 0,
+  "goldAfter": 196,
+  "gemsBefore": 0,
+  "gemsAfter": 2,
+  "defended": true,
+  "levelMsgs": [
+   "돌등껍질족 부대 Lv 2 레벨업",
+   "돌등껍질족 부대 Lv 2 레벨업"
+  ],
+  "expGains": [
+   {
+    "id": "s1",
+    "name": "돌등껍질족 부대",
+    "exp": 8,
+    "lvBefore": 1,
+    "lvAfter": 2
+   },
+   {
+    "id": "s2",
+    "name": "돌등껍질족 부대",
+    "exp": 8,
+    "lvBefore": 1,
+    "lvAfter": 2
+   }
+  ],
+  "stages": [],
+  "retreats": [],
+  "deaths": 0,
+  "noDeath": true,
+  "crises": 0,
+  "companyBefore": {
+   "lv": 1,
+   "exp": 1,
+   "need": 12
+  },
+  "companyAfter": {
+   "lv": 1,
+   "exp": 2,
+   "need": 12
+  },
+  "progress": {
+   "stage": 1,
+   "total": 5,
+   "complete": false,
+   "canDeliver": false,
+   "why": "납품 기준 5단계를 모두 채워야 납품할 수 있어요",
+   "cur": {
+    "value": 45,
+    "power": 175,
+    "floor2": 0
+   },
+   "next": {
+    "stage": 2,
+    "value": 55,
+    "power": 75,
+    "floor2": 0,
+    "opens": 0
+   },
+   "floors": 1,
+   "floorsOpen": 1,
+   "floorLock": null,
+   "line": "납품 기준 1/5 · 가치 45/55 · 전투력 175/75",
+   "budget": 80,
+   "budgetStart": 110,
+   "budgetAdded": 30,
+   "weeklyBudget": 30
+  },
+  "hint": "신석 +2 (지금 2개): 군단에서 부족 신석 강화에 쓸 수 있어요",
+  "casualties": {
+   "down": [],
+   "retreated": [],
+   "died": []
+  },
+  "restMsgs": []
+ },
+ "history": [
+  {
+   "name": "작은 돌 성채",
+   "key": "q1",
+   "week": 2
+  }
+ ],
+ "prefs": {
+  "speedIdx": 0,
+  "cards": 1
+ },
+ "workshop": {
+  "build": 0,
+  "lab": 0,
+  "craft": 0
+ },
+ "chores": {
+  "daily": {
+   "key": "2026-10-24",
+   "tasks": [
+    {
+     "id": "d_battle",
+     "prog": 0,
+     "claimed": false
+    },
+    {
+     "id": "d_build",
+     "prog": 0,
+     "claimed": false
+    },
+    {
+     "id": "d_upgrade",
+     "prog": 0,
+     "claimed": false
+    }
+   ]
+  },
+  "weekly": {
+   "key": "2026-10-19",
+   "tasks": [
+    {
+     "id": "w_battle",
+     "prog": 0,
+     "claimed": false
+    },
+    {
+     "id": "w_deliver",
+     "prog": 0,
+     "claimed": false
+    },
+    {
+     "id": "w_defend",
+     "prog": 0,
+     "claimed": false
+    }
+   ]
+  }
+ },
+ "idle": {
+  "gold": 0,
+  "minutes": 0
+ },
+ "lastSeen": 1700000000000,
+ "tutorial": {
+  "on": false,
+  "seen": {}
+ }
+}
