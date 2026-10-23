@@ -323,8 +323,10 @@
     if (!q) { topbar(el); el.appendChild(div('', '<button class="btn primary big" data-go="contract">의뢰 고르기</button>')); return; }
     el.classList.add('fixed');   // 화면을 꽉 채우고 단면만 세로로 스크롤 (위 요약·아래 버튼은 고정)
     el.appendChild(div('fhdr', siteHeader(q)));
-    var shaft = div('shaft nodoors', shaftHtml(function (n, locked, text) {   // 문 표시·통과 인원은 건설 모드에서만
-      return ZV().boardHtml ? ZV().boardHtml({ zones: RUN.site.zones, units: RUN.site.units, floor: n, noYard: true, locked: locked, lockText: text }) : '';
+    var dbg = ZV().debugData ? ZV().debugData() : null;   // ?debug 일 때만: 분대 색 경로 선 + 문 통과 수 (평소엔 통로(파이프)만 보인다. 문을 끄는 건 건설 모드에서)
+    var shaft = div('shaft', shaftHtml(function (n, locked, text) {
+      return ZV().boardHtml ? ZV().boardHtml({ zones: RUN.site.zones, units: RUN.site.units, floor: n, noYard: true, locked: locked, lockText: text,
+        counts: dbg && dbg.counts, routes: dbg && dbg.routes }) : '';
     }));
     var scroll = div('fscroll');
     scroll.appendChild(shaft);
@@ -825,11 +827,13 @@
     el.appendChild(div('card demoend', '<h3>데모는 여기까지예요</h3><div class="small-text">' + esc(String(ds.msg || '').replace('데모는 여기까지예요.', '').trim() || '플레이해 주셔서 고마워요!') + '</div>' +
       '<div class="stat"><span>납품한 던전</span><b>' + RUN.works.length + '곳</b></div><div class="stat"><span>회사 레벨</span><b>Lv ' + co.lv + '</b></div>' +
       '<div class="stat"><span>걸린 기간</span><b>' + RUN.week + '주째</b></div><div class="stat"><span>군단 친위대</span><b>' + RUN.guards.length + '/' + P.GUARD_MAX + '명</b></div>'));
+    // 납품한 층: 끝낸 의뢰들 중 가장 깊은 층까지 (지금 데모는 1층 의뢰만 열려 있어 1층). 그 아래 한 층은 🔒 준비 중
+    var BDm = window.BATTLE_DATA, deep = 1, doneFloors = '';
+    ((BDm && BDm.QUESTS) || []).forEach(function (d) { if (RUN.doneQuests.indexOf(d.key) >= 0) deep = Math.max(deep, d.floors | 0); });
+    for (var fl = 1; fl <= deep; fl++) doneFloors += '<div class="floor f' + Math.min(fl, 2) + ' done"><div class="fhead"><b>지하 ' + fl + '층</b><span>✓ 납품 완료</span></div></div>';
     el.appendChild(div('shaft demoshaft',
-      '<div class="surface"><span>다음 현장 예고</span><small>지하 3층까지 파는 큰 의뢰</small></div>' +
-      '<div class="floor f1 done"><div class="fhead"><b>지하 1층</b><span>✓ 납품 완료</span></div></div>' +
-      '<div class="floor f2 done"><div class="fhead"><b>지하 2층</b><span>✓ 납품 완료</span></div></div>' +
-      '<div class="floor f3 gate lockedfloor"><div class="flocktxt"><span class="nm">🔒 지하 3층</span><small>' + esc(soonText('지하 3층')) + '</small></div></div>'));
+      '<div class="surface"><span>다음 현장 예고</span><small>더 깊은 의뢰가 기다려요</small></div>' + doneFloors +
+      '<div class="floor f3 gate lockedfloor"><div class="flocktxt"><span class="nm">🔒 지하 ' + (deep + 1) + '층</span><small>' + esc(soonText('지하 3층')) + '</small></div></div>'));
     el.appendChild(div('dim small-text', '이 다음은 새 현장·마계·내 집이 차례로 열려요. 회사·군단 탭은 그대로 둘러볼 수 있어요.'));
     var rs = div('', '<button class="btn primary big" data-restart>처음부터 다시</button>');
     rs.querySelector('button').addEventListener('click', function () {
@@ -958,13 +962,13 @@
     }
     tutApply();
   }
-  // 건설 화면 강조 구역: P.tutorialPath() 중 입구(E)·보물방(B)은 빼고 지을 수 있는 칸 하나(첫 칸). 'zones' 단계가 떠 있을 때만
+  // 건설 화면 강조 구역: P.tutorialPath() 중 입구(E)·보물방(B)은 빼고 지을 수 있는 방 전부 (처음 판 = 보물방 바로 앞 방들. 침입자는 이 중 한 곳을 꼭 지남). 'zones' 단계가 떠 있을 때만
   function tutZones() {
     if (!tutActive('zones') || typeof P.tutorialPath !== 'function') return [];
     try {
       var p = P.tutorialPath();
       p = Array.isArray(p) ? p.filter(function (z) { return z !== 'E' && z !== 'B'; }) : [];
-      return p.slice(0, 1);
+      return p.slice(0, 4);
     } catch (e) { return []; }
   }
 
@@ -1083,5 +1087,7 @@
 
   applyReduce();
   render();
+  // 옛 v6 저장을 새 판으로 바꿨으면 첫 화면에서 한 번 알린다 (P.takeNotice 는 읽으면 지움)
+  try { var notice = P.takeNotice(); if (notice) toast(notice); } catch (e) { /* 안내가 없는 환경: 무시 */ }
 })();
 
