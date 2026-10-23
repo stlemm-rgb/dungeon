@@ -1,135 +1,46 @@
-/* D1 구역 판 규칙 (C1 zones.js에서 이어 옴. 화면 그리기 없음)
+/* D1 판 규칙: 칸(5×7) + 문 토큰 + 탐험 이동 (화면 그리기 없음). 판 데이터는 battle_data.js GRID_BOARDS
  *
- *  D1 2차: 세로 지하 층. useSite(판, 층 수, 열린 층 수)로 현장 배치를 끼운다 (1층 = 판 3종 중 하나, 2층 = 작은 판 FLOOR_BOARD_DATA).
- *    2층 구역 id는 층 번호를 붙여 '2E'·'2H'·'2B' (1층 id와 안 섞임). 2층이 열리면 1층 B = 계단 -> 2층 입구, 보물방 = goal() = '2B'.
- *    ZONES.MAP은 예전 화면 호환으로 1층만, 층별은 floorMap(n)·floorInfo(n)·stackMap(). 통과 비율은 층마다 그 층 입구 기준
- *  D1 바뀐 점: 던전 가치 = 시설 점수만(몬스터 제외) · 데모 시설 제한(BATTLE_DATA.DEMO_FACILITIES) · 고정 구역 시설('fz_' + id, 못 지음) ·
- *    대기실 자리 = 칸당 부대 하나(DEN_SLOTS_PER_CELL) · 전투력 B안용 passRatios(통과 비율)·trapScore(함정 점수)
- *  - 5x7 칸 판. 구역 id Y(야외)·E(입구, 맨 위 가운데)·B(보스·보물방, 맨 아래 가운데)는 모든 판 공통. 나머지 구역은 2~4칸 덩어리.
- *  - 부지 모양(판) 3종 = BOARD_DATA (fork3 세 갈래 · line 외길 · fork2x 이중 갈림길). 판마다 구역 id·이름·길(exits)·큰길(center)·입구 출구(entry).
- *    useBoard(id)로 지금 판을 바꿔 끼우면 ZONES.MAP·NAMES·EXITS·CENTER·CELLS·ALL·ORDER와 모든 계산 함수가 그 판 기준이 된다.
- *    지금 판은 progress.js(RUN.site.board)가 정하고 부지가 바뀌거나 불러올 때 useBoard를 부른다. boardInfo(id)는 지금 판이 아니어도 읽기 가능(의뢰 카드 미리보기)
- *  - 판 설계 기준: 전투는 분대(10명) 단위로 갈림길에서 번갈아 나뉘므로, 갈렸다가 다시 모이는 구역(합류점)이 있어야 함정 하나가 모두에게 닿는다.
- *    fork3 = 합류점 없음(옆길로 간 분대는 가운데를 안 지남) · fork2x = 합류점 1곳(HUB) · line = 큰길 전부가 합류점. 길이는 가장 긴 길이 ~11칸 안 (1분 제한에 퇴각이 쉬워지지 않게)
- *  - 시설은 구역 종류마다 정해진 목록 (fac[...].for). 비용·가치는 칸 수만큼 커진다 (perCell). 입구 시설 대기·굽은길은 그 판에 그 출구가 있을 때만
- *  - 이동 (사용자 결정): 갈림길에서 반반 나뉨, 미끼 쪽으로 몰림, 몬스터가 든 대기실은 피함, 함정은 모르고 들어감.
- *    forecast = 길만 계산해서 "침입자 n명이 각 문을 몇 명 지나가나" 미리 보기 (전투 없음).
- *  - 몬스터 가치는 A7이 종류 표를 썼지만 C1 몬스터는 하나씩 능력치가 달라서 임시 식으로 바꿈 (monValue).
- *  - 전투(battle_sim.js)는 routeOf(분대마다 길)·anchorOf·doorOf(칸 좌표)로 같은 판·같은 길 규칙을 따른다.
- *  - (C1 이름) tutorialZones: fork3 판 입구를 '대기'로 시작하던 C1 튜토리얼용. D1은 안 씀.
- *  - D1 3차 뒤 (사용자 플레이 소감 2026-10-23): 첫 의뢰 = 외길(line) 판. 튜토리얼 강조 = mustPass() (침입자 모두가 반드시 지나는 큰길).
- *    입구 시설 '대기'(wait)를 데모에서 다시 엶 (갈림길 판에서 전원을 가운데로, BATTLE_DATA.DEMO_FACILITIES)
- *  - 상태는 갖지 않는다(지금 판 id만). 구역별 시설 {E:'split', ...}과 대기실 몬스터 {LB:[id,...]}는 progress.js의 RUN.site가 들고 있다.
+ *  3차(2026-10-24, docs/DESIGN_D1_DOORS.md): 옛 "여러 칸 구역 + 정해진 다음 구역(EXITS)" 판을 "칸(방) + 문 토큰"으로 바꿈.
+ *  - 칸 id = 층 번호(1층 생략) + 열 글자 A~E + 행 숫자 1~7 ('C4', '2C4'). 1칸 = 1방(방 id = 칸 id). 입구 칸 = 방 'E'('2E'), 보물방 칸 = 방 'B'('2B'),
+ *    고정 구역은 여러 칸 방 (판 데이터 rooms, 예 'FZ1' = B4·C4·D4). 야외 'Y'(문 없음).
+ *  - 벽 조각(edge) id = 이웃한 두 칸 id를 위->아래·왼->오른 순서로 '-'로 이음 ('C2-C3', 'B3-C3'). 같은 방 안쪽 칸 사이는 벽 조각이 아님.
+ *    문 = 벽 조각 하나에 열린 통로 (양방향). 문 배치는 progress.js RUN.site.doors { 층: [벽 조각 id] }. 층마다 문 수 = 판의 처음 문 수 (토큰 수 고정)
+ *  - 계단: 위층 'B' -> 아래층 입구 (문 토큰 아님, 층이 열려 있을 때만)
+ *  - 탐험(exploreRoute, 실험 prototype/door_lab/lab.js 규칙 그대로): 안 가 본 이웃 방부터, 그중 미끼 방 우선 -> 분대 습관(번호 % 3: 왼쪽·오른쪽·아래) 60% ->
+ *    나머지 무작위(분대·방·갈림 순서로 만든 시드). 막히면 아는 방들로 가장 짧은 길로 되돌아감(맵핑, 같은 거리면 최근 방문). 보물방(층 맨 아래)에 들어가면 끝.
+ *    층마다 따로 탐험 (2층은 가 본 방 기록을 비우고 2층 입구부터). 몬스터 든 대기실을 "보여서 피함"은 없음 (12절 9-1). 같은 배치 + 같은 시드 = 같은 길
+ *  - 통과 비율·함정 횟수·문 통과 수(passInfo)는 고정 시드 GRID.previewSeeds × 습관 3 = 경로 12개로 셈 -> 전투력(B안)·문 위 숫자·한도 검사가 같은 계산
+ *  - 상태는 지금 배치(판·층·열린 층·문)만. 시설 {방: 시설}·부대는 progress.js RUN.site
+ *  - 옛 이름 호환 (화면이 아직 부름): MAP(1층 칸 배열 = 방 id) · NAMES · CELLS · ALL · ORDER · EXITS(문으로 이어진 이웃) · flowPairs · sharedEdge · anchorOf · doorOf · boardInfo · useBoard
  */
 (function () {
   'use strict';
 
   var BD = window.BATTLE_DATA || {};
+  var G = BD.GRID || { cols: 5, rows: 7, colLetters: 'ABCDE', colNames: ['A', 'B', 'C', 'D', 'E'], inspect: 0.6, habit: 0.6, speedBoost: 1.5, trapMax: 2, passLimit: 30, previewSeeds: [1, 2, 3, 4], nextFloorTime: 30 };
+  var GB = BD.GRID_BOARDS || {};
+  var COLS = G.cols, ROWS = G.rows, LETTERS = G.colLetters;
   var TRAP_PER_CELL = 6;          // 함정 복도: 칸당 피해
-  var PREVIEW_INVADERS = 20;      // 문 위 숫자를 계산할 침입자 수 (평소 전투 = 무리 2개 × 10명, battle_data.js NORMAL과 같게, 임시)
-
-  // ---------- 판 데이터 (고칠 때는 여기만) ----------
-  // map = 칸마다 구역 id (E는 [0][2], B는 [6][2]), exits = 각 구역에서 갈 수 있는 다음 구역, center = 큰길(모두 모이는 길, 화면 설명용),
-  // entry = 입구 시설이 보내는 출구 { wait: 가운데, left: 왼쪽, right: 오른쪽 } (없는 것은 그 판에서 못 지음)
-  var BOARD_DATA = {
-    // 세 갈래 (사용자 빨간 선 그림, 처음 판·튜토리얼 판)
-    fork3: {
-      name: '세 갈래', desc: '입구에서 세 길로 나뉘고 옆길은 가운데로 빠지거나 내려가요. 다시 모이는 곳이 없어 길마다 막아야 해요.',
-      map: [
-        ['TL', 'TL', 'E', 'TR', 'TR'],
-        ['TL', 'LB', 'CB', 'RB', 'TR'],
-        ['LB', 'LB', 'CB', 'RB', 'RB'],
-        ['LC', 'LC', 'CC', 'RC', 'RC'],
-        ['LC', 'LC', 'CC', 'RC', 'RC'],
-        ['LD', 'LD', 'CD', 'RD', 'RD'],
-        ['LE', 'LE', 'B', 'RE', 'RE']
-      ],
-      names: { TL: '왼쪽 위', TR: '오른쪽 위', LB: '왼쪽 1', CB: '가운데 1', RB: '오른쪽 1', LC: '왼쪽 2', CC: '가운데 2', RC: '오른쪽 2',
-        LD: '왼쪽 3', CD: '가운데 3', RD: '오른쪽 3', LE: '왼쪽 4', RE: '오른쪽 4' },
-      exits: { E: ['TL', 'CB', 'TR'], TL: ['LB'], TR: ['RB'], LB: ['LC', 'CB'], RB: ['RC', 'CB'], CB: ['CC'],
-        LC: ['LD', 'CC'], RC: ['RD', 'CC'], CC: ['CD'], LD: ['LE', 'CD'], RD: ['RE', 'CD'], CD: ['B'], LE: ['B'], RE: ['B'] },
-      center: ['CB', 'CC', 'CD'],
-      entry: { wait: 'CB', left: 'TL', right: 'TR' }
-    },
-    // 외길: 큰길 하나(R1~R5)에 곁방(N*)이 붙음. 곁방으로 빠져도 바로 다음 큰길로 돌아온다 -> 큰길 어디든 모두 지난다
-    line: {
-      name: '외길', desc: '큰길 하나에 곁방이 붙은 길. 곁방으로 빠진 침입자도 바로 큰길로 돌아와 모두 같은 길을 지나요.',
-      map: [
-        ['NL1', 'NL1', 'E', 'NR1', 'NR1'],
-        ['NL1', 'R1', 'R1', 'R1', 'NR1'],
-        ['NL2', 'R2', 'R2', 'R2', 'NR2'],
-        ['NL2', 'R3', 'R3', 'R3', 'NR2'],
-        ['NL3', 'R4', 'R4', 'R4', 'NR3'],
-        ['NL3', 'R5', 'R5', 'R5', 'NR3'],
-        ['NL3', 'NL3', 'B', 'NR3', 'NR3']
-      ],
-      names: { R1: '큰길 1', R2: '큰길 2', R3: '큰길 3', R4: '큰길 4', R5: '큰길 5',
-        NL1: '왼쪽 곁방 1', NR1: '오른쪽 곁방 1', NL2: '왼쪽 곁방 2', NR2: '오른쪽 곁방 2', NL3: '왼쪽 곁방 3', NR3: '오른쪽 곁방 3' },
-      // 갈림길마다 큰길 순서를 다르게: 분대는 갈림길마다 번갈아 나뉘므로, 같은 분대가 곁방 셋을 다 돌아 길이 길어지는(1분 퇴각) 일을 막는다 (곁방 최대 2곳)
-      exits: { E: ['R1', 'NL1', 'NR1'], NL1: ['R1'], NR1: ['R1'], R1: ['R2'], R2: ['NL2', 'R3', 'NR2'], NL2: ['R3'], NR2: ['R3'],
-        R3: ['R4'], R4: ['NL3', 'NR3', 'R5'], NL3: ['R5'], NR3: ['R5'], R5: ['B'] },
-      center: ['R1', 'R2', 'R3', 'R4', 'R5'],
-      entry: { wait: 'R1', left: 'NL1', right: 'NR1' }, midDoors: true
-    },
-    // 이중 갈림길: 입구에서 두 갈래 -> 합류점(HUB)에서 모였다가 -> 다시 두 갈래로 보스방까지
-    fork2x: {
-      name: '이중 갈림길', desc: '두 갈래로 나뉘었다가 합류점에서 모이고, 다시 두 갈래로 나뉘어 보스방으로 가요.',
-      map: [
-        ['UL', 'UL', 'E', 'UR', 'UR'],
-        ['UL', 'HUB', 'HUB', 'HUB', 'UR'],
-        ['DL1', 'DL1', 'DL1', 'DR1', 'DR1'],
-        ['DL2', 'DL2', 'DL1', 'DR1', 'DR1'],
-        ['DL2', 'DL2', 'DR2', 'DR2', 'DR2'],
-        ['DL3', 'DL3', 'DR2', 'DR3', 'DR3'],
-        ['DL3', 'DL3', 'B', 'DR3', 'DR3']
-      ],
-      names: { UL: '왼쪽 위', UR: '오른쪽 위', HUB: '합류점', DL1: '왼쪽 아래 1', DL2: '왼쪽 아래 2', DL3: '왼쪽 아래 3',
-        DR1: '오른쪽 아래 1', DR2: '오른쪽 아래 2', DR3: '오른쪽 아래 3' },
-      exits: { E: ['UL', 'UR'], UL: ['HUB'], UR: ['HUB'], HUB: ['DL1', 'DR1'], DL1: ['DL2'], DL2: ['DL3'], DL3: ['B'],
-        DR1: ['DR2'], DR2: ['DR3'], DR3: ['B'] },
-      center: ['HUB'],
-      entry: { left: 'UL', right: 'UR' }, midDoors: true
-    }
-  };
-  var BOARD_IDS = ['fork3', 'line', 'fork2x'];
-  var DEFAULT_BOARD = 'fork3';
-
-  // ---------- 아래층 판 (D1 세로 지하 층) ----------
-  // 2층부터 쓰는 작은 판. 구역 id는 이 표에서는 짧게 쓰고, 현장에 끼울 때 층 번호를 앞에 붙인다 (2층: 'E' -> '2E', 'H' -> '2H').
-  // 그래서 1층(TL·CB·B ...)과 2층('2E'·'2H'·'2B' ...) 구역 id가 절대 섞이지 않는다.
-  // 1층 맨 아래 가운데 'B'는 2층이 잠겨 있으면 보스·보물방, 2층이 열리면 계단(2층 입구로 내려감). 보물방은 늘 가장 깊이 열린 층의 맨 아래
-  var FLOOR_BOARD_DATA = {
-    // 작은 2층: 두 갈래로 내려와 합류점(H)에서 모였다가 다시 두 갈래로 보물방
-    mini2: {
-      name: '작은 2층', desc: '두 길로 나뉘었다가 합류점에서 모이고, 다시 두 길로 보물방에 가요.',
-      map: [
-        ['L', 'L', 'E', 'R', 'R'],
-        ['L', 'H', 'H', 'H', 'R'],
-        ['DL', 'DL', 'H', 'DR', 'DR'],
-        ['DL', 'DL', 'B', 'DR', 'DR']
-      ],
-      names: { E: '입구', B: '보스·보물방', L: '왼쪽 길', R: '오른쪽 길', H: '합류점', DL: '왼쪽 아래', DR: '오른쪽 아래' },
-      exits: { E: ['L', 'R'], L: ['H'], R: ['H'], H: ['DL', 'DR'], DL: ['B'], DR: ['B'] },
-      center: ['H']
-    }
-  };
-  var FLOOR_BOARD_OF = { 2: 'mini2', 3: 'mini2' };   // 몇 층에 어떤 작은 판 (3층은 데모 밖, 자리만)
-  var FLOOR_GAP = 1;                                 // 층 사이 빈 줄 (계단 자리, 전투 화면 좌표용)
+  var PREVIEW_INVADERS = 20;      // 문 위 숫자를 계산할 침입자 수 (평소 전투 = 분대 2개 × 10명)
+  var FLOOR_GAP = 1;              // 층 사이 빈 줄 (계단 자리, 전투 화면 좌표용)
+  var BOARD_IDS = Object.keys(GB);
+  var DEFAULT_BOARD = BOARD_IDS[0] || 'g1';
+  var HABIT_DIRS = ['left', 'right', 'down'];   // 분대 번호 % 3
 
   var FAC = {
     forest: { name: '숲', short: '숲', cost: 0, value: 0, kind: 'none', st: '아무 일 없음', for: 'yard' },
     thorn: { name: '덫 숲', short: '덫 숲', cost: 20, value: 10, kind: 'none', st: '들어오기 전 전원 -8', for: 'yard' },
-    split: { name: '분기', short: '분기', cost: 0, value: 0, kind: 'turn', st: '갈림길 규칙대로 나뉨 (미끼 쪽으로 몰리고 몬스터는 피함)', for: 'entry' },
-    wait: { name: '대기', short: '대기', cost: 10, value: 0, kind: 'turn', st: '전원을 가운데로 (가장 짧은 길)', for: 'entry', turn: 'wait' },
-    left: { name: '굽은길 ←', short: '굽은길←', cost: 10, value: 0, kind: 'turn', st: '전원을 왼쪽 길로', for: 'entry', turn: 'left' },
-    right: { name: '굽은길 →', short: '굽은길→', cost: 10, value: 0, kind: 'turn', st: '전원을 오른쪽 길로', for: 'entry', turn: 'right' },
-    empty: { name: '빈 구역', short: '빈 구역', perCell: 0, value: 0, kind: 'none', st: '그냥 지나감', for: 'room' },
-    lure: { name: '미끼', short: '미끼', cost: 20, value: 0, kind: 'lure', st: '보물 냄새로 바로 앞 갈림길의 침입자를 전원 이쪽으로 끌어들임 (피해 없음)', for: 'room' },
-    trap: { name: '함정 복도', short: '함정', perCell: 10, valuePerCell: 10, kind: 'trap', st: '지나는 적 전원에게 칸당 피해 6', for: 'room' },
-    den: { name: '몬스터 대기실', short: '대기실', perCell: 10, valuePerCell: 5, kind: 'den', st: '칸당 부대 1자리. 그 층에 출진한 부대가 여기서 싸워요. 몬스터가 보이면 침입자가 피해 감(다른 길이 있으면). 바로 앞이 함정이면 기습 ×1.5', for: 'room' },
+    split: { name: '입구', short: '입구', cost: 0, value: 0, kind: 'turn', st: '침입자가 여기서 탐험을 시작해요', for: 'entry' },
+    wait: { name: '대기', short: '대기', cost: 10, value: 0, kind: 'turn', st: '(문 토큰 판에서는 안 씀)', for: 'entry', turn: 'wait' },
+    left: { name: '굽은길 ←', short: '굽은길←', cost: 10, value: 0, kind: 'turn', st: '(문 토큰 판에서는 안 씀)', for: 'entry', turn: 'left' },
+    right: { name: '굽은길 →', short: '굽은길→', cost: 10, value: 0, kind: 'turn', st: '(문 토큰 판에서는 안 씀)', for: 'entry', turn: 'right' },
+    empty: { name: '빈 방', short: '빈 방', perCell: 0, value: 0, kind: 'none', st: '그냥 지나감', for: 'room' },
+    lure: { name: '미끼', short: '미끼', cost: 20, value: 0, kind: 'lure', st: '보물 냄새: 갈림길에서 안 가 본 방 중 미끼 방으로 먼저 감 (피해 없음)', for: 'room' },
+    trap: { name: '함정 복도', short: '함정', perCell: 10, valuePerCell: 10, kind: 'trap', st: '지나는 적 전원에게 칸당 피해 6 (같은 분대는 두 번 들어갈 때까지만)', for: 'room' },
+    den: { name: '몬스터 대기실', short: '대기실', perCell: 10, valuePerCell: 5, kind: 'den', st: '칸당 부대 1자리. 침입자 분대와 만나는 순간 승패가 정해져요 (진 쪽 퇴각). 바로 앞이 함정이면 기습 ×1.5', for: 'room' },
     boss: { name: '보스·보물방', short: '보스·보물', cost: 0, value: 0, kind: 'none', st: '침입자가 여기까지 오면 금을 약탈해요', for: 'boss' }
   };
-  // 고정 구역 시설 (BATTLE_DATA.FIXED_ZONES): 'fz_' + id. 지을 수 없다(for: 'fixed'). 길 계산에서는 빈 구역처럼 지나감
+  // 고정 구역 시설 (BATTLE_DATA.FIXED_ZONES): 'fz_' + id. 지을 수 없다(for: 'fixed'). 길 계산에서는 빈 방처럼 지나감
   var FIXED_PREFIX = 'fz_';
   Object.keys(BD.FIXED_ZONES || {}).forEach(function (id) {
     var d = BD.FIXED_ZONES[id];
@@ -138,93 +49,316 @@
   function fixedFac(id) { return FIXED_PREFIX + id; }
   function isFixedFac(k) { return !!(FAC[k] && FAC[k].kind === 'fixed'); }
 
-  // ---------- 판 하나 준비 (칸 목록·계산 순서) ----------
-  function cellsOf(map, rowOff) {
-    var cells = {};
-    map.forEach(function (row, r) { row.forEach(function (k, c) { (cells[k] = cells[k] || []).push([r + (rowOff || 0), c]); }); });
-    return cells;
-  }
-  // 침입 계산 순서: 길을 따라 앞 구역이 먼저 (위상 정렬, 같으면 판 칸 순서). goal(보물방)은 빼고, 나가는 길이 있는 구역만
-  function orderOf(keys, exits, goal) {
-    var indeg = {}, out = [];
-    keys.forEach(function (z) { indeg[z] = 0; });
-    Object.keys(exits).forEach(function (a) { exits[a].forEach(function (b) { indeg[b] = (indeg[b] || 0) + 1; }); });
-    var ready = keys.filter(function (z) { return !indeg[z]; });
-    while (ready.length) {
-      var z = ready.shift();
-      if (z !== goal) out.push(z);
-      (exits[z] || []).forEach(function (b) { if (--indeg[b] === 0) ready.push(b); });
-    }
-    return out.filter(function (z) { return exits[z] && exits[z].length; });
-  }
-  // 층 하나: n층 판 데이터를 구역 id에 층 번호를 붙여 펼친다 (1층은 그대로)
+  // ---------- 층 하나 펼치기 ----------
+  function hasBoard(id) { return typeof id === 'string' && Object.prototype.hasOwnProperty.call(GB, id); }
+  function cellName(pre, r, c) { return pre + LETTERS.charAt(c) + (r + 1); }
+  // 판 데이터 하나를 n층으로: 칸·방·벽 조각·처음 문 (id에 층 번호를 붙임)
   function floorPart(n, boardId, rowOff) {
-    var d = n === 1 ? BOARD_DATA[boardId] : FLOOR_BOARD_DATA[FLOOR_BOARD_OF[n] || 'mini2'];
-    var pre = n === 1 ? '' : String(n);
-    function g(k) { return pre + k; }
-    var map = d.map.map(function (row) { return row.map(g); });
-    var exits = {}; Object.keys(d.exits).forEach(function (a) { exits[g(a)] = d.exits[a].map(g); });
-    var names = {}; Object.keys(d.names).forEach(function (k) { names[g(k)] = (n === 1 ? '' : n + '층 ') + d.names[k]; });
-    var cells = cellsOf(map, rowOff);
-    return { n: n, board: n === 1 ? boardId : FLOOR_BOARD_OF[n] || 'mini2', name: d.name, desc: d.desc, MAP: map, rowOff: rowOff, rows: map.length,
-      entry: g('E'), bottom: g('B'), ids: Object.keys(cells), cells: cells, exits: exits, names: names, center: (d.center || []).map(g), ENTRY: n === 1 ? d.entry || {} : {} };
-  }
-  // 현장 배치 하나 (판 + 층 수 + 열린 층 수)를 계산용으로 준비. 결과는 cur (지금 배치)
-  function makeLayout(boardId, floors, open) {
-    floors = Math.max(1, floors | 0 || 1); open = Math.max(1, Math.min(floors, open | 0 || 1));
-    var parts = [], rowOff = 0;
-    for (var n = 1; n <= floors; n++) { var p = floorPart(n, boardId, rowOff); parts.push(p); rowOff += p.rows + FLOOR_GAP; }
-    var cells = {}, exits = {}, names = { Y: '야외', E: '입구', B: '보스·보물방' }, center = [], keys = [];
-    parts.forEach(function (p) {
-      Object.keys(p.cells).forEach(function (z) { cells[z] = p.cells[z]; keys.push(z); });
-      Object.keys(p.exits).forEach(function (z) { exits[z] = p.exits[z]; });
-      Object.keys(p.names).forEach(function (z) { names[z] = p.names[z]; });
-      names[p.entry] = p.n === 1 ? '입구' : p.n + '층 입구';
-      names[p.bottom] = '보스·보물방';
-      if (p.n <= open) center = center.concat(p.center);
+    var d = GB[boardId] || GB[DEFAULT_BOARD], pre = n === 1 ? '' : String(n);
+    var multi = {};
+    Object.keys(d.rooms || {}).forEach(function (rid) { d.rooms[rid].forEach(function (cid) { multi[pre + cid] = pre + rid; }); });
+    var map = [], cellRoom = {}, cellRC = {}, cells = {}, roomCells = {}, ids = [], idx = {};
+    for (var r = 0; r < ROWS; r++) {
+      var row = [];
+      for (var c = 0; c < COLS; c++) {
+        var cid = cellName(pre, r, c);
+        var room = cid === pre + d.entry ? pre + 'E' : cid === pre + d.goal ? pre + 'B' : multi[cid] || cid;
+        row.push(room); cellRoom[cid] = room; cellRC[cid] = [r + rowOff, c];
+        if (!cells[room]) { cells[room] = []; roomCells[room] = []; ids.push(room); idx[room] = n * 100 + r * COLS + c; }
+        cells[room].push([r + rowOff, c]); roomCells[room].push(cid);
+      }
+      map.push(row);
+    }
+    var edges = [], edgeById = {};
+    for (r = 0; r < ROWS; r++) for (c = 0; c < COLS; c++) {
+      var a = cellName(pre, r, c);
+      [[0, 1], [1, 0]].forEach(function (dd) {
+        var r2 = r + dd[0], c2 = c + dd[1];
+        if (r2 >= ROWS || c2 >= COLS) return;
+        var b = cellName(pre, r2, c2);
+        if (cellRoom[a] === cellRoom[b]) return;   // 같은 방 안쪽 칸 사이는 벽 조각 아님
+        var e = { id: a + '-' + b, a: a, b: b, ra: cellRoom[a], rb: cellRoom[b], floor: n,
+          x: (c + c2) / 2 + 0.5, y: (r + r2) / 2 + 0.5 + rowOff, vertical: dd[0] === 0 };   // vertical = 벽이 세로 (가로 이웃)
+        edges.push(e); edgeById[e.id] = e;
+      });
+    }
+    var names = {}, colNames = G.colNames || [];
+    ids.forEach(function (room) {
+      var rc = cells[room][0], nm;
+      if (room === pre + 'E') nm = n === 1 ? '입구' : n + '층 입구';
+      else if (room === pre + 'B') nm = '보스·보물방';
+      else if (d.names && d.names[room.slice(pre.length)]) nm = d.names[room.slice(pre.length)];
+      else nm = (colNames[rc[1]] || LETTERS.charAt(rc[1])) + ' ' + (rc[0] - rowOff + 1);
+      names[room] = (n === 1 || room === pre + 'E') ? nm : n + '층 ' + nm;
     });
-    // 열린 층끼리 계단으로 잇는다: 위층 맨 아래 -> 아래층 입구
-    for (var k = 1; k < open; k++) { exits[parts[k - 1].bottom] = [parts[k].entry]; names[parts[k - 1].bottom] = '계단 (' + (k + 1) + '층으로)'; }
-    var goal = parts[open - 1].bottom, floorOfZ = {};
-    parts.forEach(function (p) { p.ids.forEach(function (z) { floorOfZ[z] = p.n; }); });
-    var f1 = parts[0];
-    return { id: boardId, name: f1.name, desc: f1.desc, MAP: f1.MAP, NAMES: names, EXITS: exits, CENTER: center, ENTRY: f1.ENTRY,
-      midDoors: !!BOARD_DATA[boardId].midDoors, CELLS: cells, ALL: keys.concat(['Y']), ORDER: orderOf(keys, exits, goal),
-      floors: floors, open: open, parts: parts, goal: goal, floorOfZ: floorOfZ };
+    var fixed = {};
+    Object.keys(d.fixed || {}).forEach(function (rid) { if (cells[pre + rid]) fixed[pre + rid] = d.fixed[rid]; });
+    var doors = (d.doors || []).map(function (id) { var p = id.split('-'); return pre + p[0] + '-' + pre + p[1]; }).filter(function (id) { return !!edgeById[id]; });
+    return { n: n, board: GB[boardId] ? boardId : DEFAULT_BOARD, name: d.name, desc: d.desc, MAP: map, rowOff: rowOff, rows: ROWS, pre: pre,
+      entry: pre + 'E', bottom: pre + 'B', ids: ids, cells: cells, roomCells: roomCells, cellRoom: cellRoom, cellRC: cellRC, idx: idx,
+      edges: edges, edgeById: edgeById, names: names, fixed: fixed, doors: doors };
   }
-  var cur = makeLayout(DEFAULT_BOARD, 1, 1);
+  function boardList(boards, floors) {
+    var list = typeof boards === 'string' ? [boards] : Array.isArray(boards) ? boards : [];
+    var out = [];
+    for (var n = 1; n <= floors; n++) { var b = list[n - 1]; out.push(hasBoard(b) ? b : hasBoard(list[0]) ? list[0] : DEFAULT_BOARD); }
+    return out;
+  }
+  // 현장 배치: 층별 판 + 층 수 + 열린 층 수 + 문 (없거나 깨진 층은 판의 처음 문). 결과는 cur
+  function makeLayout(boards, floors, open, doors) {
+    floors = Math.max(1, floors | 0 || 1); open = Math.max(1, Math.min(floors, open | 0 || 1));
+    var bl = boardList(boards, floors), parts = [], rowOff = 0;
+    for (var n = 1; n <= floors; n++) { var p = floorPart(n, bl[n - 1], rowOff); parts.push(p); rowOff += p.rows + FLOOR_GAP; }
+    var L = { boards: bl, floors: floors, open: open, parts: parts, CELLS: {}, NAMES: { Y: '야외' }, floorOfZ: {}, idx: {}, edgeById: {}, cellRC: {}, roomCells: {} };
+    parts.forEach(function (p) {
+      p.ids.forEach(function (z) { L.CELLS[z] = p.cells[z]; L.floorOfZ[z] = p.n; L.idx[z] = p.idx[z]; L.roomCells[z] = p.roomCells[z]; L.NAMES[z] = p.names[z]; });
+      Object.keys(p.edgeById).forEach(function (id) { L.edgeById[id] = p.edgeById[id]; });
+      Object.keys(p.cellRC).forEach(function (id) { L.cellRC[id] = p.cellRC[id]; });
+    });
+    for (var k = 1; k < open; k++) L.NAMES[parts[k - 1].bottom] = '계단 (' + (k + 1) + '층으로)';
+    L.goal = parts[open - 1].bottom;
+    L.doorsBy = {};
+    var given = byFloor(doors, L);
+    parts.forEach(function (p) { L.doorsBy[p.n] = given[p.n] && checkFloor(L, p.n, given[p.n]).ok ? given[p.n].slice() : p.doors.slice(); });
+    L.doors = flatOf(L.doorsBy);
+    L.graph = graphOf(L, L.doors);
+    L.ORDER = orderOf(L);
+    L.EXITS = {};
+    L.ORDER.concat([L.goal]).forEach(function (z) { L.EXITS[z] = (L.graph[z] || []).slice(); });
+    return L;
+  }
+  // 문 목록 -> { 층: [id] }. 배열이면 벽 조각의 층으로 나눔, 객체면 그대로 (없는 층은 빠짐)
+  function byFloor(doors, L) {
+    var o = {};
+    if (Array.isArray(doors)) doors.forEach(function (id) { var e = L.edgeById[id]; if (e) (o[e.floor] = o[e.floor] || []).push(id); });
+    else if (doors && typeof doors === 'object') Object.keys(doors).forEach(function (n) { if (Array.isArray(doors[n])) o[n | 0] = doors[n].slice(); });
+    return o;
+  }
+  function flatOf(by) { var out = []; Object.keys(by).sort().forEach(function (n) { out = out.concat(by[n]); }); return out; }
+  function flatDoors(doors) { return doors === undefined || doors === null ? cur.doors : Array.isArray(doors) ? doors : flatOf(byFloor(doors, cur)); }
+  // 문 그래프 { 방: [이웃 방] } (벽 조각 순서 = 칸 순서라 결정적). 계단은 넣지 않음 (층마다 따로)
+  function graphOf(L, doors) {
+    var g = {}, open = {};
+    doors.forEach(function (id) { open[id] = true; });
+    Object.keys(L.CELLS).forEach(function (z) { g[z] = []; });
+    L.parts.forEach(function (p) {
+      p.edges.forEach(function (e) {
+        if (!open[e.id]) return;
+        if (g[e.ra].indexOf(e.rb) < 0) g[e.ra].push(e.rb);
+        if (g[e.rb].indexOf(e.ra) < 0) g[e.rb].push(e.ra);
+      });
+    });
+    return g;
+  }
+  // 방 순서: 1층 입구부터 문(+ 열린 계단)으로 너비 우선. 못 닿는 방은 칸 순서로 뒤에. 보물방(goal)은 뺌
+  function orderOf(L) {
+    var seen = { E: true }, q = ['E'], out = [];
+    for (var i = 0; i < q.length; i++) {
+      var z = q[i];
+      var next = (L.graph[z] || []).slice();
+      var p = L.parts[L.floorOfZ[z] - 1];
+      if (p && z === p.bottom && p.n < L.open) next.push(L.parts[p.n].entry);
+      next.forEach(function (b) { if (!seen[b]) { seen[b] = true; q.push(b); } });
+    }
+    q.forEach(function (z) { if (z !== L.goal) out.push(z); });
+    L.parts.forEach(function (p) { p.ids.forEach(function (z) { if (!seen[z] && z !== L.goal) out.push(z); }); });
+    return out;
+  }
+  var cur = makeLayout([DEFAULT_BOARD], 1, 1, null);
 
-  function hasBoard(id) { return BOARD_IDS.indexOf(id) >= 0; }
+  // ---------- 문 검사 ----------
+  // n층 문 목록 검사: { ok, code('tokens' 개수 · 'target' 없는 벽·겹침 · 'disconnected' 끊긴 방), why, isolated[방] }
+  function checkFloor(L, n, list) {
+    var p = L.parts[n - 1];
+    if (!p) return { ok: false, code: 'target', why: '없는 층이에요', isolated: [] };
+    if (!Array.isArray(list)) return { ok: false, code: 'tokens', why: '안쪽 벽에 문 ' + p.doors.length + '개를 유지해야 해요', isolated: [] };
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      if (!p.edgeById[list[i]] || seen[list[i]]) return { ok: false, code: 'target', why: '문이 없는 다른 안쪽 벽에 놓아 주세요', isolated: [] };
+      seen[list[i]] = true;
+    }
+    if (list.length !== p.doors.length) return { ok: false, code: 'tokens', why: '안쪽 벽에 문 ' + p.doors.length + '개를 유지해야 해요', isolated: [] };
+    var g = graphOf({ CELLS: p.cells, parts: [p] }, list), reach = { }, q = [p.entry];
+    reach[p.entry] = true;
+    for (i = 0; i < q.length; i++) g[q[i]].forEach(function (b) { if (!reach[b]) { reach[b] = true; q.push(b); } });
+    var iso = p.ids.filter(function (z) { return !reach[z]; });
+    if (iso.length) return { ok: false, code: 'disconnected', why: '(' + L.NAMES[iso[0]] + ') 방이 다른 방과 끊겨요', isolated: iso };
+    return { ok: true, code: '', why: '', isolated: [] };
+  }
+  function validateDoors(list, n) { return checkFloor(cur, n | 0 || 1, list); }
+  // 처음 문 배치 { 층: [id] } (모든 층) 또는 n층 목록
+  function initialDoors(n) {
+    if (n) { var p = cur.parts[n - 1]; return p ? p.doors.slice() : []; }
+    var o = {}; cur.parts.forEach(function (p) { o[p.n] = p.doors.slice(); }); return o;
+  }
+  function doorCount(n) { var p = cur.parts[(n | 0 || 1) - 1]; return p ? p.doors.length : 0; }
+  function doorsNow() { var o = {}; Object.keys(cur.doorsBy).forEach(function (n) { o[n] = cur.doorsBy[n].slice(); }); return o; }
 
+  // ---------- 탐험 (실험 lab.js exploreRoute·chooseCandidate·mappedReturn·seededRandom) ----------
+  function seededRandom(seed) {
+    var state = seed >>> 0;
+    state = Math.imul(state ^ (state >>> 16), 0x21f0aaad);
+    state = Math.imul(state ^ (state >>> 15), 0x735a2d97);
+    state = (state ^ (state >>> 15)) >>> 0;
+    return function () { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
+  }
+  // 열린 문 표 { 'ra|rb': 벽 조각 id } (같은 두 방 사이에 문이 여럿이면 칸 순서로 첫 문)
+  function doorPairs(L, doors) {
+    var open = {}, m = {};
+    doors.forEach(function (id) { open[id] = true; });
+    L.parts.forEach(function (p) { p.edges.forEach(function (e) {
+      if (!open[e.id]) return;
+      if (!m[e.ra + '|' + e.rb]) m[e.ra + '|' + e.rb] = e.id;
+      if (!m[e.rb + '|' + e.ra]) m[e.rb + '|' + e.ra] = e.id;
+    }); });
+    return m;
+  }
+  // from -> to 방향 (그 문의 칸 기준): 'left' · 'right' · 'up' · 'down'
+  function dirOf(L, pairs, from, to) {
+    var e = L.edgeById[pairs[from + '|' + to]];
+    if (!e) return '';
+    var fwd = e.ra === from, a = L.cellRC[fwd ? e.a : e.b], b = L.cellRC[fwd ? e.b : e.a];
+    return b[1] < a[1] ? 'left' : b[1] > a[1] ? 'right' : b[0] < a[0] ? 'up' : 'down';
+  }
+  function chooseCandidate(L, pairs, from, candidates, habit, zones, random) {
+    // 후보 순서는 문 배열 순서와 무관하게 고정 (방 번호 순). 미끼가 여럿이면 같은 확률
+    var bait = candidates.filter(function (z) { return FAC[zones[z]] && FAC[zones[z]].kind === 'lure'; });
+    var pool = (bait.length ? bait : candidates).slice().sort(function (a, b) { return L.idx[a] - L.idx[b]; });
+    if (pool.length < 2) return pool[0];
+    if (!bait.length) {
+      var want = HABIT_DIRS[habit], pref = pool.filter(function (z) { return dirOf(L, pairs, from, z) === want; })[0];
+      if (pref !== undefined) {
+        if (random() < G.habit) return pref;
+        pool.splice(pool.indexOf(pref), 1);
+      }
+    }
+    return pool[Math.floor(random() * pool.length)];
+  }
+  function mappedReturn(graph, current, visited, lastVisit) {
+    // 너비 우선 탐색은 이미 아는 방만 통과. 같은 거리의 목적지는 최근 방문 우선
+    var parent = {}; parent[current] = null;
+    var layer = [current];
+    while (layer.length) {
+      var frontiers = layer.filter(function (z) { return graph[z].some(function (to) { return !visited[to]; }); });
+      if (frontiers.length) {
+        var target = frontiers.sort(function (a, b) { return lastVisit[b] - lastVisit[a]; })[0], path = [];
+        for (var z = target; z !== current; z = parent[z]) path.push(z);
+        return path.reverse();
+      }
+      var next = [];
+      layer.forEach(function (z) { graph[z].forEach(function (to) { if (visited[to] && !(to in parent)) { parent[to] = z; next.push(to); } }); });
+      layer = next;
+    }
+    return [];
+  }
+  // 한 층 탐험: start -> goal. steps에 { from, to, edge, backtrack, floor } 를 붙임. st = { fork }
+  function exploreFloor(L, graph, pairs, p, zones, squad, seed, st, steps) {
+    var habit = squad % 3, visited = {}, lastVisit = {}, rooms = [p.entry], guard = 0;
+    visited[p.entry] = true; lastVisit[p.entry] = steps.length;
+    function append(to, back) {
+      var from = rooms[rooms.length - 1];
+      steps.push({ from: from, to: to, edge: pairs[from + '|' + to], backtrack: back, floor: p.n });
+      rooms.push(to); visited[to] = true; lastVisit[to] = steps.length;
+    }
+    while (rooms[rooms.length - 1] !== p.bottom && guard++ < 2000) {
+      var now = rooms[rooms.length - 1];
+      var choices = graph[now].filter(function (to) { return !visited[to]; });
+      if (choices.length) {
+        // 분대·방·갈림 순서별 난수: 미리보기나 다른 분대의 계산은 영향을 주지 않는다
+        var random = seededRandom((seed ^ Math.imul(squad + 1, 0x9e3779b9) ^ Math.imul(L.idx[now] + 1, 0x85ebca6b) ^ Math.imul(st.fork, 0xc2b2ae35)) >>> 0);
+        if (choices.length > 1) st.fork++;
+        append(chooseCandidate(L, pairs, now, choices, habit, zones, random), false);
+      } else {
+        var path = mappedReturn(graph, now, visited, lastVisit);
+        if (!path.length) break;
+        path.forEach(function (to) { append(to, true); });
+      }
+    }
+    return rooms[rooms.length - 1] === p.bottom;
+  }
+  var routeCache = {}, routeCacheN = 0;
+  function baitKey(zones) {
+    var out = [];
+    Object.keys(zones || {}).forEach(function (z) { if (FAC[zones[z]] && FAC[zones[z]].kind === 'lure') out.push(z); });
+    return out.sort().join(',');
+  }
+  // 분대 하나의 탐험 경로 (열린 층 모두, 층 사이는 계단 걸음 { stairs: true }).
+  //  -> { squad, habit, rooms[방], steps[{ from, to, edge, backtrack, floor, stairs? }], reached, passes{ 층: 문 통과 수 } }
+  function exploreRoute(doors, zones, squad, seed) {
+    var flat = flatDoors(doors).slice().sort();
+    squad = squad | 0; seed = seed >>> 0;
+    var key = flat.join(',') + '#' + baitKey(zones) + '#' + cur.boards.join(',') + cur.open + '#' + seed + '#' + squad;
+    if (routeCache[key]) return JSON.parse(routeCache[key]);
+    var graph = graphOf(cur, flat), pairs = doorPairs(cur, flat), steps = [], st = { fork: 0 }, reached = true, passes = {};
+    for (var n = 1; n <= cur.open; n++) {
+      var p = cur.parts[n - 1], before = steps.length;
+      if (n > 1) steps.push({ from: cur.parts[n - 2].bottom, to: p.entry, edge: null, backtrack: false, floor: n, stairs: true });
+      reached = exploreFloor(cur, graph, pairs, p, zones || {}, squad, seed, st, steps);
+      passes[n] = steps.length - before - (n > 1 ? 1 : 0);
+      if (!reached) break;
+    }
+    var rooms = ['E'].concat(steps.map(function (s) { return s.to; }));
+    var r = { squad: squad, habit: squad % 3, rooms: rooms, steps: steps, reached: reached && rooms[rooms.length - 1] === cur.goal, passes: passes };
+    if (routeCacheN++ > 4000) { routeCache = {}; routeCacheN = 0; }
+    routeCache[key] = JSON.stringify(r);
+    return r;
+  }
+  // 미리보기 경로 12개(고정 시드 × 습관 3)에서 센 값. -> { n(경로 수), ratio{방: 지난 경로 비율}, trap{방: 경로마다 min(들어간 횟수, trapMax) 평균},
+  //  passes[습관별 한 층 최대 문 통과 수], maxPass, worst(가장 많이 지난 습관 번호), flow{ 'a>b': 지난 횟수 평균 } }. 층 입구 기준 (모든 경로가 층 입구를 지남)
+  var infoCache = {}, infoCacheN = 0;
+  function passInfo(zones, doors) {
+    var flat = flatDoors(doors).slice().sort();
+    var key = flat.join(',') + '#' + baitKey(zones) + '#' + cur.boards.join(',') + cur.open;
+    if (infoCache[key]) return infoCache[key];
+    var seeds = G.previewSeeds || [1, 2, 3, 4], seen = {}, trap = {}, flow = {}, passes = [0, 0, 0], n = 0;
+    seeds.forEach(function (sd) {
+      for (var h = 0; h < 3; h++) {
+        var r = exploreRoute(flat, zones, h, sd), here = {}, cnt = {};
+        n++;
+        r.rooms.forEach(function (z) { here[z] = true; });
+        r.steps.forEach(function (s) { cnt[s.to] = (cnt[s.to] || 0) + 1; if (!s.stairs) flow[s.from + '>' + s.to] = (flow[s.from + '>' + s.to] || 0) + 1; });
+        Object.keys(here).forEach(function (z) { seen[z] = (seen[z] || 0) + 1; });
+        Object.keys(cnt).forEach(function (z) { trap[z] = (trap[z] || 0) + Math.min(cnt[z], G.trapMax || 2); });
+        Object.keys(r.passes).forEach(function (f) { passes[h] = Math.max(passes[h], r.passes[f]); });
+      }
+    });
+    var ratio = {}, tr = {}, fl = {};
+    Object.keys(seen).forEach(function (z) { ratio[z] = seen[z] / n; });
+    Object.keys(trap).forEach(function (z) { tr[z] = trap[z] / n; });
+    Object.keys(flow).forEach(function (k) { fl[k] = flow[k] / n; });
+    var maxPass = Math.max.apply(null, passes), worst = passes.indexOf(maxPass);
+    var out = { n: n, ratio: ratio, trap: tr, passes: passes, maxPass: maxPass, worst: worst, flow: fl };
+    if (infoCacheN++ > 500) { infoCache = {}; infoCacheN = 0; }
+    infoCache[key] = out;
+    return out;
+  }
+
+  // ---------- 방 정보 ----------
   function sizeOf(z) { return z === 'Y' ? 1 : cur.CELLS[z] ? cur.CELLS[z].length : 0; }
   function partOf(z) { var n = cur.floorOfZ[z]; return n ? cur.parts[n - 1] : null; }
-  // 구역 종류: yard 야외 · entry 층 입구(1층 E, 2층 2E) · boss 층 맨 아래(보물방 또는 계단) · room 방
+  // 방 종류: yard 야외 · entry 층 입구(1층 E, 2층 2E) · boss 층 맨 아래(보물방 또는 계단) · room 방
   function zoneType(z) {
     if (z === 'Y') return 'yard';
     var p = partOf(z);
     if (p) { if (z === p.entry) return 'entry'; if (z === p.bottom) return 'boss'; return 'room'; }
     return z === 'E' ? 'entry' : z === 'B' ? 'boss' : 'room';
   }
-  // 몇 층 구역인가 (야외는 1층으로 침). 없는 구역이면 0
   function floorOf(z) { return z === 'Y' ? 1 : cur.floorOfZ[z] || 0; }
   function floorOpen(n) { return n >= 1 && n <= cur.open; }
   function isStairs(z) { var p = partOf(z); return !!p && z === p.bottom && p.n < cur.open; }
-  // 입구 시설은 1층 입구만, 그 판에 그 출구가 있을 때만 (분기는 늘). 데모는 DEMO_FACILITIES에 있는 시설만 (없으면 제한 없음)
+  // 지을 수 있는 시설 (데모는 DEMO_FACILITIES에 있는 것만). 입구 대기·굽은길은 문 토큰 판에서 없음 (turn 시설은 데이터가 허락해도 안 나옴)
   function facFor(z) {
-    var t = zoneType(z), allow = BD.DEMO_FACILITIES && BD.DEMO_FACILITIES[t], first = z === 'E';
-    return Object.keys(FAC).filter(function (k) {
-      return FAC[k].for === t && (!FAC[k].turn || (first && cur.ENTRY[FAC[k].turn])) && (!allow || allow.indexOf(k) >= 0);
-    });
+    var t = zoneType(z), allow = BD.DEMO_FACILITIES && BD.DEMO_FACILITIES[t];
+    return Object.keys(FAC).filter(function (k) { return FAC[k].for === t && !FAC[k].turn && (!allow || allow.indexOf(k) >= 0); });
   }
   function costOf(k, z) { var f = FAC[k]; return f.perCell !== undefined ? f.perCell * sizeOf(z) : f.cost; }
   function valueOf(k, z) { var f = FAC[k]; return f.valuePerCell !== undefined ? f.valuePerCell * sizeOf(z) : f.value; }
-  function slotsOf(k, z) { return FAC[k] && FAC[k].kind === 'den' ? (BD.DEN_SLOTS_PER_CELL || 2) * sizeOf(z) : 0; } // 칸당 부대 자리
+  function slotsOf(k, z) { return FAC[k] && FAC[k].kind === 'den' ? (BD.DEN_SLOTS_PER_CELL || 2) * sizeOf(z) : 0; }
   function trapDmgOf(z) { return TRAP_PER_CELL * sizeOf(z); }
   // (C1 화면 호환용으로 남김. D1 던전 가치에는 안 들어감) 몬스터 한 마리 점수 (임시 식)
   function monValue(m) { return Math.round(((m.hp || 0) + (m.atk || 0) * 4) / 6); }
 
-  // 처음 현장: 층 입구는 분기, 야외는 숲, 층 맨 아래는 보스·보물방(계단), 나머지는 빈 구역 (모두 무료). 지금 배치의 모든 층 (잠긴 층 포함)
-  // fixed = { 구역 id: FIXED_ZONES id } 고정 구역 (있으면 그 구역은 고정 구역 시설). 판에 없는 구역·없는 고정 구역은 무시
+  // 처음 현장: 층 입구 = 입구(split), 야외 = 숲, 층 맨 아래 = 보스·보물방(계단), 나머지 = 빈 방. fixed = { 방 id: FIXED_ZONES id }
   function defaultZones(fixed) {
     var L = { Y: 'forest' };
     Object.keys(cur.CELLS).forEach(function (z) { L[z] = zoneType(z) === 'entry' ? 'split' : zoneType(z) === 'boss' ? 'boss' : 'empty'; });
@@ -233,30 +367,38 @@
     });
     return L;
   }
+  // 층별 판들의 고정 구역 { 방 id: FIXED_ZONES id } (2층은 방 id 앞에 '2')
+  function boardFixed(boards, floors) {
+    var bl = boardList(boards, floors || (Array.isArray(boards) ? boards.length : 1)), o = {};
+    bl.forEach(function (b, i) {
+      var pre = i ? String(i + 1) : '', d = GB[b];
+      Object.keys(d.fixed || {}).forEach(function (rid) { o[pre + rid] = d.fixed[rid]; });
+    });
+    return o;
+  }
 
-  // 튜토리얼 첫 부지: 처음 부지와 같고 입구만 entry 시설로 (무료로 깔아 둠, 건설 횟수 아님). progress.js가 fork3 판을 끼운 뒤 부른다
-  function tutorialZones(entry) { var L = defaultZones(); L.E = entry; return L; }
-
-  // 반드시 지나는 구역: 그 구역을 막으면 입구(E)에서 보물방(goal)까지 갈 길이 없어지는 구역 (판 모양만 봄, 시설·부대·미끼와 상관없음).
-  //  입구·보물방은 뺀다. 길 순서(ORDER). 외길 판 = 큰길 R1~R5, 세 갈래 판 = 없음(빈 배열). 튜토리얼 강조(progress.js tutorialPath)가 쓴다
-  function mustPass() {
-    function reach(block) {
-      var seen = { E: true }, q = ['E'];
-      while (q.length) {
-        var z = q.shift();
-        if (z === cur.goal) return true;
-        (cur.EXITS[z] || []).forEach(function (b) { if (b !== block && !seen[b]) { seen[b] = true; q.push(b); } });
+  // 반드시 지나는 방: 그 방을 막으면 층 입구에서 그 층 맨 아래(보물방·계단)까지 길이 없어지는 방 (지금 문 배치, 열린 층). 입구·맨 아래는 뺌. 방 순서(ORDER)
+  function mustPass(doors) {
+    var flat = flatDoors(doors), g = graphOf(cur, flat), out = [];
+    function reach(p, block) {
+      var seen = {}, q = [p.entry]; seen[p.entry] = true;
+      for (var i = 0; i < q.length; i++) {
+        if (q[i] === p.bottom) return true;
+        g[q[i]].forEach(function (b) { if (b !== block && !seen[b]) { seen[b] = true; q.push(b); } });
       }
       return false;
     }
-    return cur.ORDER.filter(function (z) { return z !== 'E' && z !== cur.goal && !reach(z); });
+    cur.ORDER.forEach(function (z) {
+      var p = partOf(z);
+      if (!p || p.n > cur.open || z === p.entry || z === p.bottom) return;
+      if (!reach(p, z)) out.push(z);
+    });
+    return out;
   }
+  // 보물방과 문으로 이어진 방들 (위기 '보물방 근접'. 문을 옮기면 바뀜)
+  function bossFront(doors) { var g = graphOf(cur, flatDoors(doors)); return (g[cur.goal] || []).slice(); }
 
-  // 보물방 바로 앞 구역들 (보물방 = 가장 깊이 열린 층의 맨 아래)
-  function bossFront() { return Object.keys(cur.EXITS).filter(function (z) { return cur.EXITS[z].indexOf(cur.goal) >= 0; }); }
-
-  // 요약: 던전 가치 (D1: 지어 둔 시설 점수 합만, 몬스터 제외), 함정·대기실·미끼·고정 구역 수, 대기실에 든 부대 수(monsters).
-  // unitById(id)가 있으면 있는 부대만 센다 (없으면 id 개수)
+  // 요약: 던전 가치 (지어 둔 시설 점수 합만, 몬스터 제외), 함정·대기실·미끼·고정 구역 수, 대기실에 든 부대 수(monsters)
   function summary(zones, units, unitById) {
     var s = { value: 0, trap: 0, den: 0, lure: 0, fixed: 0, monsters: 0 };
     units = units || {};
@@ -272,148 +414,123 @@
     });
     return s;
   }
-  // ---------- 던전 전투력 B안 재료 (BATTLE_DATA.POWER) ----------
-  // 통과 비율: 침입자 n명(기본 POWER.flowN)을 길 계산으로 보냈을 때 구역마다 오는 비율 { 구역: 0~1 }.
-  //  층마다 그 층 입구 기준 (윗층에서 몇 명이 쓰러지든 아래층 비율은 따로. 길 계산은 처치가 없어서 층 입구 = 전원)
-  function passRatios(zones, units, n) {
-    n = n || (BD.POWER && BD.POWER.flowN) || 600;
-    var at = forecast(zones, units || {}, n).at, w = {};
-    Object.keys(at).forEach(function (z) {
-      var p = partOf(z), base = p ? at[p.entry] || 0 : n;
-      w[z] = base ? at[z] / base : 0;
-    });
-    return w;
-  }
-  // 함정 점수 T (통과 비율 곱하기 전): 1회 피해 × 발동 확률 × 대상 수 × 발동 횟수 ÷ 10. boost = 함정 피해 추가 비율(연구실 등)
+  // ---------- 던전 전투력 B안 재료 ----------
+  // 통과 비율 { 방: 0~1 } = 미리보기 경로 12개 중 그 방을 지난 비율 (층 입구 기준). units는 길에 영향 없음 (보여서 피함 없음, 옛 인자 자리)
+  function passRatios(zones, units, doors) { var r = passInfo(zones, doors).ratio, o = {}; Object.keys(r).forEach(function (z) { o[z] = r[z]; }); return o; }
+  // 함정 점수 T (경로마다 들어간 횟수 곱하기 전): 1회 피해 × 발동 확률 × 대상 수 × 발동 횟수 ÷ 10. boost = 함정 피해 추가 비율(연구실 등)
   function trapScore(z, boost) {
     var P = BD.POWER || { trapTargets: 10, trapStay: 3 }, every = BD.TRAP_EVERY || 1.2;
     var fires = 1 + Math.floor(P.trapStay / every);
     return trapDmgOf(z) * (1 + (boost || 0)) * (BD.TRAP_CHANCE || 0.85) * P.trapTargets * fires / 10;
   }
-  // n층 대기실 구역 목록 (길 순서). zones = 구역별 시설
   function densOf(zones, n) {
     return cur.ORDER.concat(Object.keys(cur.CELLS)).filter(function (z, i, a) {
       return a.indexOf(z) === i && floorOf(z) === n && FAC[zones[z]] && FAC[zones[z]].kind === 'den';
     });
   }
-  // n층 대기실 자리 합
   function denSlots(zones, n) { var s = 0; densOf(zones, n).forEach(function (z) { s += slotsOf(zones[z], z); }); return s; }
-
-  // 갈림길에서 어디로 갈까: 미끼 쪽 +2, 몬스터가 든 대기실 쪽 -1 (보여서 피함), 함정·빈 구역 0. 점수가 가장 높은 쪽들로 번갈아 나뉨
-  function exitScore(zones, units, z) {
-    var f = FAC[zones[z]];
-    if (!f || zoneType(z) !== 'room') return 0;
-    if (f.kind === 'lure') return 2;
-    if (f.kind === 'den' && (units[z] || []).length) return -1;
-    return 0;
-  }
-  function chooseExits(zones, units, from) {
-    var ex = cur.EXITS[from] || [];
-    if (from === 'E') {
-      var f = FAC[zones.E], to = f && f.turn ? cur.ENTRY[f.turn] : null;
-      if (to) return [to];
-    }
-    var sc = ex.map(function (z) { return exitScore(zones, units, z); }), best = Math.max.apply(null, sc);
-    return ex.filter(function (z, i) { return sc[i] === best; });
-  }
-  // 길만 계산 (전투 없이): 침입자 n명이 각 구역에 몇 명 오고(at), 각 문을 몇 명 지나가는지(flow, "TL>LB" 형식). 열린 층 모두
-  function forecast(zones, units, n) {
-    var at = { E: n }, flow = {};
-    cur.ORDER.forEach(function (z) {
-      var k = at[z] || 0; if (!k) return;
-      var to = chooseExits(zones, units, z);
-      if (!to.length) return;
-      for (var i = 0; i < k; i++) { var t = to[i % to.length]; at[t] = (at[t] || 0) + 1; flow[z + '>' + t] = (flow[z + '>' + t] || 0) + 1; }
-    });
+  // 길만 계산 (전투 없이): 침입자 n명이 오면 방마다 몇 명(at), 문을 어느 쪽으로 몇 명(flow 'a>b'). 미리보기 경로 12개의 평균 × n
+  function forecast(zones, units, n, doors) {
+    n = n || PREVIEW_INVADERS;
+    var inf = passInfo(zones, doors), at = {}, flow = {};
+    Object.keys(inf.ratio).forEach(function (z) { at[z] = Math.round(inf.ratio[z] * n); });
+    Object.keys(inf.flow).forEach(function (k) { flow[k] = Math.round(inf.flow[k] * n); });
     return { at: at, flow: flow };
   }
 
-  // 문(구역 사이 길)과 맞닿은 두 칸 (화면이 문 표시 위치를 구할 때). 층 사이(계단)는 맞닿지 않아 null
-  // 맞닿은 칸 쌍이 여럿이면: fork3는 첫 쌍(예전 그대로), midDoors 판은 가운데 쌍 (넓은 큰길에서 문이 한쪽 끝으로 쏠려 길이 지그재그가 되지 않게)
-  function sharedEdge(a, b) {
-    var A = cur.CELLS[a], Bc = cur.CELLS[b], all = [];
-    if (!A || !Bc) return null;
-    var mid = cur.midDoors || floorOf(a) > 1;
-    for (var i = 0; i < A.length; i++) {
-      var x = A[i];
-      for (var j = 0; j < Bc.length; j++) {
-        var y = Bc[j];
-        if (Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) === 1) { if (!mid) return [x, y]; all.push([x, y]); }
-      }
-    }
-    return all.length ? all[(all.length - 1) >> 1] : null;
-  }
-  // 문 목록 [a, b]. floor 없으면 1층 안의 문만 (예전 화면 호환: ZONES.MAP = 1층), floor = 'all'이면 열린 층 전부(계단 포함), 숫자면 그 층
-  function flowPairs(floor) {
-    var p = [], want = floor === undefined ? 1 : floor;
-    Object.keys(cur.EXITS).forEach(function (a) {
-      cur.EXITS[a].forEach(function (b) {
-        if (want === 'all' || (floorOf(a) === want && floorOf(b) === want)) p.push([a, b]);
-      });
-    });
-    return p;
-  }
-
-  // 전투 화면용 좌표 (칸 단위: x = 열 + 0.5, y = 행 + 0.5. 야외는 y < 0. 2층은 1층 아래 FLOOR_GAP줄 띄우고 이어짐)
-  function anchorOf(z) {
+  // ---------- 좌표 (칸 단위: x = 열 + 0.5, y = 행 + 0.5. 야외는 y < 0. 2층은 1층 아래 FLOOR_GAP줄 띄우고 이어짐) ----------
+  function roomCenter(z) {
     if (z === 'Y') return { x: 2.5, y: -0.3 };
     var cs = cur.CELLS[z], x = 0, y = 0;
+    if (!cs) return { x: 2.5, y: 0 };
     cs.forEach(function (c) { x += c[1] + 0.5; y += c[0] + 0.5; });
     return { x: x / cs.length, y: y / cs.length };
   }
-  function doorOf(a, b) {
-    if (a === 'Y') return { x: 2.5, y: 0 };
-    var e = sharedEdge(a, b);
-    if (!e) { var p = anchorOf(a), q = anchorOf(b); return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }; }   // 계단: 두 구역 가운데
-    return { x: (e[0][1] + e[1][1]) / 2 + 0.5, y: (e[0][0] + e[1][0]) / 2 + 0.5 };
+  function doorPoint(edgeId) { var e = cur.edgeById[edgeId]; return e ? { x: e.x, y: e.y } : null; }
+  // 층 입구 위쪽 문 (야외 -> 1층 입구, 계단 -> 아래층 입구)
+  function entryPoint(n) { var p = cur.parts[(n || 1) - 1], c = roomCenter(p.entry); return { x: c.x, y: c.y - 0.5 }; }
+  // 두 방 사이 열린 문 좌표 (옛 이름). 야외 -> 입구 = 입구 위, 계단 = 아래층 입구 위, 문이 없으면 두 방 가운데
+  function doorOf(a, b, doors) {
+    if (a === 'Y') return entryPoint(1);
+    var pa = partOf(a), pb = partOf(b);
+    if (pa && pb && pa.n !== pb.n) return entryPoint(pb.n);
+    var id = doorPairs(cur, flatDoors(doors))[a + '|' + b];
+    if (id) return doorPoint(id);
+    var p = roomCenter(a), q = roomCenter(b);
+    return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
   }
-  // 분대 하나의 길: 1층 입구부터 보물방(가장 깊이 열린 층 맨 아래)까지 구역 목록. turn = 구역마다 몇 번째로 지나가는 분대인가 (갈림길에서 번갈아 나뉨)
-  function routeOf(zones, units, turn) {
-    var path = ['E'], z = 'E', guard = 0;
-    while (z !== cur.goal && guard++ < 200) {
-      var to = chooseExits(zones, units, z), k = turn[z] || 0;
-      if (!to.length) break;
-      turn[z] = k + 1;
-      z = to[k % to.length];
-      path.push(z);
+  // 두 방 사이 문의 두 칸 [[행, 열], [행, 열]] (옛 화면 호환: 문 표시 위치). 문이 없으면 맞닿은 첫 벽, 안 맞닿으면 null
+  function sharedEdge(a, b, doors) {
+    var id = doorPairs(cur, flatDoors(doors))[a + '|' + b], e = id ? cur.edgeById[id] : null;
+    if (!e) {
+      var p = partOf(a);
+      if (!p) return null;
+      e = p.edges.filter(function (x) { return (x.ra === a && x.rb === b) || (x.ra === b && x.rb === a); })[0];
     }
-    return path;
+    if (!e) return null;
+    var fwd = e.ra === a;
+    return [cur.cellRC[fwd ? e.a : e.b].slice(), cur.cellRC[fwd ? e.b : e.a].slice()];
+  }
+  // 문 목록 [방 a, 방 b] (옛 화면 호환). floor 없으면 1층, 'all'이면 열린 층 전부 + 계단, 숫자면 그 층
+  function flowPairs(floor, doors) {
+    var want = floor === undefined ? 1 : floor, flat = flatDoors(doors), out = [];
+    flat.forEach(function (id) {
+      var e = cur.edgeById[id];
+      if (!e) return;
+      if (want === 'all' ? e.floor <= cur.open : e.floor === want) out.push([e.ra, e.rb]);
+    });
+    if (want === 'all') for (var k = 1; k < cur.open; k++) out.push([cur.parts[k - 1].bottom, cur.parts[k].entry]);
+    return out;
   }
 
-  // ---------- 판 바꿔 끼우기 ----------
+  // ---------- 판 그리기용 (5절) ----------
+  // n층: { n, cols, rows, rowOff, cells[행][열] = 방 id, rooms{ 방 id: [칸 id] }, entry, goal(그 층 맨 아래), stairs(맨 아래가 계단인가), open }
+  function grid(n) {
+    var p = cur.parts[(n | 0 || 1) - 1];
+    if (!p) return null;
+    var rooms = {}; p.ids.forEach(function (z) { rooms[z] = p.roomCells[z].slice(); });
+    return { n: p.n, cols: COLS, rows: ROWS, rowOff: p.rowOff, cells: p.MAP.map(function (r) { return r.slice(); }), rooms: rooms,
+      entry: p.entry, goal: p.bottom, stairs: p.n < cur.open, open: p.n <= cur.open, board: p.board };
+  }
+  // n층 벽 조각 [{ id, a, b(칸), ra, rb(방), x, y(전투 좌표 = 벽 가운데), vertical(벽이 세로) }] (같은 방 안쪽 벽 제외)
+  function edges(n) {
+    var p = cur.parts[(n | 0 || 1) - 1];
+    return p ? p.edges.map(function (e) { return { id: e.id, a: e.a, b: e.b, ra: e.ra, rb: e.rb, x: e.x, y: e.y, vertical: e.vertical }; }) : [];
+  }
+
   var api = window.ZONES = {
-    FAC: FAC, PREVIEW_INVADERS: PREVIEW_INVADERS,
-    BOARDS: BOARD_IDS.map(function (id) { return { id: id, name: BOARD_DATA[id].name, desc: BOARD_DATA[id].desc }; }),
+    FAC: FAC, PREVIEW_INVADERS: PREVIEW_INVADERS, GRID: G,
+    BOARDS: BOARD_IDS.map(function (id) { return { id: id, name: GB[id].name, desc: GB[id].desc }; }),
     DEFAULT_BOARD: DEFAULT_BOARD,
     sizeOf: sizeOf, zoneType: zoneType, facFor: facFor, costOf: costOf, valueOf: valueOf, slotsOf: slotsOf, trapDmgOf: trapDmgOf,
-    fixedFac: fixedFac, isFixedFac: isFixedFac, passRatios: passRatios, trapScore: trapScore,
-    monValue: monValue, defaultZones: defaultZones, tutorialZones: tutorialZones, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
-    chooseExits: chooseExits, anchorOf: anchorOf, doorOf: doorOf, routeOf: routeOf, bossFront: bossFront, mustPass: mustPass,
-    hasBoard: hasBoard, useBoard: useBoard, useSite: useSite, boardInfo: boardInfo, boardId: function () { return cur.id; },
-    // 층 (2차)
+    fixedFac: fixedFac, isFixedFac: isFixedFac, passRatios: passRatios, passInfo: passInfo, trapScore: trapScore,
+    monValue: monValue, defaultZones: defaultZones, boardFixed: boardFixed, summary: summary, forecast: forecast, sharedEdge: sharedEdge, flowPairs: flowPairs,
+    anchorOf: roomCenter, roomCenter: roomCenter, doorOf: doorOf, doorPoint: doorPoint, entryPoint: entryPoint, bossFront: bossFront, mustPass: mustPass,
+    hasBoard: hasBoard, useBoard: useBoard, useSite: useSite, boardInfo: boardInfo, boardId: function () { return cur.boards[0]; }, boards: function () { return cur.boards.slice(); },
+    // 문 토큰 (3차)
+    grid: grid, edges: edges, initialDoors: initialDoors, doorCount: doorCount, doors: doorsNow, validateDoors: validateDoors,
+    exploreRoute: exploreRoute, seededRandom: seededRandom,
+    // 층
     floorOf: floorOf, floorOpen: floorOpen, isStairs: isStairs, densOf: densOf, denSlots: denSlots, floorInfo: floorInfo, floorMap: floorMap,
     stackMap: stackMap, goal: function () { return cur.goal; }
   };
-  // 지금 현장 배치를 끼운다: board = 1층 판 id, floors = 의뢰 층 수, open = 열린 층 수. ZONES.MAP 등 판 속성을 다시 붙인다.
-  //  ZONES.MAP은 예전 화면 호환으로 1층 판만. 전체 층은 floorMap(n)·stackMap(). 돌려주는 값 = 실제로 끼운 판 id
-  function useSite(boardId, floors, open) {
-    cur = makeLayout(hasBoard(boardId) ? boardId : DEFAULT_BOARD, floors, open);
-    api.board = cur.id; api.MAP = cur.MAP; api.NAMES = cur.NAMES; api.EXITS = cur.EXITS; api.CENTER = cur.CENTER; api.ENTRY = cur.ENTRY;
-    api.CELLS = cur.CELLS; api.ALL = cur.ALL; api.ORDER = cur.ORDER;
-    api.FLOORS = cur.floors; api.OPEN = cur.open; api.GOAL = cur.goal;
-    return cur.id;
+  // 지금 현장 배치를 끼운다: boards = 층별 판 id 목록(문자열 하나도 됨), floors = 층 수, open = 열린 층 수, doors = { 층: [id] } 또는 배열 (없으면 처음 문).
+  //  ZONES.MAP 등 판 속성을 다시 붙인다. 돌려주는 값 = 1층 판 id
+  function useSite(boards, floors, open, doors) {
+    cur = makeLayout(boards, floors, open, doors);
+    api.board = cur.boards[0]; api.MAP = cur.parts[0].MAP; api.NAMES = cur.NAMES; api.EXITS = cur.EXITS; api.CENTER = []; api.ENTRY = {};
+    api.CELLS = cur.CELLS; api.ALL = Object.keys(cur.CELLS).concat(['Y']); api.ORDER = cur.ORDER;
+    api.FLOORS = cur.floors; api.OPEN = cur.open; api.GOAL = cur.goal; api.DOORS = cur.doors.slice();
+    return cur.boards[0];
   }
-  // 1층짜리 배치 (예전 이름). 층 수·열린 층은 1
-  function useBoard(id) { return useSite(id, 1, 1); }
-  // n층 정보: { n, board, name, desc, open, entry, bottom(맨 아래 구역 id), stairs(맨 아래가 계단인가), ids(구역 id), rows, rowOff, MAP }
+  function useBoard(id) { return useSite([id], 1, 1, null); }
   function floorInfo(n) {
     var p = cur.parts[n - 1];
     if (!p) return null;
     return { n: p.n, board: p.board, name: p.name, desc: p.desc, open: p.n <= cur.open, entry: p.entry, bottom: p.bottom, stairs: p.n < cur.open,
-      ids: p.ids.slice(), rows: p.rows, rowOff: p.rowOff, MAP: p.MAP };
+      ids: p.ids.slice(), rows: p.rows, rowOff: p.rowOff, MAP: p.MAP, doors: (cur.doorsBy[p.n] || []).slice() };
   }
   function floorMap(n) { var p = cur.parts[n - 1]; return p ? p.MAP : null; }
-  // 모든 층을 위아래로 쌓은 칸 배열 (층 사이 FLOOR_GAP줄은 null). 칸 좌표가 CELLS·anchorOf와 같다 (세로 단면용)
   function stackMap() {
     var rows = [];
     cur.parts.forEach(function (p, i) {
@@ -422,10 +539,10 @@
     });
     return rows;
   }
-  // 판 정보 (지금 판이 아니어도): 화면의 의뢰 카드 미리보기용. MAP은 2차원 배열(구역 id). 1층 판
+  // 판 정보 (지금 판이 아니어도): 의뢰 카드 미리보기용. MAP = 방 id 칸 배열, EXITS = 처음 문으로 이어진 이웃
   function boardInfo(id) {
-    var b = makeLayout(hasBoard(id) ? id : DEFAULT_BOARD, 1, 1);
-    return { id: b.id, name: b.name, desc: b.desc, MAP: b.MAP, NAMES: b.NAMES, EXITS: b.EXITS, CENTER: b.CENTER };
+    var b = makeLayout([hasBoard(id) ? id : DEFAULT_BOARD], 1, 1, null);
+    return { id: b.boards[0], name: b.parts[0].name, desc: b.parts[0].desc, MAP: b.parts[0].MAP, NAMES: b.NAMES, EXITS: b.EXITS, CENTER: [], doors: b.doors.slice() };
   }
   useBoard(DEFAULT_BOARD);
 })();

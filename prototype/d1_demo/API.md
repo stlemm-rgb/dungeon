@@ -1,9 +1,10 @@
-# D1 데모 핵심 로직 API (1차 + 2차, 2026-10-23)
+# D1 데모 핵심 로직 API (1차 + 2차 2026-10-23, 3차 문 토큰 2026-10-24 → 13절)
 
 화면 파일(shell.js·build.js·battle.js·stage.js)이 부르는 공개 함수 목록. 값은 **이 함수들로만** 바꾼다 (RUN을 화면에서 직접 고치지 않는다).
-숫자·글 표는 `battle_data.js`의 `DEMO` 아래(의뢰·납품 기준·부족·회사 레벨·고정 구역·끈 기능). 검사는 `tools/test_d1_core.py`.
+숫자·글 표는 `battle_data.js`의 `DEMO` 아래(의뢰·납품 기준·부족·회사 레벨·고정 구역·끈 기능·판). 검사는 `tools/test_d1_core.py`, 옛 저장은 `tools/test_oldsaves.py`.
 
-- 저장: 키 `dunguen_d1_run`, 형식 **v6**. 버전이 다르면 새 게임(변환 없음). C1 키(`dunguen_c1_run`)는 건드리지 않는다.
+- 저장: 키 `dunguen_d1_run`, 형식 **v7** (13절). 옛 **v6은 회사 기록만 이어 받음**(B안), 그 밖의 버전은 새 게임. C1 키(`dunguen_c1_run`)는 건드리지 않는다.
+- **판 모양은 13절이 1~12절보다 우선**한다 (구역 id `R1`·`CD`·`LB` 같은 옛 판 이야기는 이제 칸 좌표 방 id로 읽을 것).
 - 공통 돌려주는 값: 바꾸는 함수는 `{ ok, msg }` (+ `stages`: 이번에 새로 오른 납품 기준 단계 번호 목록, 토스트용).
 
 ## 1. RUN 모양 요약 (`PROGRESS.RUN`, 읽기만)
@@ -279,3 +280,108 @@ deliver 보고: `{ quest, gold, gems, companyExp, goldBefore, gemsBefore, compan
 - 건설 미리보기(build.js `zpreview`)에 `p.giftText`가 있으면 한 줄 보여 주기 (지금은 전투력 증가로만 보이고, 완공 토스트에는 나옴).
 - 현장 위/결과표에 "다음 주 마석 +`P.weeklyBudget()`".
 - build.js `zoneWhy`의 입구 글 "데모에서는 분기로 고정이에요" → 대기도 지을 수 있음으로.
+
+---
+
+# 13. 문 토큰 판 + 탐험 이동 + 조우 즉시 승패 (3차, 2026-10-24)
+
+근거 `docs/DESIGN_D1_DOORS.md` (12절 사용자 확정 우선). 이번 단계는 **q1(1층)만** 새 판. **q2는 데이터에 `hidden: true`로 꺼 둠** → q1 납품 뒤 정산을 닫으면 데모 끝.
+
+## 13-1. 판 (zones.js, 데이터 = `BATTLE_DATA.GRID_BOARDS`·`GRID`)
+
+| 것 | 규칙 | 예 |
+| --- | --- | --- |
+| 칸 id | 층 번호(1층 생략) + 열 `A`~`E` + 행 `1`~`7` | `C4`, 2층 `2C4` |
+| 방 id | 입구 칸 = `E`(`2E`), 보물방 칸 = `B`(`2B`), 여러 칸 방 = 데이터 이름, 나머지 = 칸 id | `FZ1` = `B4`·`C4`·`D4` (얼어붙은 하역장) |
+| 벽 조각 id | 이웃한 두 칸 id를 위→아래·왼→오른 순서로 `-` | `C2-C3`, `B3-C3`, `2C2-2C3` |
+| 문 | 벽 조각 하나에 열린 통로 (양방향). **같은 방 안쪽 벽(`B4-C4`)은 벽 조각이 아님** | |
+| 계단 | 위층 `B` → 아래층 입구 (문 토큰 아님, 층이 열렸을 때) | |
+| 좌표 | 칸 단위: x = 열 + 0.5, y = 행 + 0.5 (+ 층 줄 오프셋). 2층은 1층 아래 한 줄 띄움 (`rowOff` 8) | `roomCenter('FZ1')` = {2.5, 3.5} |
+
+q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열)·가운데 길(C열, 하역장 지남)·오른쪽 끝 길(E열)**이 셋 다 보물방 옆으로 모임 + 곁방 8개 + 지름길 1개(`A4-B4`). 반드시 지나는 방은 없음.
+
+| 함수 (`window.ZONES`) | 돌려주는 값 |
+| --- | --- |
+| `grid(n)` | `{ n, cols:5, rows:7, rowOff, cells[행][열] = 방 id, rooms{ 방 id: [칸 id] }, entry, goal(그 층 맨 아래), stairs, open, board }` |
+| `edges(n)` | `[{ id, a, b(칸), ra, rb(방), x, y(벽 가운데 전투 좌표), vertical(벽이 세로 = 가로 이웃) }]` |
+| `doorPoint(edgeId)` · `roomCenter(방 id)` · `entryPoint(n)` | 문 가운데 · 방 가운데 · 층 입구 위쪽 (야외/계단에서 들어오는 곳) |
+| `initialDoors(n?)` · `doorCount(n)` · `doors()` · `DOORS` | 판의 처음 문 (`{ 층: [...] }` 또는 n층 목록) · 토큰 수 · 지금 문 `{ 층: [...] }` · 지금 문 배열 |
+| `validateDoors(list, n)` | `{ ok, code('tokens'·'target'·'disconnected'), why, isolated[방] }` |
+| `exploreRoute(doors, zones, squad, seed)` | `{ squad, habit(squad % 3: 0 왼쪽·1 오른쪽·2 아래), rooms[방], steps[{ from, to, edge, backtrack, floor, stairs? }], reached, passes{ 층: 문 통과 수 } }` |
+| `passInfo(zones, doors?)` | 미리보기 경로 12개(고정 시드 `GRID.previewSeeds` × 습관 3)로 센 `{ n, ratio{방}, trap{방: 평균 min(들어간 횟수,2)}, passes[습관별 최대], maxPass, worst, flow{'a>b'} }` |
+| `passRatios(zones, units?, doors?)` · `forecast(zones, units, n, doors?)` · `mustPass(doors?)` · `bossFront(doors?)` | 위 경로로 계산 (부대는 길에 영향 없음, 대기실 "보여서 피함" 없음) |
+| `boardFixed(boards)` · `boardInfo(id)` | 판의 고정 구역 · 의뢰 카드 미리보기 (`MAP`, `NAMES`, `doors`) |
+| 옛 이름 (호환) | `MAP`(1층 방 id 칸 배열) · `NAMES`(“가운데 4”, “얼어붙은 하역장”) · `CELLS` · `ALL` · `ORDER` · `EXITS`(문으로 이어진 이웃) · `flowPairs(n)`(문 = 방 쌍) · `sharedEdge(a, b)`(그 문의 두 칸) · `anchorOf` = `roomCenter` · `doorOf(a, b)` |
+| 없어짐 | `routeOf` · `chooseExits` · `tutorialZones` · 옛 판 `fork3`·`line`·`fork2x`·`mini2` (`BOARDS`는 이제 `g1`만) |
+
+## 13-2. 문 옮기기·미리보기 (progress.js)
+
+| 함수 | 돌려주는 값 | 언제 |
+| --- | --- | --- |
+| `doorInfo(n)` | `{ n, doors[벽 조각 id], count(토큰 수), limit(문 통과 한도 30), canEdit, why }` | 건설 모드 |
+| `previewLayout(change)` | change = `{ doors:{ 층:[벽 조각 id 전부] }, builds:{ 방: 시설 } }` (미확정 전부). → `{ ok, why, code, cost, budgetAfter, valueNow, valueAfter, powerNow, powerAfter, gift, giftTribe, giftCount, giftText, units, back, zones, doors, isolated[방], floor, passes[습관별 한 층 최대 문 통과], limit, paid, changed{doors, builds[방]} }` | 끄는 동안·놓을 때 |
+| `commitLayout(change)` | `{ ok, msg, code, stages, gift, units }` — [건설] 한 번에 문 + 시설 확정. **문 옮기기는 무료** | [건설] |
+| `exploreRoutes(seed?)` | `[{ squad, habit, rooms, steps, reached, passes }]` (seed 없으면 이번 주 계획 시드, 분대 수 = 계획 분대 수) — **같은 시드면 실제 전투 경로와 같음** | `?debug` 경로 선 |
+| `previewBuild(z, k)` · `buildZone(z, k)` | **호환 유지** (= 시설 하나짜리 previewLayout/commitLayout + 옛 칸 `baseCost`·`discount`·`counts`·`from`·`floor`) | 옮기는 동안 |
+| `takeNotice()` | 한 번 보여 줄 안내 글 (옛 v6 저장을 바꿨을 때), 읽으면 지움. 없으면 `''` | 시작 화면 토스트 |
+
+`code`와 거절 글:
+
+| code | 언제 | why 예 |
+| --- | --- | --- |
+| `locked` | 전투 중·의뢰 없음·잠긴 층·고정 구역 | "전투 중에는 바꿀 수 없어요", "2층은 아직 잠겨 있어요", "고정 구역이라 바꿀 수 없어요" |
+| `target` | 없는 벽·겹친 문·못 짓는 시설 | "문이 없는 다른 안쪽 벽에 놓아 주세요", "지을 수 없는 시설" |
+| `tokens` | 층 문 수가 판의 토큰 수와 다름 | "안쪽 벽에 문 35개를 유지해야 해요" |
+| `disconnected` | 입구와 끊긴 방 (`isolated`) | "(왼쪽 2) 방이 다른 방과 끊겨요" |
+| `budget` | 시설 비용 > 남은 마석 | "마석 5 모자람" |
+| `limit` | 미리보기 경로 12개 중 한 층 문 통과가 한도(`GRID.passLimit` 30)를 넘음 → **확정 불가** | "분대 1 문 통과 51회: 최대 30회를 넘습니다" |
+
+- 순서: locked → target → tokens/disconnected → budget → limit. 문이 깨진 배치면 `powerAfter = powerNow`.
+- 시설을 바꿔도 미끼 위치가 바뀌면 길이 바뀌므로 `limit`에 걸릴 수 있다.
+- 전투력(B안): 대기실 = 부대 점수 × 통과 비율, **함정 = 함정 점수 × 경로마다 min(들어간 횟수, 2)의 평균** (`powerInfo().parts[].w`가 곱한 값).
+- `tutorialPath()`: 반드시 지나는 방(`mustPass`, 고정 구역 뺌)이 있으면 그것, **없으면 보물방과 문으로 이어진 방들**(처음 g1 = `C6`·`B7`·`D7`, 침입자는 이 중 한 곳을 꼭 지남).
+- 입구 시설은 `split`(이름 "입구")만. 대기·굽은길 없음.
+
+## 13-3. 전투 (battle_sim.js)
+
+| 바뀐 것 | 내용 |
+| --- | --- |
+| 입력 | `battleInput()`에 `doors`(`{ 층: [...] }`) 추가. `BSIM.create(o)`·`restore(o, snap)`가 `o.doors`로 길을 계산 |
+| 길 | 분대 `i` = `ZONES.exploreRoute(doors, zones, i, plan.seed)` (`q.route`). 지나갈 점 = 문 가운데 + 방 가운데. 되돌아가는 걸음 포함 |
+| 조사 | 처음 들어간 방 가운데에서 `GRID.inspect`(0.6)초 멈춤. 사건 `{ type:'inspect', id, z, x, y }` (화면 `?`). 상태는 `'move'` 그대로 |
+| 빠르게 | 다음 방을 이미 가 봤거나 지금 방이 빈 대기실이면 이동 × 1.5 (`q.fast`) |
+| 함정 | 같은 분대가 그 함정 방에 3번째부터 들어가면 굴리지 않음 (`q.trapIn[방]`) |
+| 조우 | 산 몬스터가 있는 대기실 가운데에 닿는 순간 승패. 사건 `{ type:'clash', id, z, win(몬스터 승), x, y, t }` → **그 분대만 2초**(`CLASH.encounter` 1초 ⚔ + `outcome` 1초 ✔/💨) `state 'fight'`, `q.clash = { z, win, t(지난 초), ip, mp }`. 다른 분대는 계속 움직임 |
+| 승패 | 힘 = (산 쪽 체력 합 ÷ 받는 피해 배율) × 평균 공격 (+카드), 양쪽 ±20% 무작위. 몬스터 승 = 2초 뒤 침입자 분대 퇴각(격퇴). 몬스터 패 = 그 대기실 부대 모두 바로 퇴각(`mretreat`, 다음 주 쉼), 침입자는 피해 뒤 계속 |
+| 이긴 쪽 피해 | 지금 체력 × min(0.4, 0.5 × 진 쪽 힘 ÷ 이긴 쪽 힘) |
+| 침입자 퇴각 | 분대 체력 합이 처음의 절반 아래면 퇴각. 사건 `{ type:'iretreat', id, cause:'trap'|'den'|'clash'|'card'|'timeout', x, y }` (분대 `state 'retreat'`) |
+| 사망 | 없음 (`mretreat.big`·`monRetreat[].big` 늘 false) |
+| 시간 초과 | 남은 분대 퇴각 = **방어 성공** (보물방 도달만 실패). 조우에서 이미 진 분대는 격퇴로 셈 |
+| 층별 차례 (구조만) | 분대는 계단(위층 B)에 닿으면 `state 'stairs'`, 사건 `stairs`. 그 층 분대가 모두 끝나면 사건 `{ type:'floorEnd', n, next, waiting }` → `S.pending` 동안 `step`은 아무것도 안 함 → 화면이 알림 뒤 **`BSIM.nextFloor(S)`** → 사건 `floorStart`, 다음 층 시간 `GRID.nextFloorTime`(30초). `BSIM.timeLeft(S)` = 이번 층 남은 초. (q1은 1층이라 안 생김) |
+| 위기 treasure | 보물방과 문으로 이어진 방에 들어설 때 (`S.front`, 문을 옮기면 바뀜) |
+| 결과 | `result(S)`에 `trapRetreats`(함정으로 퇴각·전멸한 분대) · `denRepels`(대기실에서 격퇴) · `clashRetreats` · `timeouts` · `clashes` · `squadResults[{ id, habit, state, cause, passes, time }]` |
+| 결과표 | `applyBattle()` 보고에 `summary` = "함정으로 N분대 퇴각, 대기실에서 N분대 격퇴" (`BATTLE_DATA.SUMMARY_TEXT`) · `trapRetreats` · `denRepels` · `clashes` |
+| 이동 속도 | `MOVE_SPEED` 0.32 → **0.5** (1칸 2초) |
+| 없어짐 | 공방 주고받기(`fightDens`), 매 틱 `clash {z}`·`fight` 사건 (대신 위 `clash` 한 번) |
+
+## 13-4. 저장 v7
+
+| 칸 | 모양 | 뜻 |
+| --- | --- | --- |
+| `v` | `7` | |
+| `site.boards` | `['g1']` | 층별 판 id (`site.board`는 없앰) |
+| `site.doors` | `{ '1': ['B1-C1', ...] }` | **확정된** 문. 불러올 때 층마다 개수·벽·이어짐을 검사해 깨졌으면 그 층만 판의 처음 문으로 |
+| `quest.boards` · `quest.board` | `['g1']` · `'g1'` | 의뢰의 층별 판 (board = 1층, 옛 화면 호환) |
+| `quest.fixed` | `{ FZ1: 'frozen_dock' }` | 판 데이터에서 옴 |
+| `notice` | 글 | 한 번 보여 줄 안내 (`takeNotice`) |
+| `bsave.snap` | 전투 상태 | 문은 넣지 않음 (복원 때 `battleInput().doors`로 같은 길을 다시 계산, 전투 중에는 문을 못 바꿈) |
+
+옛 **v6 → v7 (B안)**: 회사 금·신석·회사 레벨·친위대·작품집·부족 강화·끝낸 의뢰·튜토리얼·설정은 그대로. `play`였으면 **같은 의뢰를 새 판으로 처음부터**(단계 0, 마석 처음 값, 무료 기본 부대만, 시작 주 = 지금 주). 전투 중 저장·이번 주 계획은 버림. 그 의뢰가 숨겨졌으면(q2) 남은 데모 의뢰가 있으면 `choose`, 없으면 `demoEnd`. `settle`은 그대로(새 빈 현장 + 옛 부대 목록). 예시 저장 = `tools/oldsaves/d1/*.json`.
+
+## 13-5. 화면(frontend)에 넘길 일
+
+- build.js: 문 끌기(빈 벽 = `edges(n)` 중 문이 없는 것) → 끄는 동안 `previewLayout({ doors })`로 거절 글(`why`)·끊긴 방(`isolated`) 표시, 미확정 문·시설을 모아 [건설] = `commitLayout`. 파이프 = `edges`의 `ra`·`rb` 가운데 → `x,y` → 가운데.
+- battle.js·stage.js: 5×7 격자(`grid(1).cells`, 여러 칸 방 `rooms`), 문은 `doors()`, 분대는 `q.x·q.y` 그대로(되돌아가는 걸음도 같은 점). 사건 `inspect`(`?`), `clash`(⚔ 1초 → `win`이면 ✔, 아니면 💨 1초), `iretreat`(침입자 퇴각), `stairs`·`floorEnd`·`floorStart`(2층 단계용).
+- 결과표: `rep.summary` 한 줄. 옛 v6 저장을 바꾼 뒤 첫 화면에 `P.takeNotice()` 토스트.
+- 튜토리얼 글(lines.js `zones`): 강조 칸이 이제 "보물방 바로 앞 방들(침입자는 이 중 한 곳을 꼭 지나요)"이다. "반드시 지나는 길"이라는 글은 고쳐야 함.
+- 입구 시설 시트: 대기·굽은길 없음 (`facFor('E')` = `['split']`).
