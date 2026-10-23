@@ -302,11 +302,12 @@ window.BATTLE_DATA = {
   //    | greedy | 4 | 20/20 | 6% | 0% | 16.6초 | 0.58 · 1.27 |
   //   읽는 법: 1칸 방이라 함정 하나 점수(T 7.65 × 평균 들어간 횟수)가 작고, 전투력은 대기실(부대 점수 × 통과 비율) 수에 달림 -> 대기실 하나인 fe는 5단계 전투력 160을 못 채움.
   //    빈 판 전투는 1배속 45초(목표 30초 안팎보다 김), 시설을 지으면 17~28초. 밸런스(마석·단계 기준)는 12절대로 이번에 안 맞춤
+  //   -> 사용자 결정(10-24 "전투력 낮춤"): q1 3~5단계 전투력 100/130/160 -> 80/90/100. 다시 잼(20시드): fe 4주 20/20 · feden 2주 · greedy 3주 (가치 기준은 그대로)
   QUESTS: [
     { key: 'q1', name: '작은 돌 성채', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 1, minCompanyLv: 1, noDeath: true,
       boards: ['g1'], budget: 110,
       reward: { gold: 600, gems: 6, companyExp: 10 },
-      stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 100 }, { value: 105, power: 130 }, { value: 130, power: 160 }] },
+      stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 80 }, { value: 105, power: 90 }, { value: 130, power: 100 }] },
     { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2, noDeath: true, hidden: true,
       board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 150,
       reward: { gold: 900, gems: 8, companyExp: 15 },
