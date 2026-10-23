@@ -238,7 +238,9 @@ ok(rw.expGains.filter(g => g.id === R.site.squads[0].id)[0].exp === Math.round(b
 // 2층 의뢰 3단계 -> 2층 열림 (데이터), 4단계는 2층 전투력 필요라 1차에서는 못 채움
 R.site.squads[0].lv = 30; R.site.squads[0].count = BD.MON_SQUAD.cap;
 ['TL', 'LB', 'LC', 'RC', 'CD', 'LE', 'RE', 'CC'].forEach(z => P.buildZone(z, 'trap'));
-P.buildZone('TR', 'lure'); P.buildZone('RB', 'den'); P.removeUnit('LD', 0); P.placeUnit('RB', R.site.squads[0].id);
+P.buildZone('TR', 'lure'); P.buildZone('RB', 'den');
+ok(R.site.units.RB && R.site.units.RB[0] === R.site.squads[0].id, '자동 편성: 침입자가 다 지나는 RB 대기실에 센 부대부터: ' + JSON.stringify(R.site.units));
+P.setAutoDeploy(false);   // (아래 깨진 칸 보완 검사는 자동 편성이 꺼진 상태 기준)
 P.questUpdate();
 ok(R.quest.stage === 3 && R.site.floorsOpen === 2 && P.unlocks().floor2, '3단계 달성 -> 2층 열림, 4단계는 2층 전투력 없이 못 감: ' + P.questProgress().line);
 
@@ -350,6 +352,15 @@ freshTo(2);
   // 2층 건설비 = 층 배율
   const c2 = P.previewBuild('2H', 'trap');
   ok(c2.ok && c2.cost === Math.round(Z.costOf('trap', '2H') * BD.FLOOR_BUILD_MUL[2]) && c2.floor === 2, '2층 건설비 배율: ' + c2.cost);
+  // 대기실 하나 더 지어도 잘 서 있던 부대가 침입자가 덜 오는 새 대기실로 옮겨 가지 않음 (예전: 덜 찬 곳으로 나눠 서서 previewBuild 전투력 -26 등)
+  {
+    const inRB = R.site.units.RB.slice();
+    ['CC', 'LD', 'LE', 'RE', '2L', '2DL'].forEach(z => {
+      const p = P.previewBuild(z, 'den');
+      ok(p.ok && inRB.every(id => (p.units.RB || []).indexOf(id) >= 0) && p.powerAfter >= p.powerNow,
+        '대기실 추가 ' + z + ': RB 부대 그대로, 전투력 안 줄어듦 ' + p.powerNow + ' -> ' + p.powerAfter + ' ' + JSON.stringify(p.units));
+    });
+  }
   // ---------- 2) 층별 출진: 한도·중복 금지·친위대 칸 ----------
   const sq = R.site.squads[0], g = R.guards[0];
   P.setAutoDeploy(false);

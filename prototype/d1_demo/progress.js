@@ -407,9 +407,16 @@
       var free = {}; dens.forEach(function (z) { free[z] = ZONES.slotsOf(zones[z], z); units[z] = []; });
       var rest = [];
       dep[f].forEach(function (id) { var z = pins && pins[id]; if (z && free[z] > 0) { units[z].push(id); free[z]--; } else rest.push(id); });
+      // 침입자가 더 많이 오는 대기실부터 채우고, 통과 비율이 같은 대기실끼리만 덜 찬 곳으로 나눈다.
+      //  (예전엔 비율을 안 보고 덜 찬 곳으로만 나눠서, 대기실을 하나 더 지으면 잘 서 있던 부대가 침입자가 덜 오는(몬스터가 보이면 피하는)
+      //   새 대기실로 옮겨 가 전투력이 줄었다: 2층 의뢰 previewBuild -26)
       rest.forEach(function (id) {
         var pick = null;
-        dens.forEach(function (z) { if (free[z] > 0 && (!pick || units[z].length < units[pick].length)) pick = z; });
+        dens.forEach(function (z) {
+          if (!(free[z] > 0)) return;
+          var d = pick ? (w[z] || 0) - (w[pick] || 0) : 1;
+          if (d > 1e-9 || (d > -1e-9 && units[z].length < units[pick].length)) pick = z;
+        });
         if (pick) { units[pick].push(id); free[pick]--; }
       });
       dens.forEach(function (z) { if (!units[z].length) delete units[z]; });
