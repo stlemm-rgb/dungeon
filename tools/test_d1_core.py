@@ -407,6 +407,17 @@ freshTo(2);
   ok(res.deployed.indexOf(sq.id) >= 0, '2층 부대도 전투에 나감');
   P.applyBattle(res);
 }
+// 대기실 추가 (미끼 없음): RB에 몰아 선 부대가 빈 판 비율이 같아 보이는 TR 대기실로 나눠 서지 않음 (예전: 67 -> 37. 몬스터가 보이면 침입자가 피함)
+freshTo(2);
+{
+  R.site.budget = 999; ['CB', 'CD', 'RC', 'RD', 'TL', 'LB', 'LC'].forEach(z => P.buildZone(z, 'trap')); P.buildZone('RB', 'den');
+  ['TR', 'CC', 'LD', 'LE', 'RE'].forEach(z => {
+    const p = P.previewBuild(z, 'den');
+    ok(p.ok && p.powerAfter >= p.powerNow, '미끼 없음 대기실 추가 ' + z + ': 전투력 안 줄어듦 ' + p.powerNow + ' -> ' + p.powerAfter + ' ' + JSON.stringify(p.units));
+  });
+  const pa = P.previewBuild('TR', 'den'), pb = P.previewBuild('TR', 'den');
+  ok(JSON.stringify(pa.units) === JSON.stringify(pb.units) && pa.powerAfter === pb.powerAfter, '편성은 결정적 (같은 입력 = 같은 결과)');
+}
 // ---------- 4) 퇴각·쉼·해제·사망 ----------
 // 가짜 전투 결과로 규칙만 확인 (전투 계산 쪽 퇴각은 아래 BSIM 검사)
 function fakeRes(extra) { return Object.assign({ gold: 0, gems: 0, loot: 0, reached: 0, kills: 0, total: 0, squads: 2, deployed: [], fought: [], monRetreat: [] }, extra || {}); }
