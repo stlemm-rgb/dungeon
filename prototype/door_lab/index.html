@@ -21,6 +21,7 @@
         <button id="reset" type="button">처음 배치</button>
         <button id="routes-toggle" type="button" aria-pressed="false" data-debug hidden>경로 숨기기</button>
       </div>
+      <div class="invader-controls"><small id="seed">시드 7</small><button id="new-invaders" type="button">다른 침입자</button></div>
       <div id="board-wrap">
         <svg id="board" viewBox="0 0 360 480" role="group" aria-label="3열 4행 던전. 문을 끌거나, 문 선택 후 빈 벽을 누르세요."></svg>
       </div>
@@ -31,7 +32,8 @@
       <details class="rules">
         <summary>조작과 이동 규칙</summary>
         <p>문 선택 → 빈 벽 선택도 가능합니다. 취소는 Esc 또는 선택한 문을 다시 누르세요. 키보드는 Tab과 Enter로 선택합니다.</p>
-        <p>안 가 본 방 → 미끼 우선. 그다음 분대 1은 왼쪽·위·아래·오른쪽, 분대 2는 오른쪽·위·아래·왼쪽, 분대 3은 아래·왼쪽·오른쪽·위 순서로 고릅니다.</p>
+        <p>안 가 본 방 → 미끼 우선. 그다음 분대 1은 주로 왼쪽, 분대 2는 주로 오른쪽, 분대 3은 주로 아래를 고릅니다. 선호 방향이 있으면 60% 확률로, 아니면 나머지 방을 같은 확률로 고릅니다.</p>
+        <p>같은 문 배치와 같은 시드에서는 경로와 전투 결과가 같습니다. [다른 침입자]를 누르면 시드가 바뀝니다.</p>
         <p>첫 방문에는 0.6초 동안 조사하며 ?가 뜹니다. 막히면 가 본 방만 지나는 가장 짧은 길로, 안 가 본 이웃이 남은 가까운 방까지 돌아갑니다. 거리가 같으면 최근에 들른 방을 고릅니다. 가 본 방과 빈 대기실에서는 1.5배로 이동하고, 보물방에 들어가면 멈춥니다.</p>
         <p>모든 방이 입구와 이어져야 합니다. 분대마다 문 통과는 18회 이하입니다.</p>
       </details>
@@ -45,7 +47,7 @@
       <div id="event-log" role="log" aria-label="최근 전투 기록"></div>
       <div class="results-wrap">
         <table id="results">
-          <caption>전투 결과 <span>동일 침입자 · 고정 시드 7</span></caption>
+          <caption>전투 결과 <span id="comparison-note" aria-live="polite">동일 침입자 · 현재 시드 7</span></caption>
           <thead><tr><th scope="col">비교 항목</th><th scope="col">직전</th><th scope="col">지금</th></tr></thead>
           <tbody id="result-body"><tr><td colspan="3">문을 배치하고 전투를 시작해 보세요.</td></tr></tbody>
         </table>

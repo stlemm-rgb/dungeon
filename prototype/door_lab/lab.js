@@ -8,8 +8,9 @@
   const LIMIT = 18;
   const SEED = 7;
   const INSPECT_TIME = 0.6; // 첫 방문 조사 시간(초), 재미 확인용 임시 값.
-  const HABITS = Object.freeze(['왼쪽 먼저', '오른쪽 먼저', '아래 먼저']);
-  const DIRECTIONS = [[0, 1, 3, 2], [2, 1, 3, 0], [3, 0, 2, 1]];
+  const HABIT_CHANCE = 0.6;
+  const HABITS = Object.freeze(['주로 왼쪽', '주로 오른쪽', '주로 아래']);
+  const PREFERRED_DIRECTIONS = [0, 2, 3];
   // 실험용 임시 전투 수치. 경로 규칙과 분리해 비교 중에는 항상 동일하게 쓴다.
   const BALANCE = Object.freeze({ moveSeconds: 2, speedBoost: 1.5, duration: 60,
     people: 10, personHP: 10, trapDamage: 20, monsterHP: 34,
@@ -55,11 +56,19 @@
     if (to === from + 1) return 2; // 오른쪽
     return 3; // 아래
   }
-  function orderedCandidates(from, candidates, squad, facilities) {
-    const priority = DIRECTIONS[squad - 1];
-    return candidates.slice().sort((a, b) =>
-      Number(facilities[b] === 'bait') - Number(facilities[a] === 'bait') ||
-      priority.indexOf(direction(from, a)) - priority.indexOf(direction(from, b)));
+  function chooseCandidate(from, candidates, squad, facilities, random) {
+    // 후보 순서는 문 배열 순서와 무관하게 고정한다. 미끼가 여럿이면 같은 확률.
+    const bait = candidates.filter(room => facilities[room] === 'bait');
+    const pool = (bait.length ? bait : candidates).slice().sort((a, b) => a - b);
+    if (pool.length < 2) return pool[0];
+    if (!bait.length) {
+      const preferred = pool.find(room => direction(from, room) === PREFERRED_DIRECTIONS[squad - 1]);
+      if (preferred !== undefined) {
+        if (random() < HABIT_CHANCE) return preferred;
+        pool.splice(pool.indexOf(preferred), 1);
+      }
+    }
+    return pool[Math.floor(random() * pool.length)];
   }
   function mappedReturn(graph, current, visited, lastVisit) {
     // 너비 우선 탐색은 이미 아는 방만 통과. 같은 거리의 목적지는 최근 방문 우선.
@@ -90,6 +99,8 @@
     const start = options.start ?? ENTRY;
     const goal = options.goal ?? TREASURE;
     const facilities = options.facilities ?? FACILITIES;
+    const seed = options.seed ?? SEED;
+    let fork = 0;
     const graph = graphOf(doors);
     const visited = new Set([start]);
     const rooms = [start];
@@ -104,9 +115,14 @@
     }
     while (rooms[rooms.length - 1] !== goal) {
       const current = rooms[rooms.length - 1];
-      const choices = orderedCandidates(current,
-        graph[current].filter(to => !visited.has(to)), squad, facilities);
-      if (choices.length) append(choices[0], false);
+      const choices = graph[current].filter(to => !visited.has(to));
+      if (choices.length) {
+        // 분대·방·갈림 순서별 난수: 미리보기나 다른 분대의 계산은 영향을 주지 않는다.
+        const random = seededRandom(seed ^ Math.imul(squad, 0x9e3779b9) ^
+          Math.imul(current + 1, 0x85ebca6b) ^ Math.imul(fork, 0xc2b2ae35));
+        if (choices.length > 1) fork++;
+        append(chooseCandidate(current, choices, squad, facilities, random), false);
+      }
       else {
         const path = mappedReturn(graph, current, visited, lastVisit);
         if (!path.length) break;
@@ -116,7 +132,7 @@
     return { squad, rooms, steps, reached: rooms[rooms.length - 1] === goal };
   }
   function countPassages(route) { return route.steps.length; }
-  function routesOf(doors) { return [1, 2, 3].map(k => exploreRoute(doors, k)); }
+  function routesOf(doors, seed = SEED) { return [1, 2, 3].map(k => exploreRoute(doors, k, { seed })); }
   function doorPassages(routes) {
     const counts = {};
     for (const route of routes) {
@@ -124,7 +140,7 @@
     }
     return counts;
   }
-  function validateLayout(doors) {
+  function validateLayout(doors, seed = SEED) {
     const validIDs = new Set(EDGES.map(e => e.id));
     if (doors.length !== 12 || new Set(doors).size !== 12 || doors.some(id => !validIDs.has(id))) {
       return { ok: false, code: 'tokens', reason: '안쪽 벽에 문 12개를 유지해야 합니다.' };
@@ -135,30 +151,35 @@
       return { ok: false, code: 'disconnected',
         reason: `(${Math.floor(room / COLS)},${room % COLS}) 방이 다른 방과 끊겨요.` };
     }
-    const routes = routesOf(doors);
+    const routes = routesOf(doors, seed);
     const over = routes.find(route => countPassages(route) > LIMIT);
     if (over) return { ok: false, code: 'limit', routes,
       reason: `분대 ${over.squad} 문 통과 ${countPassages(over)}회: 최대 18회를 넘습니다.` };
     return { ok: true, routes };
   }
-  function moveDoor(doors, from, to) {
+  function moveDoor(doors, from, to, seed = SEED) {
     if (!doors.includes(from) || doors.includes(to) || !EDGES.some(e => e.id === to)) {
       return { ok: false, code: 'target', reason: '문이 없는 다른 안쪽 벽에 놓아 주세요.', doors: doors.slice() };
     }
     const candidate = doors.map(id => id === from ? to : id);
-    return { ...validateLayout(candidate), doors: candidate };
+    return { ...validateLayout(candidate, seed), doors: candidate };
   }
   function seededRandom(seed) {
     let state = seed >>> 0;
+    // 인접한 시드도 첫 선택부터 고르게 섞이도록 정수 해시로 초기화한다.
+    state = Math.imul(state ^ (state >>> 16), 0x21f0aaad);
+    state = Math.imul(state ^ (state >>> 15), 0x735a2d97);
+    state = (state ^ (state >>> 15)) >>> 0;
     return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
   }
   function peopleOf(squad) { return Math.max(0, Math.ceil(squad.hp / BALANCE.personHP)); }
   function monsterCount(battle) { return battle.monsterHP.filter(hp => hp > 0).length; }
-  function createBattle(doors) {
-    const validation = validateLayout(doors);
+  function createBattle(doors, seed = SEED) {
+    seed = seed >>> 0;
+    const validation = validateLayout(doors, seed);
     if (!validation.ok) throw new Error(validation.reason);
-    const random = seededRandom(SEED);
-    const battle = { time: 0, done: false, trapActivations: 0, logs: [],
+    const random = seededRandom(seed);
+    const battle = { seed, time: 0, done: false, trapActivations: 0, logs: [],
       monsterHP: Array.from({ length: BALANCE.monsters }, () => BALANCE.monsterHP),
       squads: validation.routes.map(route => ({ id: route.squad, route,
         hp: BALANCE.people * BALANCE.personHP, attack: BALANCE.personAttack * (.95 + random() * .1),
@@ -256,12 +277,12 @@
     const alive = battle.squads.reduce((n, s) => n + peopleOf(s), 0);
     return { reached, defeated: 30 - alive, timeout: alive - reached,
       traps: battle.trapActivations, passages: battle.squads.map(s => s.passages),
-      time: Number(battle.time.toFixed(2)), success: alive === 0, seed: SEED };
+      time: Number(battle.time.toFixed(2)), success: alive === 0, seed: battle.seed };
   }
 
-  const api = { COLS, ROWS, ENTRY, TREASURE, LIMIT, SEED, INSPECT_TIME, HABITS, EDGES, INITIAL_DOORS,
+  const api = { COLS, ROWS, ENTRY, TREASURE, LIMIT, SEED, HABIT_CHANCE, INSPECT_TIME, HABITS, EDGES, INITIAL_DOORS,
     FACILITIES, BALANCE, edgeKey, graphOf, reachableRooms, isConnected,
-    orderedCandidates, mappedReturn, exploreRoute, countPassages, routesOf, doorPassages,
+    chooseCandidate, mappedReturn, exploreRoute, countPassages, routesOf, doorPassages,
     validateLayout, moveDoor, seededRandom, createBattle, advanceBattle, battleResult, peopleOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.DoorLab = api;
@@ -275,6 +296,7 @@
     const svg = $('board');
     if (!svg) return;
     let doors = INITIAL_DOORS.slice();
+    let seed = SEED;
     let history = [];
     const debug = new URLSearchParams(window.location.search).has('debug');
     let hidden = !debug;
@@ -284,6 +306,7 @@
     let battle = null;
     let previousResult = null;
     let currentResult = null;
+    let invadersChanged = false;
     let lastTick = 0;
     let accumulator = 0;
     const metrics = { edits: 0, rejected: 0, fights: 0, editMs: 0 };
@@ -329,9 +352,9 @@
     function renderBoard() {
       const from = drag ? drag.from : selection;
       const target = drag ? drag.target : null;
-      const candidate = from && target ? moveDoor(doors, from, target) : null;
+      const candidate = from && target ? moveDoor(doors, from, target, seed) : null;
       const shownDoors = candidate && candidate.code !== 'target' ? candidate.doors : doors;
-      const routes = routesOf(shownDoors);
+      const routes = routesOf(shownDoors, seed);
       const counts = doorPassages(routes);
       const defs = !debug || hidden ? '' : `<defs>${[0, 1, 2].map(i => `<marker id="arrow-${i}" class="s${i + 1}" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 Z"/></marker>`).join('')}</defs>`;
       const rooms = Array.from({ length: 12 }, (_, room) => {
@@ -376,6 +399,9 @@
       $('route-counts').innerHTML = routes.map((route, i) => `<div class="squad-card s${i + 1} ${debug && route.steps.length > LIMIT ? 'over' : ''}"><strong>분대 ${i + 1}</strong><small>${HABITS[i]}</small>${debug && !hidden ? `<span>${countPassages(route)} / 18회</span>` : ''}</div>`).join('');
       $('undo').disabled = !history.length || !!running();
       $('reset').disabled = !!running();
+      $('new-invaders').disabled = !!running();
+      $('seed').textContent = `시드 ${seed}`;
+      $('fight').disabled = !!running() || !validateLayout(doors, seed).ok;
       renderActors();
     }
     function renderActors() {
@@ -400,7 +426,7 @@
       $('time-progress').value = 0;
     }
     function commitMove(from, to) {
-      const result = moveDoor(doors, from, to);
+      const result = moveDoor(doors, from, to, seed);
       if (result.ok) {
         history.push(doors.slice());
         doors = result.doors;
@@ -460,7 +486,7 @@
       if (target === drag.target) return;
       drag.target = target;
       if (target) {
-        const result = moveDoor(doors, drag.from, target);
+        const result = moveDoor(doors, drag.from, target, seed);
         message(result.ok ? '미리보기 · 놓으면 이 통로가 열립니다.' : result.reason, !result.ok);
       } else message('밝은 빈 벽으로 끌어 놓으세요.');
       renderBoard();
@@ -516,7 +542,8 @@
       doors = history.pop();
       metrics.edits++;
       clearBattleView();
-      message('한 단계 되돌렸습니다.');
+      const validation = validateLayout(doors, seed);
+      message(validation.ok ? '한 단계 되돌렸습니다.' : validation.reason, !validation.ok);
       renderBoard(); showMetrics();
     });
     $('reset').addEventListener('click', () => {
@@ -526,7 +553,8 @@
         history.push(doors.slice()); metrics.edits++; doors = INITIAL_DOORS.slice();
       }
       clearBattleView();
-      message('처음 배치입니다.');
+      const validation = validateLayout(doors, seed);
+      message(validation.ok ? '처음 배치입니다.' : validation.reason, !validation.ok);
       renderBoard(); showMetrics();
     });
     $('routes-toggle').addEventListener('click', () => {
@@ -536,8 +564,26 @@
       $('routes-toggle').setAttribute('aria-pressed', String(hidden));
       renderBoard();
     });
+    $('new-invaders').addEventListener('click', () => {
+      if (running()) return;
+      cancelDrag();
+      const value = new Uint32Array(1);
+      window.crypto.getRandomValues(value);
+      seed = value[0] === seed ? (seed + 1) >>> 0 : value[0];
+      invadersChanged = true;
+      clearBattleView();
+      displayResult();
+      const validation = validateLayout(doors, seed);
+      message(validation.ok ? '침입자가 바뀌었습니다. 이 시드로 배치 전후를 비교하세요.' : validation.reason, !validation.ok);
+      renderBoard();
+    });
     function displayResult() {
+      const changed = invadersChanged || (currentResult && currentResult.seed !== seed) ||
+        (previousResult && currentResult && previousResult.seed !== currentResult.seed);
+      $('comparison-note').textContent = `${changed ? '침입자 바뀜' : '동일 침입자'} · 현재 시드 ${seed}`;
+      $('comparison-note').classList.toggle('changed', !!changed);
       const rows = [
+        ['침입자 시드', r => r.seed],
         ['보물방 도달', r => `${r.reached}명`], ['쓰러뜨린 인원', r => `${r.defeated}명`],
         ['시간 초과', r => `${r.timeout}명`], ['함정 발동', r => `${r.traps}회`],
         ...(debug ? [0, 1, 2].map(i => [`분대 ${i + 1} 문 통과`, r => `${r.passages[i]}회`]) : []),
@@ -568,6 +614,7 @@
         metricTick = now;
         previousResult = currentResult;
         currentResult = battleResult(battle);
+        invadersChanged = false;
         displayResult();
         $('fight').disabled = false;
         $('fight').textContent = '같은 침입자로 다시 전투';
@@ -579,7 +626,9 @@
     $('fight').addEventListener('click', () => {
       if (running()) return;
       measure(); cancelDrag();
-      battle = createBattle(doors);
+      const validation = validateLayout(doors, seed);
+      if (!validation.ok) { message(validation.reason, true); return; }
+      battle = createBattle(doors, seed);
       metrics.fights++;
       lastTick = performance.now(); accumulator = 0;
       $('fight').disabled = true;

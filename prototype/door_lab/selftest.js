@@ -7,8 +7,8 @@ function test(name, run) {
   catch (error) { console.error(`실패: ${name}`); throw error; }
 }
 const noFacilities = { facilities: {} };
-function simulate(doors, chunk = 1 / 60) {
-  const battle = lab.createBattle(doors);
+function simulate(doors, chunk = 1 / 60, seed = lab.SEED) {
+  const battle = lab.createBattle(doors, seed);
   let guard = 0;
   while (!battle.done && guard++ < 4000) lab.advanceBattle(battle, chunk);
   assert.ok(battle.done, '60초 안에 전투 종료');
@@ -49,7 +49,7 @@ test('왕복 포함 19회가 되는 문 이동 거절', () => {
   const result = lab.validateLayout(doors);
   assert.equal(result.ok, false);
   assert.equal(result.code, 'limit');
-  assert.deepEqual(result.routes.map(lab.countPassages), [19, 9, 19]);
+  assert.equal(lab.countPassages(result.routes[0]), 19);
 });
 test('막다른 방은 들어온 길로 되짚고, 보물방 첫 진입에서 멈춤', () => {
   const route = lab.exploreRoute(['0-1', '1-4', '4-7', '7-10'], 1, noFacilities);
@@ -61,19 +61,47 @@ test('막다른 방은 들어온 길로 되짚고, 보물방 첫 진입에서 �
 });
 test('미끼는 방향·분대 번호보다 우선', () => {
   const doors = ['0-1', '1-2', '1-4'];
-  for (const squad of [1, 2, 3]) {
-    const route = lab.exploreRoute(doors, squad, { facilities: { 4: 'bait' } });
-    assert.equal(route.rooms[1], 4);
+  for (let seed = 0; seed < 200; seed++) {
+    for (const squad of [1, 2, 3]) {
+      const route = lab.exploreRoute(doors, squad, { facilities: { 4: 'bait' }, seed });
+      assert.equal(route.rooms[1], 4);
+    }
   }
   assert.equal(lab.exploreRoute(['3-4', '4-5'], 1, { start: 4, facilities: lab.FACILITIES }).rooms[1], 5);
 });
-test('분대마다 고정 습관으로 서로 다른 첫 갈림 선택', () => {
+test('선호 방향 60% 습관, 다른 시드에서는 다른 방향도 선택', () => {
   const doors = ['0-1', '1-2', '1-4'];
   assert.deepEqual([1, 2, 3].map(k => lab.exploreRoute(doors, k, noFacilities).rooms[1]), [0, 2, 4]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 1, {}), [3, 1, 7, 5]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 2, {}), [5, 1, 7, 3]);
-  assert.deepEqual(lab.orderedCandidates(4, [7, 5, 1, 3], 3, {}), [7, 3, 5, 1]);
-  assert.deepEqual(lab.HABITS, ['왼쪽 먼저', '오른쪽 먼저', '아래 먼저']);
+  assert.equal(lab.HABIT_CHANCE, .6);
+  assert.deepEqual(lab.HABITS, ['주로 왼쪽', '주로 오른쪽', '주로 아래']);
+  // 방 4의 네 방향이 모두 열린 실제 탐험: 60% + 나머지 각각 약 13.3%.
+  for (const [squad, preferred] of [[1, 3], [2, 5], [3, 7]]) {
+    const counts = { 1: 0, 3: 0, 5: 0, 7: 0 };
+    for (let seed = 0; seed < 10000; seed++) {
+      const route = lab.exploreRoute(['1-4', '3-4', '4-5', '4-7'], squad,
+        { start: 4, facilities: {}, seed });
+      counts[route.rooms[1]]++;
+    }
+    assert.ok(Math.abs(counts[preferred] / 10000 - .6) < .025, `분대 ${squad}: ${JSON.stringify(counts)}`);
+    for (const room of [1, 3, 5, 7].filter(r => r !== preferred)) {
+      assert.ok(Math.abs(counts[room] / 10000 - .4 / 3) < .02);
+    }
+  }
+});
+
+test('선호 방향이 없으면 후보끼리 같은 확률, 후보 한 개면 반드시 그 방', () => {
+  for (const [squad, doors, candidates] of [
+    [1, ['1-4', '4-5', '4-7'], [1, 5, 7]],
+    [2, ['1-4', '3-4', '4-7'], [1, 3, 7]],
+    [3, ['1-4', '3-4', '4-5'], [1, 3, 5]]
+  ]) {
+    const counts = Object.fromEntries(candidates.map(r => [r, 0]));
+    for (let seed = 0; seed < 10000; seed++) {
+      counts[lab.exploreRoute(doors, squad, { start: 4, facilities: {}, seed }).rooms[1]]++;
+    }
+    assert.ok(Object.values(counts).every(n => Math.abs(n / 10000 - 1 / 3) < .025));
+    assert.equal(lab.exploreRoute(['1-4'], squad, { start: 4, facilities: {} }).rooms[1], 1);
+  }
 });
 test('방문 기록은 분대마다 독립, 같은 입력과 문 배열 순서는 같은 경로', () => {
   const before = lab.INITIAL_DOORS.slice();
@@ -83,13 +111,19 @@ test('방문 기록은 분대마다 독립, 같은 입력과 문 배열 순서�
   assert.deepEqual(lab.routesOf(before.slice().reverse()), first);
   assert.deepEqual(before, lab.INITIAL_DOORS);
   assert.equal(first[0].rooms.includes(3), true);
-  assert.equal(first[2].rooms.includes(3), true);
+  assert.deepEqual(first[2], lab.exploreRoute(before, 3));
+  for (const seed of [0, 1, 7, 1234, 0xffffffff]) {
+    const routes = lab.routesOf(before, seed);
+    assert.deepEqual(routes, lab.routesOf(before.slice().reverse(), seed));
+    for (const route of routes) assert.deepEqual(route,
+      lab.exploreRoute(before, route.squad, { seed }));
+  }
 });
 test('문별 통과 합계는 되짚기를 포함하며 모든 분대 합계와 같음', () => {
   const routes = lab.routesOf(lab.INITIAL_DOORS);
   const counts = lab.doorPassages(routes);
   assert.equal(counts['4-7'], 2);
-  assert.equal(counts['0-1'], 2);
+  assert.equal(counts['0-1'], 1);
   assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), 19);
   assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), routes.reduce((n, r) => n + lab.countPassages(r), 0));
 });
@@ -152,6 +186,46 @@ test('전투는 예고와 같은 경로, 시드 고정, 새 전투에 이력 미
   assert.equal(result.reached + result.defeated + result.timeout, 30);
   assert.ok(result.time <= 60);
 });
+
+test('여러 시드에서 예고·전투 경로와 결과 재현, 문 이동 전후 같은 시드 유지', () => {
+  const results = new Set();
+  for (const seed of [0, 1, 7, 42, 1234, 0xffffffff]) {
+    const first = simulate(lab.INITIAL_DOORS, 60, seed);
+    const second = simulate(lab.INITIAL_DOORS, 1 / 60, seed);
+    assert.equal(first.seed, seed);
+    assert.equal(lab.battleResult(first).seed, seed);
+    assert.deepEqual(first.squads.map(s => s.route), lab.routesOf(lab.INITIAL_DOORS, seed));
+    assert.deepEqual(first, second);
+    const { seed: ignored, ...result } = lab.battleResult(first);
+    results.add(JSON.stringify(result));
+    const moved = lab.moveDoor(lab.INITIAL_DOORS, '0-1', '3-4', seed);
+    assert.equal(moved.ok, true);
+    const after = simulate(moved.doors, 60, seed);
+    assert.equal(lab.battleResult(after).seed, seed);
+    assert.deepEqual(after.squads.map(s => s.route), lab.routesOf(moved.doors, seed));
+  }
+  assert.ok(results.size > 1, '시드에 따라 실제 결과도 달라진다');
+});
+
+test('18회 제한 검사와 전투 시작도 전달받은 시드의 경로를 사용', () => {
+  const doors = ['0-1', '0-3', '1-2', '1-4', '2-5', '3-6', '4-5', '4-7', '5-8', '6-9', '7-10', '8-11'];
+  let allowed = false, rejected = false;
+  for (let seed = 0; seed < 100; seed++) {
+    const routes = lab.routesOf(doors, seed);
+    const validation = lab.validateLayout(doors, seed);
+    const over = routes.some(route => lab.countPassages(route) > lab.LIMIT);
+    assert.equal(validation.ok, !over);
+    assert.deepEqual(validation.routes, routes);
+    if (over) {
+      rejected = true;
+      assert.throws(() => lab.createBattle(doors, seed), /최대 18회/);
+    } else {
+      allowed = true;
+      assert.deepEqual(lab.createBattle(doors, seed).squads.map(s => s.route), routes);
+    }
+  }
+  assert.ok(allowed && rejected);
+});
 test('되짚는 방으로 이동할 때 1.5배, 빈 대기실에서도 1.5배', () => {
   const b = lab.createBattle(lab.INITIAL_DOORS);
   const squad = b.squads[0];
@@ -212,10 +286,10 @@ test('60초 초과는 방어 성공이 아니며 남은 인원 별도 집계', (
 test('고리에서 아는 지름길로 가장 짧게 복귀하며 실제 경로 목록에 포함', () => {
   const doors = ['0-1', '0-3', '3-4', '1-4', '1-2', '4-7', '2-5', '5-8', '8-11', '10-11', '3-6', '6-9'];
   assert.equal(lab.validateLayout(doors).ok, true);
-  const route = lab.exploreRoute(doors, 1, noFacilities);
+  const route = lab.exploreRoute(doors, 1, { ...noFacilities, seed: 1 });
   assert.deepEqual(route.rooms, [1, 0, 3, 6, 9, 6, 3, 4, 7, 4, 1, 2, 5, 8, 11, 10]);
   assert.deepEqual(route.steps.filter(s => s.backtrack).map(s => [s.from, s.to]), [[9, 6], [6, 3], [7, 4], [4, 1]]);
-  const battle = lab.createBattle(doors);
+  const battle = lab.createBattle(doors, 1);
   battle.monsterHP.fill(0);
   const squad = battle.squads[0];
   const actual = [squad.room];
@@ -291,5 +365,66 @@ test('조사 중에도 함정 진입 피해와 몬스터 교전 처리', () => {
   lab.advanceBattle(battle, .5);
   assert.equal(fighter.state, '교전');
   assert.equal(fighter.progress, 0);
+});
+
+test('화면의 시드 변경·전투 중 잠금·비교 표 표시와 debug 경로 일치', () => {
+  const vm = require('node:vm');
+  const source = require('node:fs').readFileSync(require.resolve('./lab.js'), 'utf8');
+  function mount(search) {
+    const elements = new Map();
+    const frames = [];
+    let now = 0;
+    const element = id => {
+      if (!elements.has(id)) elements.set(id, {
+        textContent: '', innerHTML: '', disabled: false, events: {},
+        classList: { toggle() {} },
+        addEventListener(type, callback) { this.events[type] = callback; },
+        setAttribute() {}
+      });
+      return elements.get(id);
+    };
+    const window = { location: { search }, crypto: { getRandomValues(value) { value[0] = 42; } } };
+    vm.runInNewContext(source, {
+      window, URLSearchParams, Uint32Array,
+      document: { readyState: 'complete', visibilityState: 'visible',
+        getElementById: element, querySelectorAll: () => [], addEventListener() {} },
+      performance: { now: () => now }, setInterval() {},
+      requestAnimationFrame: callback => frames.push(callback)
+    });
+    return { element, finish() { now += 60000; frames.shift()(now); } };
+  }
+  for (const search of ['', '?debug']) {
+    const ui = mount(search);
+    const el = ui.element;
+    assert.equal(el('seed').textContent, '시드 7');
+    assert.equal(el('board').innerHTML.includes('class="route '), search === '?debug');
+    // 아직 전투 결과가 없어도 버튼을 누르는 즉시 변경 표시가 떠야 한다.
+    el('new-invaders').events.click();
+    assert.equal(el('seed').textContent, '시드 42');
+    assert.match(el('comparison-note').textContent, /침입자 바뀜/);
+    if (search === '?debug') {
+      const drawn = (el('board').innerHTML.match(/class="route /g) || []).length;
+      assert.equal(drawn, lab.routesOf(lab.INITIAL_DOORS, 42).reduce((n, r) => n + r.steps.length, 0));
+    }
+    el('fight').events.click();
+    assert.equal(el('new-invaders').disabled, true);
+    el('new-invaders').events.click();
+    assert.equal(el('seed').textContent, '시드 42');
+    ui.finish();
+    assert.equal(el('new-invaders').disabled, false);
+    assert.match(el('comparison-note').textContent, /동일 침입자/);
+    const result = lab.battleResult(simulate(lab.INITIAL_DOORS, 60, 42));
+    assert.ok(el('result-body').innerHTML.includes(`<td>${result.reached}명</td>`));
+    el('new-invaders').events.click(); // 동일한 난수가 나와도 시드는 반드시 바뀐다.
+    assert.equal(el('seed').textContent, '시드 43');
+    el('fight').events.click();
+    ui.finish();
+    assert.match(el('comparison-note').textContent, /침입자 바뀜/);
+    assert.ok(el('result-body').innerHTML.includes('<td>42</td><td>43</td>'));
+    el('fight').events.click();
+    ui.finish();
+    assert.match(el('comparison-note').textContent, /동일 침입자/);
+    assert.ok(el('result-body').innerHTML.includes('<td>43</td><td>43</td>'));
+  }
 });
 console.log(`\n전체 ${passed}개 검사 통과`);
