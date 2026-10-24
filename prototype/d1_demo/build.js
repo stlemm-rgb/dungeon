@@ -8,7 +8,7 @@
  *  - 흐름 (문): 노란 문 표시를 끌어 문 없는 안쪽 벽(점선 칸)에 놓는다 (문을 누른 뒤 빈 벽을 눌러도 됨). 끄는 동안 P.previewLayout 으로 검사:
  *    거절이면 이유(why) 토스트 + 끊긴 방(isolated) 빗금, 문은 원래 자리로. 옮긴 문은 미확정(점선·반투명).
  *  - 아래 한 줄 합계 (미확정 시설 n곳 · 문 n개 옮김 · 마석 a → b · 가치 · 전투력). [건설] = P.commitLayout 으로 문 + 시설 한 번에 확정 (문은 무료) / [끝내기] = 미확정 버리고 나감. 탭을 옮겨도 버림.
- *    끄는 그림은 터치에서는 손가락보다 위(LIFT)에 띄운다 (손가락에 안 가림). 이미 지은 구역 위에 놓기(교체)는 데모에서 막음(토스트).
+ *    놓이는 곳(판정점) = 손·커서 끝 그대로 (위로 띄우지 않음). 끄는 그림은 그 자리에 작게 붙고, 대신 놓일 칸·벽을 판에서 크고 밝게 강조하며 놓을 곳·거절 이유는 아래 합계 줄에 쓴다 (손가락에 안 가림). 이미 지은 구역 위에 놓기(교체)는 데모에서 막음(토스트).
  *  - 층: 지하 단면 전체를 세로로 이어 그린다 (층이 늘면 단면만 스크롤). 잠긴 층은 어둡게 + 🔒 + 열림 조건.
  *  - 돈: 건설·부대 조달은 마석(회사 금 아님). 쓴 마석은 돌려받지 못한다. 마석 0이어도 다음 주는 진행된다.
  *  - 고정 구역(의뢰가 정함, 예: 얼어붙은 하역장)은 🔒로 보이고 못 짓고 못 바꾼다 (바깥 벽의 문은 옮길 수 있음).
@@ -265,7 +265,6 @@
   var TOOL_LABEL = { trap: '함정', den: '대기실', lure: '미끼' };
   var TOOL_ORDER = ['trap', 'den', 'lure'];
   function josa(w) { var c = String(w).charCodeAt(String(w).length - 1) - 0xAC00; return c >= 0 && c % 28 !== 0 ? '은' : '는'; }   // 받침 있으면 은, 없으면 는
-  var LIFT = 64;   // 손가락(터치)보다 이만큼 위에 끄는 그림을 띄운다 (마우스는 0)
 
   window.SCREEN_PLUGINS = window.SCREEN_PLUGINS || {};
   window.SCREEN_PLUGINS.build = function (api) {
@@ -407,6 +406,12 @@
       }
       function drawSum() {
         var left = P.budgetLeft(), h, nd = movedTotal();
+        if (drag && drag.started && drag.note) {   // 끄는 동안: 손가락이 가리킨 곳 안내 · 거절 이유 (손가락에 안 가리는 아래 줄)
+          morphHtml(sumBox, '<div class="note ' + (drag.note.bad ? 'bad' : drag.note.ok ? 'ok' : '') + '">' + esc(drag.note.text) + '</div>');
+          sumBox.classList.add('note');
+          return;
+        }
+        sumBox.classList.remove('note');
         if (!order.length && !nd) {
           h = armed ? '<b>' + TOOL_LABEL[armed] + '</b>을(를) 골랐어요 · 놓을 빈 구역을 누르세요 (마석 ' + money(left) + ')'
             : armedDoor ? '문을 골랐어요 · 옮길 빈 벽(점선)을 누르세요'
@@ -527,9 +532,10 @@
         if (!drag || drag.hotEdge === id) return;
         shaft.querySelectorAll('.zslot.hot').forEach(function (s) { s.classList.remove('hot', 'bad'); });
         drag.hotEdge = id; drag.hotP = null;
-        var small = drag.ghost.querySelector('small'), n = drag.floor;
+        var n = drag.floor;
         if (!id) {
-          drag.ghost.classList.remove('bad'); small.textContent = '';
+          drag.ghost.classList.remove('bad', 'v');
+          setNote('문을 놓을 점선 벽으로 끌어 주세요', false, false);
           isoRooms = null;
           redrawLines(n, pdoors[n], movedSet(n));
           shaft.querySelectorAll('.zc.iso').forEach(function (c) { c.classList.remove('iso'); });
@@ -542,7 +548,8 @@
         var slot = shaft.querySelector('.zslot[data-edge="' + id + '"]');
         if (slot) slot.classList.add('hot', p.ok ? 'ok' : 'bad');
         drag.ghost.classList.toggle('bad', !p.ok);
-        small.textContent = p.ok ? '여기에 놓기' : (p.why || '놓을 수 없어요');
+        drag.ghost.classList.toggle('v', !!(slot && slot.classList.contains('v')));
+        setNote(p.ok ? '🚪 여기에 놓으면 문이 옮겨져요 (손을 떼면 놓임)' : (p.why || '여기에는 놓을 수 없어요'), p.ok, !p.ok);
         redrawLines(n, list, movedSet(n, list));
         shaft.querySelectorAll('.zc.iso').forEach(function (c) { c.classList.remove('iso'); });
         if (!p.ok && p.isolated) p.isolated.forEach(function (z) { shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('iso'); }); });
@@ -563,17 +570,25 @@
       function clearMarks() {
         marks = null;
         shaft.classList.remove('droping', 'doordrag');
-        shaft.querySelectorAll('.zc.drop, .zc.hot').forEach(function (c) { c.classList.remove('drop', 'hot'); });
+        shaft.querySelectorAll('.zc.drop, .zc.hot').forEach(function (c) { c.classList.remove('drop', 'hot', 'bad'); });
         shaft.querySelectorAll('.zslots').forEach(function (s) { s.innerHTML = ''; });
       }
       function setHot(z) {
         if (drag.hot === z) return;
-        if (drag.hot) shaft.querySelectorAll('.zc[data-z="' + drag.hot + '"]').forEach(function (c) { c.classList.remove('hot'); });
+        if (drag.hot) shaft.querySelectorAll('.zc[data-z="' + drag.hot + '"]').forEach(function (c) { c.classList.remove('hot', 'bad'); });
         drag.hot = z;
-        var okHere = !!(z && marks && marks[z]);
-        if (okHere) shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('hot'); });
+        var okHere = !!(z && marks && marks[z]), why = '';
+        if (okHere && drag.kind === 'tool') { var r = canPlace(z, drag.k, false); if (!r.ok) { okHere = false; why = r.why; } }   // 문 통과 한도 같은 전체 검사까지 (끌기 시작이 아닌 칸을 바꿀 때만)
+        else if (z && !okHere) why = canPlace(z, drag.k, true).why || '여기에는 지을 수 없어요';
+        if (z) shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('hot'); c.classList.toggle('bad', !okHere); });
         drag.ghost.classList.toggle('bad', !!z && !okHere);
-        drag.ghost.querySelector('small').textContent = okHere ? (Z.NAMES[z] || z) + ' · 마석 ' + P.buildCost(drag.k, z) : '';
+        setNote(!z ? '놓을 밝은 칸으로 끌어 주세요' : okHere ? TOOL_LABEL[drag.k] + ' → ' + (Z.NAMES[z] || z) + ' (마석 ' + P.buildCost(drag.k, z) + ') · 손을 떼면 놓임' : why, okHere, !!z && !okHere);
+      }
+      // 끄는 동안 합계 줄에 보일 안내 (손가락에 안 가리는 아래 도구 영역)
+      function setNote(text, ok, bad) {
+        if (!drag) return;
+        drag.note = { text: text, ok: ok, bad: bad };
+        drawSum();
       }
 
       // ----- 끌기 (터치·마우스 모두 포인터 이벤트) -----
@@ -584,13 +599,13 @@
       }
       function ghostMove() {
         drag.ghost.style.left = drag.x + 'px';
-        drag.ghost.style.top = (drag.y - drag.lift) + 'px';
-        if (drag.kind === 'door') setHotEdge(slotAt(drag.x, drag.y - drag.lift, drag.floor, 0.62));
-        else setHot(cellAt(drag.x, drag.y - drag.lift));
+        drag.ghost.style.top = drag.y + 'px';
+        if (drag.kind === 'door') setHotEdge(slotAt(drag.x, drag.y, drag.floor, 0.62));   // 판정점 = 손·커서 끝
+        else setHot(cellAt(drag.x, drag.y));
       }
       function tick() {   // 판 위·아래 끝에 가까우면 단면을 스크롤 (층이 많을 때)
         if (!drag || !drag.started) return;
-        var r = scroll.getBoundingClientRect(), ty = drag.y - drag.lift;
+        var r = scroll.getBoundingClientRect(), ty = drag.y;
         // 그림이 판 가운데쯤에 한 번 들어온 뒤에만, 위·아래 끝에 닿으면 스크롤 (시설 띠에서 막 끌어 올릴 때 저절로 밀리지 않게)
         if (ty > r.top + 36 && ty < r.bottom - 36) drag.inside = true;
         else if (drag.inside && ty >= r.top && ty < r.top + 36) scroll.scrollTop -= 10;
@@ -600,19 +615,21 @@
       }
       function startDrag() {
         drag.started = true;
+        sumBox.style.minHeight = sumBox.offsetHeight + 'px';   // 안내 글로 바뀌어도 아래 도구 영역·판 높이가 안 움직이게 (끝나면 풀림)
+        drag.note = { text: drag.kind === 'door' ? '문을 놓을 점선 벽으로 끌어 주세요' : '놓을 밝은 칸으로 끌어 주세요', ok: false, bad: false };
         armed = null; armedDoor = null;
         toolsBox.querySelectorAll('.tool.on').forEach(function (c) { c.classList.remove('on'); });
         if (drag.node && drag.kind !== 'door') drag.node.classList.add('lifted');
         var g;
         if (drag.kind === 'door') {
-          g = api.div('dragghost door', '<b>문</b><small></small>');
+          g = api.div('dragghost door', '');
           document.body.appendChild(g);
           drag.ghost = g;
           clearMarks();
           markDoorSlots(drag.floor);
           redrawLines(drag.floor, pdoors[drag.floor], movedSet(drag.floor));
         } else {
-          g = api.div('dragghost k-' + Z.FAC[drag.k].kind, '<b>' + TOOL_LABEL[drag.k] + '</b><small></small>');
+          g = api.div('dragghost k-' + Z.FAC[drag.k].kind, '<b>' + TOOL_LABEL[drag.k].charAt(0) + '</b>');   // 작은 아이콘 (이름 첫 글자)
           document.body.appendChild(g);
           drag.ghost = g;
           markDrops(drag.k);
@@ -628,6 +645,7 @@
         if (drag && drag.raf) cancelAnimationFrame(drag.raf);
         if (drag && drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
         if (drag && drag.node) drag.node.classList.remove('lifted');
+        sumBox.style.minHeight = '';
         moving = null;
         clearMarks();
       }
@@ -642,7 +660,7 @@
         var d = drag;
         d.x = e.clientX; d.y = e.clientY;
         if (d.kind === 'door') {
-          var to = d.started ? slotAt(d.x, d.y - d.lift, d.floor, 0.62) : null;
+          var to = d.started ? slotAt(d.x, d.y, d.floor, 0.62) : null;
           endDrag(); drag = null;
           if (!d.started) {   // 그냥 누름 = 문 고르기 / 고른 것 풀기 (이어서 빈 벽을 누르면 옮김)
             armed = null;
@@ -659,7 +677,7 @@
           }
           return;
         }
-        var z = d.started ? cellAt(d.x, d.y - d.lift) : null;
+        var z = d.started ? cellAt(d.x, d.y) : null;
         endDrag(); drag = null;
         if (d.from && !d.started) return;   // 미확정 칸을 그냥 누름 = 아래 click 이 안내
         if (!d.started) {   // 그냥 누름 = 시설 고르기 / 고른 것 풀기 (이어서 칸을 누르면 놓음)
@@ -689,7 +707,7 @@
         if (!t || drag) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         drag = { kind: 'tool', k: t.getAttribute('data-tool'), pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
-          lift: e.pointerType === 'mouse' ? 0 : LIFT, started: false, ghost: null, hot: null, node: t, raf: 0 };
+          started: false, ghost: null, hot: null, node: t, raf: 0 };
         listen();
       });
 
@@ -700,7 +718,7 @@
         var dt = e.target.closest ? e.target.closest('.zdoor.grab') : null;
         if (dt) {
           drag = { kind: 'door', edge: dt.getAttribute('data-edge'), floor: +dt.getAttribute('data-floor'), pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
-            lift: e.pointerType === 'mouse' ? 0 : LIFT, started: false, ghost: null, hotEdge: null, hotP: null, node: null, raf: 0 };
+            started: false, ghost: null, hotEdge: null, hotP: null, node: null, raf: 0 };
           listen();
           return;
         }
@@ -710,7 +728,7 @@
         if (!pend[z]) return;
         moving = z;
         drag = { kind: 'pend', k: pend[z].k, from: z, pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
-          lift: e.pointerType === 'mouse' ? 0 : LIFT, started: false, ghost: null, hot: null, node: c, raf: 0 };
+          started: false, ghost: null, hot: null, node: c, raf: 0 };
         listen();
       });
 
@@ -761,6 +779,7 @@
         var low = 0, sr = scroll.getBoundingClientRect();
         shaft.querySelectorAll('.zc.tut-hl').forEach(function (c) { low = Math.max(low, c.getBoundingClientRect().bottom); });
         if (low > sr.bottom) scroll.scrollTop += low - sr.bottom + 14;
+        if (api.tutPlace) api.tutPlace();   // 말풍선이 강조 칸·[건설]·도구를 가리면 위 자리로
       });
     };
   };

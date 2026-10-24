@@ -120,7 +120,8 @@
       }
       function fitOverlay() { // 말풍선이 떠 있으면 그 높이 + 하단 막대 높이만큼 비움
         if (!ov) return;
-        var h = tutEl && !tutEl.hidden ? tutEl.offsetHeight + tabsEl.offsetHeight : 0;
+        var h = tutEl && !tutEl.hidden && !tutEl.classList.contains('top') ? tutEl.offsetHeight + tabsEl.offsetHeight + 8 : 0;   // 말풍선은 겹쳐 뜨고(8px 띄움), 이 카드 화면만 그 자리를 비운다
+        h = Math.max(h, +ov.getAttribute('data-tut') || 0);   // 한 번 비운 자리는 이 카드가 떠 있는 동안 유지: 말풍선이 닫혀도 카드가 안 움직임
         if (ov.getAttribute('data-tut') !== String(h)) { ov.setAttribute('data-tut', h); ov.style.setProperty('--tut-h', h + 'px'); }
       }
       function dismissOverlay(o, ms) { // 부드럽게 사라진 뒤 치움 (애니메이션이 안 흐르는 환경에서도 치워지게 타이머도 둠)
