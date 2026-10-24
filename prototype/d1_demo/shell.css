@@ -120,7 +120,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 button { font: inherit; color: inherit; cursor: pointer; }
 a { color: inherit; }
 
-#app { width: 100%; max-width: 390px; height: 100vh; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column;
+#app { position: relative; /* 튜토리얼 말풍선(#tut)이 이 안에서 겹쳐 뜬다 */ --tabs-h: 64px; width: 100%; max-width: 390px; height: 100vh; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column;
   overflow: hidden; background: var(--bg); }
 #view { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .screen { min-height: 100%; padding: 10px 12px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -128,7 +128,7 @@ a { color: inherit; }
 @keyframes screen-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 
 /* 하단 탭 5개: 회사 · 군단 · 현장(가운데) · 마계 · 내 집. 모두 같은 모양, 지금 보는 탭만 윗줄. 🔒 = 열림 조건, 취소선 = 준비 중. 전투 화면에서는 같은 막대에 [배속] [전투 시작] [안내]가 들어가 전투 시작이 가운데 버튼 자리에 온다 */
-#tabs { display: flex; align-items: stretch; height: 64px; border-top: 1px solid var(--line); background: var(--panel); flex: none; }
+#tabs { display: flex; align-items: stretch; height: var(--tabs-h); border-top: 1px solid var(--line); background: var(--panel); flex: none; }
 #tabs[hidden] { display: none; }
 #tabs button { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--dim); font-weight: bold; font-size: 15px;
   border-top: 3px solid transparent; }
@@ -329,7 +329,7 @@ body.reduce .slot, body.reduce .actor.walk .slot { animation: none; }
 @keyframes stamp-in { from { opacity: 0; transform: scale(2.4) rotate(-22deg); } to { opacity: 1; transform: scale(1) rotate(-8deg); } }
 
 /* 토스트 */
-#toasts { position: fixed; left: 50%; bottom: calc(80px + var(--tut-h, 0px)); transform: translateX(-50%); width: calc(100% - 24px); max-width: 366px; display: flex; flex-direction: column;
+#toasts { margin-top: var(--tut-top, 0px); /* 말풍선이 위 자리에 떠 있으면 그 아래로 (위쪽에 뜨는 화면에서만 효과) */ position: fixed; left: 50%; bottom: calc(80px + var(--tut-h, 0px)); /* --tut-h = 아래 자리에 뜬 말풍선 높이 (말풍선은 화면 위에 겹쳐 뜨고, 토스트만 그 위로 비켜 선다) */ transform: translateX(-50%); width: calc(100% - 24px); max-width: 366px; display: flex; flex-direction: column;
   gap: 6px; pointer-events: none; z-index: 70; } /* 팝업(60) 위에도 보이게 */
 #app:has(#tabs[hidden]) + #toasts { bottom: auto; top: 56px; } /* 탭 없는 화면(전투 등)에서는 카드·버튼을 가리지 않게 위로 */
 .toast { background: var(--text); color: var(--bg); padding: 9px 12px; border-radius: 8px; font-weight: bold; font-size: 13px; text-align: center; animation: toast-in var(--dur-fade) var(--ease-out); }
@@ -427,7 +427,7 @@ body.reduce .bt-sq.fight { animation: none; }
 .bt-g[data-g="A"] { background: var(--grade-a); } .bt-g[data-g="S"] { background: var(--grade-s); }
 
 /* 카드 전용 화면 (이벤트 카드 .ev · 침입자 카드 .sec): 화면 전체(폭은 휴대폰 폭까지)를 덮고 뒤의 전투는 멈춘다.
-   말풍선(#tut)은 이 화면보다 위(z-index 55)에 있고, --tut-h(말풍선 + 하단 막대 높이)만큼 아래를 비운다 */
+   말풍선(#tut)은 이 화면보다 위(z-index 55)에 겹쳐 뜨고, 카드 화면만 --tut-h(말풍선 + 하단 막대 높이, battle.js 가 이 화면에 따로 넣음)만큼 아래를 비워 카드 글을 안 가린다 */
 .bt-ov { position: fixed; top: 0; bottom: 0; left: max(0px, calc(50% - 195px)); width: min(100%, 390px); z-index: 50; overflow: hidden;
   display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; grid-template-rows: 78px minmax(0, 1fr) 78px; padding: 0 8px var(--tut-h, 0px);
   background: var(--scrim); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -593,9 +593,9 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .zdoor b { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--accent); color: var(--accent-ink); font-size: 10px; border-radius: 8px; padding: 0 4px; line-height: 14px; }
 /* 문을 놓을 수 있는 빈 벽 (끄는 동안·문을 눌러 고른 동안만) */
 .zslot { position: absolute; transform: translate(-50%, -50%); border: 2px dashed var(--dir-right); border-radius: 4px; background: var(--slot-fill); pointer-events: none; }
-.zslot.h { width: 32px; height: 12px; } .zslot.v { width: 12px; height: 32px; }
-.zslot.hot { border-style: solid; border-color: var(--ready); background: var(--ready-soft); }
-.zslot.hot.bad { border-color: var(--danger); }
+.zslot.h { width: 34px; height: 14px; } .zslot.v { width: 14px; height: 34px; }
+.zslot.hot { z-index: 3; border-style: solid; border-color: var(--text); background: var(--ready); transform: translate(-50%, -50%) scale(1.6); box-shadow: 0 0 0 3px var(--ready), 0 0 16px 6px var(--ready); }   /* 손가락 끝이 가리킨 벽: 크고 밝게 (손가락 밖에서도 보이게) */
+.zslot.hot.bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger), 0 0 16px 6px var(--danger); }
 .shaft.doordrag .zgrid { filter: brightness(.7); }
 
 @keyframes zfade { from { opacity: 0; } to { opacity: 1; } }
@@ -613,10 +613,13 @@ body[data-screen="result"] #app:has(#tabs[hidden]) + #toasts, body[data-screen="
 .upflash { animation: ws-up var(--dur-fx) var(--ease-pop-s); }
 @keyframes ws-up { 0% { transform: scale(1); } 40% { transform: scale(1.03); background: var(--accent-soft); border-color: var(--accent); } 100% { transform: scale(1); } }
 #tabs.inbattle .bt-cards small { display: block; font-size: 10px; font-weight: normal; line-height: 1.2; }
-/* ---- 튜토리얼: 은발 마왕 말풍선 (탭 막대 바로 위에 끼어 들어감) + 강조 ---- */
-#tut { position: relative; z-index: 55; /* 카드 전용 화면(.bt-ov, 50) 위에도 보이게 */ flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px 8px 10px; border-top: 2px solid var(--accent); background: var(--panel);
+/* ---- 튜토리얼: 은발 마왕 말풍선 (화면 위에 겹쳐 뜸: 아래 자리 = 탭 막대 바로 위, 대상을 가리면 위 자리. 아래 화면 배치는 안 움직임) + 강조 ---- */
+#tut { position: absolute; left: 8px; right: 8px; bottom: calc(var(--tabs-h) + 8px); z-index: 55; /* 카드 전용 화면(.bt-ov, 50) 위에도 보이게 */ display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px 8px 10px; border: 2px solid var(--accent); border-radius: 14px; background: var(--panel); box-shadow: 0 6px 18px var(--scrim);
   animation: tut-in var(--dur-sheet) var(--ease-out); }
 #tut[hidden] { display: none; }
+#app:has(#tabs[hidden]) #tut { bottom: 8px; }   /* 탭 막대가 없는 화면(의뢰 고르기 등)은 맨 아래 */
+#tut.top { bottom: auto; top: 8px; animation-name: tut-in-top; pointer-events: none; } #tut.top button { pointer-events: auto; }   /* 위 자리 말풍선은 아래 판 누르기·끌기를 막지 않음 (버튼만 눌림) */   /* 반짝이는 대상을 가리면 shell.js(tutPlace)가 위 자리로 옮김 */
+@keyframes tut-in-top { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
 @keyframes tut-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .tut-face { flex: none; width: 48px; height: 48px; margin-top: 4px; border: 2px dashed var(--accent); border-radius: 8px; background: var(--stage-slot);
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 8px; line-height: 1.2; color: var(--dim); }
@@ -764,18 +767,18 @@ body[data-screen="build"] #toasts { bottom: auto; top: 12px; }
 .tool.lifted { opacity: .35; }
 .bsumline { min-height: 34px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--dim); text-align: center; line-height: 1.35; }
 .bsumline b { color: var(--text); }
+.bsumline.note { font-size: 13px; font-weight: bold; line-height: 1.25; color: var(--dim); }   /* 끄는 동안: 놓을 곳 · 거절 이유 (판 위 손가락에 안 가리는 아래 도구 영역) */
+.bsumline.note .ok { color: var(--ready); } .bsumline.note .bad { color: var(--danger); }
 .bsumline b.mas { color: var(--maseok); }
 .bbtns { display: flex; gap: 8px; }
 .bbtn { flex: none; width: 96px; padding: 12px 4px; border: 1px solid var(--line-strong); border-radius: 10px; background: none; font-weight: bold; }
 .bbtn.main { flex: 1; width: auto; border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-size: 17px; font-weight: 900; }
 .bbtn.off { opacity: .45; }
-.dragghost { position: fixed; z-index: 90; transform: translate(-50%, -50%) rotate(-4deg); pointer-events: none; padding: 9px 14px; border: 2px solid var(--accent); border-radius: 8px; background: var(--panel-2); color: var(--text); font-weight: bold; font-size: 14px; text-align: center; box-shadow: 0 8px 20px var(--scrim); }
-.dragghost small { display: block; font-size: 11px; font-weight: normal; color: var(--foe); }
-.dragghost small:empty { display: none; }
+.dragghost { position: fixed; z-index: 90; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 2px solid var(--accent); border-radius: 8px; background: var(--panel-2); color: var(--text); font-weight: bold; font-size: 14px; line-height: 1; box-shadow: 0 3px 10px var(--scrim); }   /* 판정점 = 손·커서 끝. 그림은 그 자리에 작게 (가려도 됨) */
 .dragghost.k-trap { background: var(--zone-trap); } .dragghost.k-den { background: var(--zone-den); } .dragghost.k-lure { background: var(--zone-lure); } .dragghost.k-turn { background: var(--ready-soft); }
-.dragghost.door { background: var(--door); color: var(--door-ink); border-color: var(--door-ink); } .dragghost.door small { color: var(--door-ink); }
+.dragghost.door { width: 26px; height: 11px; border-radius: 3px; background: var(--door); border-color: var(--door-ink); } .dragghost.door.v { width: 11px; height: 26px; }
 .dragghost.bad { border-color: var(--danger); }
-.dragghost.door.bad { background: var(--danger); color: var(--text); } .dragghost.door.bad small { color: var(--text); }
+.dragghost.door.bad { background: var(--danger); }
 .bdoorline { font-size: 12px; color: var(--dim); text-align: center; line-height: 1.35; }
 .bdoorline b { color: var(--door); }
 .bdoorline b.bad { color: var(--danger); }
@@ -783,7 +786,8 @@ body[data-screen="build"] #toasts { bottom: auto; top: 12px; }
 .shaft.droping { user-select: none; -webkit-user-select: none; }
 .shaft.droping .zc:not(.drop):not(.gap) { filter: brightness(.55); }
 .shaft.droping .zc.drop { filter: brightness(1.3); box-shadow: inset 0 0 0 3px var(--ready); }
-.shaft.droping .zc.drop.hot { filter: brightness(1.6); box-shadow: inset 0 0 0 4px var(--accent); }
+.shaft.droping .zc.hot { z-index: 5; filter: brightness(1.7); box-shadow: inset 0 0 0 5px var(--accent); outline: 4px solid var(--accent); outline-offset: 1px; }   /* 손가락 끝이 가리킨 칸: 두꺼운 테두리 + 바깥 테두리 (손가락 밖에서도 보이게) */
+.shaft.droping .zc.hot.bad { filter: brightness(1.1); box-shadow: inset 0 0 0 5px var(--danger); outline-color: var(--danger); }
 .zc.pend { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; border: 2px dashed var(--accent); background-image: repeating-linear-gradient(135deg, var(--pend-hatch) 0 6px, transparent 6px 12px); animation: pend-in var(--dur-fx) var(--ease-pop-s); }
 .zl.pend .fn, .zl.pend .zi, .zl.pend .zp { opacity: .8; }
 .zl.pend .zn { display: none; } /* 미확정 칸은 글이 많아서 구역 이름 줄을 접는다 (× 와 안 겹치게) */

@@ -28,7 +28,7 @@
  *  - 건설 화면(구역 판)은 build.js, 전투 화면은 battle.js (SCREEN_PLUGINS). 판 규칙은 zones.js.
  *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }  (나중에 React 화면 하나로 옮기기 쉽게)
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
- *  - 튜토리얼: 은발 마왕 말풍선(#tut, 탭 막대 바로 위). 대사는 lines.js, 단계 기록은 progress.js(P.tutorial 등). 아래 "튜토리얼" 절 참고.
+ *  - 튜토리얼: 은발 마왕 말풍선(#tut, 화면 위에 겹쳐 뜸: 탭 막대 바로 위, 대상을 가리면 위 자리). 대사는 lines.js, 단계 기록은 progress.js(P.tutorial 등). 아래 "튜토리얼" 절 참고.
  *  - 용어는 GAME_STRUCTURE 8절: 화면 글에 "퀘스트"를 쓰지 않는다 (의뢰·의뢰 완료·납품 기준·업무). 회사 금(영구) 와 마석(현장 전용)은 따로 표시.
  *  - 숫자는 가짜(균형 없음). 상태(RUN)는 progress.js가 localStorage에 자동 저장한다. 설정은 이 파일이 따로 저장.
  */
@@ -846,7 +846,7 @@
 
   // ---------- 튜토리얼: 은발 마왕 말풍선 (대사는 lines.js, 단계 기록은 progress.js 계약 함수) ----------
   // 계약: P.tutorial() -> { on, seen } · P.tutorialSeen(id) (본 단계로 기록) · P.skipTutorial() · P.tutorialPath() (구역 id 배열 또는 null).
-  // 하나라도 없거나 오류면 튜토리얼을 아예 안 띄운다. 말풍선은 화면 아래 탭 막대 바로 위(#tut)에 끼어 들어가 화면이 그만큼 줄어들 뿐 아무것도 가리지 않는다.
+  // 하나라도 없거나 오류면 튜토리얼을 아예 안 띄운다. 말풍선(#tut)은 화면 위에 겹쳐 뜬다 (아래 화면 배치는 안 움직임). 아래 자리(탭 막대 바로 위)가 기본, 반짝이는 대상(.tut-hl)을 가리면 위 자리로 옮긴다 (tutPlace).
   // 단계 하나 = LINES.tutorial 에서 id 가 같은 줄들. 탭하면 다음 줄, 마지막 줄에서 탭하면 닫히고 "본 단계"로 기록.
   // 강조 = 목표 요소에 .tut-hl (shell.css). 목표를 누르거나 다른 화면으로 가면 그 단계는 끝난 것으로 기록.
   var tutEl = document.getElementById('tut');
@@ -879,10 +879,11 @@
     tutClearHl();
     c.nodes = Array.prototype.slice.call(document.querySelectorAll(c.target));
     c.nodes.forEach(function (n) { n.classList.add('tut-hl'); });
+    tutPlace(); tutPlaceSoon();   // 대상이 막 붙은 화면이면 한 프레임 뒤에 다시 (자리 잡힌 뒤 크기로)
   }
   function tutDraw() {
     var c = tut.cur;
-    if (!c) { tutEl.hidden = true; tutEl.innerHTML = ''; document.body.style.setProperty('--tut-h', '0px'); return; }
+    if (!c) { tutEl.hidden = true; tutEl.innerHTML = ''; tutEl.classList.remove('top'); document.body.style.setProperty('--tut-h', '0px'); document.body.style.setProperty('--tut-top', '0px'); return; }
     var l = c.lines[c.i], last = c.i >= c.lines.length - 1;
     if (tutEl.hidden || !tutEl.firstChild) {
       tutEl.innerHTML = '<div class="tut-face" aria-hidden="true"><b>마왕</b>도트<br>48×48</div>' +
@@ -895,8 +896,33 @@
     tutEl.querySelector('.tut-text').textContent = l.text; // 글자 그대로 (줄바꿈은 CSS pre-line)
     tutEl.querySelector('.tut-count').textContent = c.lines.length > 1 ? (c.i + 1) + '/' + c.lines.length : '';
     tutEl.querySelector('.tut-next').textContent = last ? '닫기' : '다음 ▶';
-    document.body.style.setProperty('--tut-h', tutEl.offsetHeight + 'px'); // 토스트가 말풍선을 가리지 않게 그 높이만큼 올린다 (shell.css #toasts)
+    tutPlace();
   }
+  // 말풍선 자리 정하기: 아래(탭 막대 바로 위)가 기본. 반짝이는 대상(.tut-hl)을 가리면 위로 (덜 가리는 쪽). 화면 배치는 건드리지 않는다 (겹쳐 뜰 뿐).
+  // 카드 전용 화면(.bt-ov) 안의 대상은 따지지 않는다 (그 화면이 말풍선 자리를 따로 비워 둠). --tut-h = 아래 자리일 때 말풍선 높이 (토스트가 그 위로 비켜 섬)
+  function tutPlace() {
+    if (tutEl.hidden) { document.body.style.setProperty('--tut-h', '0px'); document.body.style.setProperty('--tut-top', '0px'); return; }
+    var app = document.getElementById('app'), ar = app.getBoundingClientRect(), h = tutEl.offsetHeight, gap = 8;
+    var tabsH = tabsEl.hidden ? 0 : tabsEl.offsetHeight;
+    var nodes = Array.prototype.slice.call(document.querySelectorAll('.tut-hl')).filter(function (n) { return !(n.closest && n.closest('.bt-ov')); });
+    function covered(top) {   // 말풍선을 그 자리에 두면 가려지는 대상 면적 합
+      var y0 = top ? ar.top + gap : ar.bottom - tabsH - gap - h, y1 = y0 + h, x0 = ar.left + gap, x1 = ar.right - gap, sum = 0;
+      nodes.forEach(function (n) {
+        var r = n.getBoundingClientRect(), w = Math.min(r.right, x1) - Math.max(r.left, x0), t = Math.min(r.bottom, y1) - Math.max(r.top, y0);
+        if (w > 0 && t > 0) sum += w * t;
+      });
+      return sum;
+    }
+    var top = tutEl.classList.contains('top'), here = covered(top), other = covered(!top);
+    if (here > 0 && other < here) top = !top;
+    if (tutEl.classList.contains('top') !== top) tutEl.classList.toggle('top', top);
+    document.body.style.setProperty('--tut-h', top ? '0px' : (h + gap) + 'px');
+    document.body.style.setProperty('--tut-top', top ? (h + gap) + 'px' : '0px');
+  }
+  var tutPlaceRaf = 0;
+  function tutPlaceSoon() { if (tutPlaceRaf || tutEl.hidden) return; tutPlaceRaf = requestAnimationFrame(function () { tutPlaceRaf = 0; tutPlace(); }); }
+  window.addEventListener('resize', tutPlaceSoon);
+  document.addEventListener('scroll', tutPlaceSoon, true);   // 판을 스크롤해 대상이 말풍선 밑으로 들어가면 자리를 바꿈
   function tutEnd(mark) {
     var c = tut.cur;
     if (!c) return;
@@ -984,7 +1010,7 @@
     unitName: function (id) { var u = P.unitById(id); return u ? uname(u) : ''; },
     floor: function () { return curFloor; }, setFloor: function (n) { curFloor = n; },   // 지금 보는 층 (건설 화면 ↔ 출진 화면)
     // 튜토리얼 (build.js·battle.js): 단계 보이기 · 끝내기(본 것으로 기록) · 떠 있나 · 건설 화면 강조 구역
-    tutStart: tutStart, tutDone: function (id) { if (tutActive(id)) tutEnd(true); }, tutActive: tutActive, tutZones: tutZones,
+    tutPlace: tutPlace, tutStart: tutStart, tutDone: function (id) { if (tutActive(id)) tutEnd(true); }, tutActive: tutActive, tutZones: tutZones,
     // 전투 화면용: 하단 탭 막대 자리 (전투 시작 버튼이 가운데 큰 버튼 자리에 오게 battle.js가 여기에 채운다)
     bar: function () { return tabsEl; },
     // 전투 화면용: 결과 반영(한 번만, 결과표 내용을 돌려줌) / 결과표에서 현장으로
