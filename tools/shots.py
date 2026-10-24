@@ -1,15 +1,21 @@
-"""화면 검사: 390px·1280px 스크린샷을 tools/shots/ 기준 이미지와 비교하고, 가로 넘침을 잰다.
+"""화면 검사: D1 데모(prototype/d1_demo)와 옛 루트 게임(index.html)의 스크린샷을 기준 이미지와 비교하고, 가로 넘침·콘솔 오류를 잰다.
 
+묶음
+  --d1   D1 데모 6장 (회사·현장·건설 모드·전투 12초·결과표 390x844 + 회사 1280x800). 기준 이미지 tools/shots/d1/.
+         tools/d1_drive.js(node + Chrome CDP)로 찍는다. node가 없으면 건너뜀(통과).
+  --old  옛 루트 게임 4장 (tools/harness.html 틀 모드). 기준 이미지 tools/shots/*.png. 옛 기준은 갱신하지 않는다(보관 예정).
+  (둘 다 안 주면 둘 다)
 실패 조건
-  - 가로 넘침 (게임 화면의 scrollWidth가 틀 폭보다 큼) 또는 화면이 안 그려짐
+  - 가로 넘침 (문서 폭이 창 폭보다 큼) 또는 화면이 안 그려짐 / 콘솔 오류·예외 (D1)
   - 기준 이미지와 다른 점이 DIFF_LIMIT(비율)보다 많음
-화면을 일부러 바꿨으면 tools/shots/out/의 새 이미지를 눈으로 확인한 뒤 --update로 기준을 바꾼다.
-(버전 번호가 화면에 보이므로 GAME_VERSION을 올리면 기준도 갱신해야 한다.)
-사용: python tools/shots.py [--update]
+화면을 일부러 바꿨으면 tools/shots/out/의 새 이미지를 눈으로 확인한 뒤 --update로 기준을 바꾼다 (예: py tools/shots.py --d1 --update).
+사용: python tools/shots.py [--d1|--old] [--update]
 """
+import json
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import zlib
 
@@ -17,6 +23,8 @@ import tool_common as tc
 
 SHOT_DIR = os.path.join(tc.TOOLS, "shots")
 OUT_DIR = os.path.join(SHOT_DIR, "out")
+D1_DIR = os.path.join(SHOT_DIR, "d1")          # D1 기준 이미지
+D1_OUT = os.path.join(OUT_DIR, "d1")
 DIFF_LIMIT = 0.0005     # 다른 점이 0.05%를 넘으면 실패 (같은 PC에서 3번 찍어 잰 흔들림은 0.000%, 버튼 하나 없애면 0.54%)
 CHANNEL_TOLERANCE = 24  # 글꼴 가장자리 흐림 정도의 차이는 같다고 봄
 # 헤드리스 Chrome이 가끔 창 맨 아래 몇 줄(약 7px)을 그리기 전에 찍어 흰 줄이 생긴다(매번 다른 장이 0.1~0.4% 실패하던 원인).
@@ -121,11 +129,23 @@ def compare(base_path, new_path):
     return differ / float(w1 * h1), ""
 
 
-def main():
-    tc.setup_output()
-    update = "--update" in sys.argv
-    os.makedirs(OUT_DIR, exist_ok=True)
-    problems, lines = [], []
+def check_base(name, out_png, base_dir, rel_out, update, problems, lines, note):
+    """out_png를 base_dir의 기준 이미지와 비교 (없거나 --update면 기준으로 복사)."""
+    base_png = os.path.join(base_dir, name + ".png")
+    if update or not os.path.exists(base_png):
+        os.makedirs(base_dir, exist_ok=True)
+        shutil.copyfile(out_png, base_png)
+        lines.append("  %s: 기준 이미지 %s (%s)" % (name, "갱신" if update else "새로 만듦", note))
+        return
+    ratio, why = compare(base_png, out_png)
+    if ratio > DIFF_LIMIT:
+        problems.append("%s: 기준 이미지와 %.2f%% 다름 %s (%s 확인, 맞으면 --update)" % (name, ratio * 100, why, rel_out))
+    else:
+        lines.append("  %s: 다른 점 %.3f%%, %s" % (name, ratio * 100, note))
+
+
+def old_shots(update, problems, lines):
+    """옛 루트 게임 (index.html) 4장."""
     for name, w, h, opts in CASES:
         src = "../index.html?" + opts
         frame_query = {"mode": "frame", "w": w, "h": h, "src": src}
@@ -142,26 +162,54 @@ def main():
         tc.screenshot(frame_query, raw_png, (w, h + EXTRA_H))
         crop_top(raw_png, out_png, w, h)
         os.remove(raw_png)
-        base_png = os.path.join(SHOT_DIR, name + ".png")
-        if update or not os.path.exists(base_png):
-            shutil.copyfile(out_png, base_png)
-            lines.append("  %s: 기준 이미지 %s (넘침 없음, 버전 %s)" % (name, "갱신" if update else "새로 만듦", info.get("version")))
-            continue
-        ratio, why = compare(base_png, out_png)
-        if ratio > DIFF_LIMIT:
-            problems.append("%s: 기준 이미지와 %.2f%% 다름 %s (tools/shots/out/%s.png 확인, 맞으면 --update)"
-                            % (name, ratio * 100, why, name))
-        else:
-            lines.append("  %s: 다른 점 %.3f%%, 넘침 없음 (scrollWidth %s / 폭 %s)"
-                         % (name, ratio * 100, info["scrollWidth"], info["innerWidth"]))
+        check_base(name, out_png, SHOT_DIR, "tools/shots/out/%s.png" % name, update, problems, lines,
+                   "넘침 없음 (scrollWidth %s / 폭 %s, 버전 %s)" % (info["scrollWidth"], info["innerWidth"], info.get("version")))
+    return len(CASES)
+
+
+def d1_shots(update, problems, lines):
+    """D1 데모 화면 (tools/d1_drive.js shots). node가 없으면 None."""
+    os.makedirs(D1_OUT, exist_ok=True)
+    r = tc.run_node_tool(["tools/d1_drive.js", "shots", D1_OUT], timeout=180)
+    if r is None:
+        return None
+    if r.get("fatal"):
+        problems.append("D1 사진 찍기 실패: " + r["fatal"].splitlines()[0])
+        return 0
+    for c in r["cases"]:
+        name = c["name"]
+        for p in c.get("problems", []):
+            problems.append("%s: %s" % (name, p))
+        for e in c.get("logs", []):
+            problems.append("%s: 콘솔 오류 %s" % (name, e))
+        if c.get("overflow"):
+            problems.append("%s: 가로 넘침 scrollWidth %s > 폭 %s (넘친 요소: %s)"
+                            % (name, c["scrollWidth"], c["innerWidth"], ", ".join(c.get("wide", []))))
+        check_base(name, c["file"], D1_DIR, "tools/shots/out/d1/%s.png" % name, update, problems, lines,
+                   "넘침 없음 (scrollWidth %s / 폭 %s)" % (c["scrollWidth"], c["innerWidth"]))
+    return len(r["cases"])
+
+
+def main():
+    tc.setup_output()
+    update = "--update" in sys.argv
+    want_d1 = "--d1" in sys.argv or "--old" not in sys.argv
+    want_old = "--old" in sys.argv or "--d1" not in sys.argv
+    os.makedirs(OUT_DIR, exist_ok=True)
+    problems, lines, done = [], [], []
+    if want_d1:
+        n = d1_shots(update, problems, lines)
+        done.append("D1 %s" % ("건너뜀(node 없음)" if n is None else "%d장" % n))
+    if want_old:
+        done.append("옛 게임 %d장" % old_shots(update, problems, lines))
     if problems:
-        print("[shots] 실패 %d건" % len(problems))
+        print("[shots] 실패 %d건 (%s)" % (len(problems), ", ".join(done)))
         for p in problems:
             print("  - " + p)
         for line in lines:
             print(line)
         return 1
-    print("[shots] 통과: %d장" % len(CASES))
+    print("[shots] 통과: " + ", ".join(done))
     for line in lines:
         print(line)
     return 0
