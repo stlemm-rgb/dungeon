@@ -2,17 +2,12 @@
 
 > 150줄 안으로. 큰 작업이 끝나면 통째로 덮어쓰기.
 
-마지막 갱신: 2026-10-24 (집 PC). 5×7 실험 → 정할 것 20개 확정 → **D1 문 토큰 1단계 로직 합침(저장 v7)** → q1 전투력 기준 낮춤 → Codex 구조 진단. **D1 문 토큰 2단계 화면 합침(PROGRESS 66)** → 사용자 휴대폰 플레이 "아주 좋아" → **다음 = 검사 도구를 D1로**
+마지막 갱신: 2026-10-24 (집 PC). 5×7 실험 → 정할 것 20개 확정 → **D1 문 토큰 1단계 로직 합침(저장 v7)** → q1 전투력 기준 낮춤 → Codex 구조 진단. **D1 문 토큰 2단계 화면 합침(PROGRESS 66)** → 사용자 휴대폰 플레이 "아주 좋아" → **검사 도구 D1로 합침(PROGRESS 68, check_all 15개)**
 
 ## 이어하기
-1. `git pull` → `py tools/check_all.py` (11개 통과해야 함). 실험 페이지 `node prototype/door_lab/selftest.js` (32개)
-2. **다음 일 = D1 2단계 화면** (`frontend`, 워크트리). 지시서는 아직 없음 → `docs/DESIGN_D1_DOORS.md` 7절 frontend 줄 + 12절 + `prototype/d1_demo/API.md` 13절로 쓴다. 맡길 것:
-   - 건설 모드에 **문 끌기**(빈 벽 = `ZONES.edges(n)` 중 문 없는 것, 끄는 동안 `P.previewLayout`, 거절 `code`·`why`·`isolated` 표시, [건설] = `P.commitLayout`), **통로(파이프)** 그리기, `?debug` 경로 선(`P.exploreRoutes`)
-   - 전투: 5×7 격자·문 가운데 지점·되돌아가는 걸음, 사건 `inspect`(?)·`clash`(⚔ → ✔/💨)·`iretreat`, 결과표 `rep.summary` 한 줄
-   - 층 넘어가기 **알림**(1층 전투가 완전히 끝나면 알림 → 누르면 2층 시작, `stairs`·`floorEnd`·`floorStart`·`BSIM.nextFloor`) — q2가 숨겨져 있어 지금은 구조만
-   - 옛 저장 안내 토스트 `P.takeNotice()`, 튜토리얼 강조 칸이 "보물방 앞 방들(C6·B7·D7)"로 바뀐 것에 맞춰 `lines.js` 튜토리얼 문구(문 옮기기 안내 포함)
-3. 화면 끝나면 → **사용자 직접 플레이** (성공 기준: 문을 옮기기 전에 경로 변화를 예상하고 스스로 다른 배치를 시도). 가능하면 **실제 휴대폰**으로.
-4. 그 뒤 → 2층 판(g2a·g2b) 설계 + q2 다시 켜기 → 구조 정리(아래 "구조 정리").
+1. `git pull` → `py tools/check_all.py` (**15개** 통과, 약 40초. **Node 22 이상 필요** — 없으면 D1 검사가 "건너뜀"으로 통과해 버림)
+2. **다음 일 후보** (사용자가 고름): 구조 정리 나머지(옛 폴더 보관·문서) / 2층 판 + q2 켜기 / 화면 다듬기(아래 "사용자 메모" 3개 묶음)
+3. 폰으로 해 보기: 저장소에서 `py -m http.server 8000 --bind 0.0.0.0` → 같은 와이파이 폰에서 `http://<PC IP>:8000/prototype/d1_demo/index.html` (Windows 방화벽에서 Python 허용 필요할 수 있음)
 
 ## D1 데모 지금 상태 (`prototype/d1_demo/`, 저장 키 `dunguen_d1_run`, **저장 v7**)
 | 부분 | 상태 |
@@ -56,15 +51,15 @@
 | 3 | **(화면)** 튜토리얼 말풍선은 **오버레이**로: 나오거나 끝날 때 아래 화면(판·버튼)이 밀리거나 움직이지 않게 |
 
 ## 구조 정리 (Codex 진단 `refs/codex_structure_diag_2026-10-24.md`, 화면 2단계 합친 뒤)
-- **검사가 옛 것을 봄 (가짜 안심)**: `shots.py`·`golden.py`·`autoplay.py`·`test_flow.py`는 루트 옛 게임, `test_lines.py`·`test_c1_core.py`는 C1만. D1 화면·대사·한 바퀴 검사가 없음. door_lab selftest는 check_all에 안 들어감 → **먼저 고칠 것**(검사 도구라 총괄 또는 core-dev).
+- ~~검사가 옛 것을 봄~~ **끝(10-24, PROGRESS 68)**: check_all = [D1] test_d1_core·test_lines D1·door_lab selftest·test_d1_flow(헤드리스로 문 끌기~데모 끝 한 바퀴)·shots D1(6장, `tools/shots/d1/`) + [옛 게임] 10개. 옛 묶음은 보관할 때 같이 뺌.
 - 안 쓰는 것 → 보관 폴더: prototype a_grid·b_room·a2~a7·(검사 분리 뒤) c1_shell, 루트 js/css/data/index.html, docs/GAME_RULES.md(C1용).
-- 고칠 문서: RUNBOOK(루트 실행·검사 안내가 낡음), CODE_RULES(Node 금지 문구), FILEMAP(prototype 빠짐 → 생성기부터), API.md 앞쪽 v6 표, refs/README 누락 15개, `refs/cdp_helper.js` → tools/로.
+- 고칠 문서: RUNBOOK(루트 실행·검사 안내가 낡음), CODE_RULES(Node 금지 문구), FILEMAP(prototype 빠짐 → 생성기부터), API.md 앞쪽 v6 표, refs/README 누락 15개. (cdp 도우미는 `tools/cdp.js`로 옮김, 끝)
 
 ## 다음 할 일 (순서)
 | 순서 | 내용 |
 | --- | --- |
 | ① | ~~사용자 플레이~~ 끝 (10-24 휴대폰, 사용자 "아주 좋아, 원하는 방향으로 가고 있어") |
-| ② | 검사 도구를 D1로 (구조 정리 첫 줄) |
+| ② | ~~검사 도구를 D1로~~ 끝 (PROGRESS 68) |
 | ③ | 2층 판 + q2 켜기, 나머지 구조 정리 |
 | ④ | 방 합치기 설계·실험 (`docs/DESIGN_DOORS.md` 7절) |
 | ⑤ | 밸런스 첫 일: 보상 인플레이션 곡선 표 |
@@ -80,9 +75,9 @@
 
 ## 알아 둘 것
 - **커밋은 check_all 종료 코드 0일 때만** (파이프로 자르지 말 것). FILEMAP.md가 줄바꿈만 바뀌면 `git checkout -- FILEMAP.md`.
-- **화면 확인 도구** `refs/cdp_helper.js`: `launch(url,{w,h})` → `click`·`touchDrag`·`mouseDrag`·`ev`·`shot`·`logs`. 화면 밖 버튼은 `click`이 빗나감 → `ev('...click()')`. `ev`에 정규식 넣지 말 것(깨짐). 스크립트는 스크래치 폴더에 Write로.
+- **화면 확인 도구** `tools/cdp.js`: `const { cdp_launch } = require('C:/Project/dungeon/tools/cdp.js')` → `cdp_launch(url,{w,h})` → 누르기·끌기·`ev`·사진·콘솔 로그 (자세한 건 파일 머리 주석). D1 한 바퀴 실행기 `tools/d1_drive.js`. 화면 밖 버튼은 `click`이 빗나감 → `ev('...click()')`. `ev`에 정규식 넣지 말 것(깨짐). 스크립트는 스크래치 폴더에 Write로.
 - q1 측정 스크립트: core-dev가 쓴 `measure.js`(정책 none·fe·feden·greedy, 20시드·12주). 스크래치 폴더라 다음 세션엔 없음 → 필요하면 `battle_data.js` QUESTS 주석의 측정 방식대로 다시 씀.
-- Bash에 긴 한글 파이썬은 파일로 써서 `py`로. 클라우드(Linux)에선 `python3`, `shots.py`는 늘 4건 실패(기준 갱신 금지).
+- Bash에 긴 한글 파이썬은 파일로 써서 `py`로. 클라우드(Linux)에선 `python3`, `shots.py`는 Windows 글꼴 기준이라 늘 실패(기준 갱신 금지).
 
 ## 누가 무엇을 맡고 있나
 | 담당 | 파일/폴더 |
