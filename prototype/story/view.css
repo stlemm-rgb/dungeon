@@ -1,0 +1,66 @@
+:root {
+  --bg: #11141c;
+  --panel: #1a1f2b;
+  --card: #222938;
+  --line: #394357;
+  --text: #eef1f7;
+  --muted: #aab4c7;
+  --story: #a999ef;
+  --tutorial: #73cbd3;
+  --build: #e6bc77;
+  --battle: #ee9297;
+  --branch: #95c584;
+  --end: #b6bfcc;
+  --error: #ffb6ba;
+  --error-bg: #3b222b;
+  --arrow: #9aa9c2;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px; background: var(--bg); color: var(--text); font-family: "Malgun Gothic", system-ui, sans-serif; line-height: 1.6; }
+header, .toolbar, main, #problems { max-width: 1440px; margin-left: auto; margin-right: auto; }
+a { color: var(--tutorial); text-underline-offset: 4px; }
+header > a { font-size: 13px; }
+.eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .14em; margin: 26px 0 4px; }
+h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: -.04em; }
+.intro { color: var(--muted); font-size: 14px; margin: 0; }
+.toolbar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 26px; margin-bottom: 12px; }
+#summary { font-size: 13px; margin: 0; }
+#legend { display: flex; flex-wrap: wrap; padding: 0; margin: 0; list-style: none; gap: 8px 16px; font-size: 12px; color: var(--muted); }
+#legend li { display: flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kind); display: inline-block; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.map-panel, #detail { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); min-width: 0; }
+.panel-heading { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; justify-content: space-between; }
+h2 { font-size: 15px; margin: 0; }
+.panel-heading span { font-size: 11px; color: var(--muted); }
+#diagram { overflow: auto; max-height: 76vh; padding: 8px; background-image: radial-gradient(var(--line) .7px, transparent .7px); background-size: 18px 18px; }
+#diagram svg { display: block; margin: auto; }
+.map-hint { font-size: 11px; color: var(--muted); padding: 0 18px; }
+#detail { padding: 20px; position: sticky; top: 16px; overflow-wrap: anywhere; }
+#detail h3 { font-size: 21px; margin: 12px 0 18px; line-height: 1.5; }
+.badge { display: inline-block; color: var(--kind); border: 1px solid var(--kind); padding: 1px 8px; border-radius: 6px; font-size: 12px; }
+dl { margin: 16px 0 0; }
+dt { color: var(--muted); font-size: 11px; margin-top: 18px; }
+dd { margin: 4px 0 0; white-space: pre-wrap; font-size: 14px; }
+.next-link { display: block; background: transparent; color: var(--tutorial); border: 0; padding: 5px 0; text-align: left; font: inherit; cursor: pointer; text-decoration: underline; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+#problems { margin-top: 20px; border: 1px solid var(--error); background: var(--error-bg); color: var(--error); padding: 14px 18px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+#problems p { margin: 0; font-weight: bold; }
+#problems ul { margin: 6px 0 0; padding-left: 20px; }
+.scene { cursor: pointer; outline: none; }
+.scene rect { fill: var(--card); stroke: var(--kind); stroke-width: 1.5; }
+.scene:hover rect, .scene:focus-visible rect, .scene[aria-pressed="true"] rect { stroke-width: 3; fill: var(--bg); }
+.scene text { pointer-events: none; font-family: inherit; }
+.node-meta { fill: var(--kind); font-size: 11px; }
+.node-title { fill: var(--text); font-size: 15px; font-weight: bold; }
+.node-place { fill: var(--muted); font-size: 12px; }
+.edge { fill: none; stroke: var(--arrow); stroke-width: 1.5; }
+.edge-label { font-family: inherit; fill: var(--text); font-size: 11px; paint-order: stroke; stroke: var(--panel); stroke-width: 5px; stroke-linejoin: round; }
+button:focus-visible, a:focus-visible, #diagram:focus-visible { outline: 2px solid var(--tutorial); outline-offset: 3px; }
+@media (max-width: 760px) {
+  body { padding: 20px 14px; }
+  main { grid-template-columns: minmax(0, 1fr); }
+  #detail { position: static; }
+  #diagram { max-height: 58vh; }
+  h1 { font-size: 26px; }
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>스토리 흐름도</title>
+  <link rel="stylesheet" href="view.css">
+  <script defer src="check.js"></script>
+  <script defer src="view.js"></script>
+  <script defer src="story.js"></script>
+</head>
+<body>
+  <header>
+    <a href="../index.html">← 플레이 시안</a>
+    <p class="eyebrow">STORY MAP · 초안 도구</p>
+    <h1>스토리 흐름도</h1>
+    <p class="intro">story.js를 고치고 저장한 뒤 새로고침하세요.<br>장면을 누르면 자세한 내용을 볼 수 있습니다.</p>
+  </header>
+  <section id="problems" role="alert" hidden></section>
+  <div class="toolbar">
+    <p id="summary">장면을 불러오는 중…</p>
+    <ul id="legend" aria-label="장면 종류 범례"></ul>
+  </div>
+  <main>
+    <section class="map-panel" aria-labelledby="map-title">
+      <div class="panel-heading"><h2 id="map-title">장면의 흐름</h2><span>위에서 아래로 · 화살표를 따라 읽기</span></div>
+      <div id="diagram" tabindex="0" aria-label="스토리 흐름도. 가로로 넘겨 볼 수 있습니다."></div>
+      <p class="map-hint">첫 장면은 목록의 첫 덩어리입니다. 되돌아가는 길은 상자 옆으로 이어집니다.</p>
+    </section>
+    <aside id="detail" aria-labelledby="detail-title">
+      <h2 id="detail-title">장면 자세히</h2>
+      <p class="muted">흐름도에서 장면을 골라 주세요.</p>
+    </aside>
+  </main>
+  <noscript>흐름도를 보려면 브라우저에서 JavaScript를 켜 주세요.</noscript>
+</body>
+</html>
