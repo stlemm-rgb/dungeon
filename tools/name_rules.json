@@ -17,6 +17,8 @@
     "js/fx.js": { "prefixes": ["fx"] },
     "js/ui_parts.js": { "prefixes": ["ui_"] },
     "js/ui_main.js": { "prefixes": ["ui_"] },
-    "tools/harness.js": { "prefixes": ["harness_"] }
+    "tools/harness.js": { "prefixes": ["harness_"] },
+    "tools/cdp.js": { "prefixes": ["cdp_"] },
+    "tools/d1_drive.js": { "prefixes": ["d1drive_"] }
   }
 }

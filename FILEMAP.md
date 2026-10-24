@@ -37,8 +37,12 @@
 
 - `tools/autoplay.py` — 자동 진행 측정: 많은 턴을 돌려 오류 수, 걸린 시간, 세이브 크기를 출력한다.
   - `arg`, `main`
-- `tools/check_all.py` — 전체 검사 한 번에: 파일 지도, 이름, 규칙, 정답지, 예전 세이브, 자동 진행, 화면 흐름, C1 핵심 규칙, D1 데모 핵심 규칙, C1 대사 파일, 화면 비교.
-  - `main`
+- `tools/cdp.js` — 헤드리스 Chrome CDP 도우미 (Node 22+ 내장 WebSocket·fetch): 열기·JS 실행·누르기·마우스/터치 끌기·스크린샷·콘솔 오류 모으기. refs/cdp_helper.js를 검사 도구용으로 옮긴 것 · 앞글자 `cdp_`
+  - `cdp_findBrowser`, `cdp_sleep`, `cdp_launch`
+- `tools/check_all.py` — 전체 검사 한 번에: D1 데모(지금 만드는 것) 묶음 + 옛 게임(루트 index.html·C1 시안) 묶음.
+  - `start_step`, `finish_step`, `main`
+- `tools/d1_drive.js` — D1 데모(prototype/d1_demo) 화면을 헤드리스 Chrome으로 움직이는 검사 실행기: 화면 사진 찍기(shots) · 한 바퀴 진행(flow). shots.py·test_d1_flow.py가 부른다 · 앞글자 `d1drive_`
+  - `d1drive_page`, `d1drive_go`, `d1drive_setup`, `d1drive_shots`, `d1drive_flow`, `d1drive_main`, `d1drive_out`
 - `tools/filemap.py` — 파일 지도 만들기: FILEMAP.md에 파일마다 한 줄 설명과 그 안의 함수 목록을 적는다.
   - `describe`, `functions`, `main`
 - `tools/golden.py` — 정답지 검사: 정해진 씨앗으로 N턴 자동 진행한 state 요약이 tools/golden/*.json과 같은지.
@@ -47,16 +51,18 @@
 - `tools/harness.js` — 검사용 실행기: 주소의 ?mode=로 정답지·예전 세이브·자동 진행·화면 틀 검사를 돌리고 결과를 JSON으로 적는다 · 앞글자 `harness_`
   - `harness_finish`, `harness_param`, `harness_hash`, `harness_hash32`, `harness_stableJson`, `harness_runSeed`, `harness_modeGolden`, `harness_modeSelfcheck`, `harness_modeOldsave`, `harness_modeAutoplay`, `harness_modePack`, `harness_modeFrame`, `harness_modeFlow`, `harness_fmtTurn`, `harness_main`
 - `tools/name_rules.json` — 이름 앞글자 표 (원본은 여기 한 곳). JS 파일을 새로 만들면 여기에 한 줄 추가한다. tools/test_names.py와 tools/filemap.py가 읽는다.
-- `tools/shots.py` — 화면 검사: 390px·1280px 스크린샷을 tools/shots/ 기준 이미지와 비교하고, 가로 넘침을 잰다.
-  - `read_png`, `write_png`, `crop_top`, `compare`, `main`
+- `tools/shots.py` — 화면 검사: D1 데모(prototype/d1_demo)와 옛 루트 게임(index.html)의 스크린샷을 기준 이미지와 비교하고, 가로 넘침·콘솔 오류를 잰다.
+  - `read_png`, `write_png`, `crop_top`, `compare`, `check_base`, `old_shots`, `d1_shots`, `main`
 - `tools/test_c1_core.py` — C1 시안 핵심 규칙 검사: 납품 -> 새 의뢰 후보 -> pickQuest(친위대) -> 레벨 초기화·공사비 첫 건설·약탈 한도·저장·공방·부족 강화.
   - `main`
 - `tools/test_d1_core.py` — D1 데모 핵심 규칙 검사 (prototype/d1_demo): 문 토큰 판·탐험·조우 즉시 승패, 마석/회사 금, 가치/전투력, 납품 단계, 층, 저장 v7.
   - `main`
+- `tools/test_d1_flow.py` — D1 한 바퀴 검사: 헤드리스 Chrome으로 prototype/d1_demo를 실제로 눌러 처음부터 데모 끝까지 진행한다 (tools/d1_drive.js flow).
+  - `main`
 - `tools/test_flow.py` — 화면 흐름 검사: 진짜 index.html에서 '다음 턴' -> 자동 저장 -> 새로고침 -> 불러오기 -> 새 게임 확인 창.
   - `main`
-- `tools/test_lines.py` — 대사 파일 검사: prototype/c1_shell/lines.js 가 열리는지, 튜토리얼 단계마다 대사가 있는지, 줄마다 말한 사람과 글이 있는지, 홈 잡담 이름이 맞는지를 확인한다.
-  - `actor_names`, `check`, `main`
+- `tools/test_lines.py` — 대사 파일 검사: D1 데모 prototype/d1_demo/lines.js (기본) 또는 옛 C1 prototype/c1_shell/lines.js (--c1) 가 열리는지, 튜토리얼 단계마다 대사가 있는지, 줄마다 말한 사람과 글이 있는지, 홈 잡담 이름이 맞는지를 확인한다.
+  - `actor_names`, `code_step_ids`, `check_extra`, `check`, `main`
 - `tools/test_names.py` — 이름 검사: 전역 이름 겹침, 파일 앞글자 규칙, 불러오기 목록 빠짐.
   - `check`, `main`
 - `tools/test_oldsaves.py` — 예전 세이브 검사: tools/oldsaves/*.txt를 불러와 save_ensureStateReady 뒤 오류가 없는지.
@@ -64,4 +70,4 @@
 - `tools/test_rules.py` — 코드 규칙 검사: 값 통로, 무작위 구분, 금지 함수, 색 변수, 모듈 금지.
   - `line_of`, `check_js`, `check_css`, `check_html`, `main`
 - `tools/tool_common.py` — 검사 도구 공용 부품: 경로, 브라우저 찾기, 헤드리스 실행, JS 전역 이름 읽기.
-  - `setup_output`, `find_browser`, `file_url`, `run_browser`, `run_harness`, `screenshot`, `strip_js`, `_regex_can_start`, `js_globals`, `py_functions`, `load_name_rules`, `game_js_files`, `read`
+  - `setup_output`, `find_browser`, `file_url`, `run_browser`, `run_harness`, `screenshot`, `run_node_tool`, `strip_js`, `_regex_can_start`, `js_globals`, `py_functions`, `load_name_rules`, `game_js_files`, `read`

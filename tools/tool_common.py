@@ -118,6 +118,28 @@ def screenshot(query, out_path, window, timeout=90):
         raise RuntimeError("스크린샷 파일이 생기지 않음: " + out_path)
 
 
+def run_node_tool(args, timeout=180):
+    """node로 tools/의 검사 실행기(예: d1_drive.js)를 돌려 마지막 줄 JSON을 돌려준다. node가 없으면 None.
+
+    브라우저 경로는 find_browser()를 GAME_BROWSER로 넘긴다. 실행기가 JSON을 못 내면 {"fatal": 글}.
+    """
+    node = shutil.which("node")
+    if not node:
+        return None
+    env = dict(os.environ, GAME_BROWSER=find_browser())
+    try:
+        proc = subprocess.run([node] + list(args), cwd=ROOT, env=env, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"fatal": "node %s 가 %d초 안에 안 끝남" % (" ".join(args), timeout)}
+    out = proc.stdout.decode("utf-8", "replace").strip()
+    last = out.splitlines()[-1] if out else ""
+    try:
+        return json.loads(last)
+    except ValueError:
+        err = proc.stderr.decode("utf-8", "replace").strip()
+        return {"fatal": "node 출력이 JSON이 아님 (종료 코드 %s): %s" % (proc.returncode, (err or out)[-800:])}
+
+
 # ---------- JS 소스 읽기 ----------
 
 def strip_js(src):
