@@ -240,6 +240,14 @@ window.BATTLE_DATA = {
   //  진 쪽 퇴각 (침입자 분대 = 퇴각, 몬스터 = 그 대기실 부대 모두 퇴각 -> 다음 주 쉼). 이긴 쪽 피해 = 지금 체력의 min(damageCap, damageK × 진 쪽 힘 ÷ 이긴 쪽 힘) (12절 11-2-3)
   //  invaderRetreat = 침입자 분대 체력 합이 처음의 이 비율 아래면 퇴각 (함정만으로도 퇴각, 11-2-6)
   CLASH: { encounter: 1, outcome: 1, jitter: 0.2, damageK: 0.5, damageCap: 0.4, invaderRetreat: 0.5 },
+  // 시설 강화 (docs/specs/facility_upgrade.md 확정 2026-10-24, 숫자 임시). 시설 종류(zones.js FAC id)마다 단계 표. 쓰는 곳: progress.js(강화·전투력·환급), battle_sim.js(전투)
+  //  levels[0] = 기본 단계(1단계, 비용 0). levels[i].cost = i단계 -> i+1단계로 올리는 마석 (실제 낸 값은 site.ups에 쌓여 교체·철거 때 그대로 환급)
+  //  trap: dmgAdd = 칸당 피해에 더함 (기본 6, zones.js TRAP_PER_CELL) -> 6·7·8 · den: hpMul = 그 방에 출진한 부대·친위대의 전투 체력 배율 (전투 시작 때만, 영구 성장 아님)
+  //  단계 수·효과를 늘리려면 levels에 줄만 더한다 (카드 등급처럼 나중 확장). 층 건설비 배율(FLOOR_BUILD_MUL)은 강화비에 안 곱함
+  FAC_UP: {
+    trap: { label: '피해', levels: [{ cost: 0, dmgAdd: 0 }, { cost: 10, dmgAdd: 1 }, { cost: 20, dmgAdd: 2 }] },
+    den: { label: '전투 체력', levels: [{ cost: 0, hpMul: 1 }, { cost: 10, hpMul: 1.05 }, { cost: 20, hpMul: 1.10 }] }
+  },
   // 결과표 한 줄 ({trap} = 함정으로 퇴각한 분대 수, {den} = 대기실에서 격퇴한 분대 수)
   SUMMARY_TEXT: '함정으로 {trap}분대 퇴각, 대기실에서 {den}분대 격퇴',
   // 판 데이터 (의뢰 boards가 층마다 하나씩 고름). entry·goal = 입구·보물방 칸 (방 id 'E'·'B', 2층은 '2E'·'2B')
@@ -303,9 +311,18 @@ window.BATTLE_DATA = {
   //   읽는 법: 1칸 방이라 함정 하나 점수(T 7.65 × 평균 들어간 횟수)가 작고, 전투력은 대기실(부대 점수 × 통과 비율) 수에 달림 -> 대기실 하나인 fe는 5단계 전투력 160을 못 채움.
   //    빈 판 전투는 1배속 45초(목표 30초 안팎보다 김), 시설을 지으면 17~28초. 밸런스(마석·단계 기준)는 12절대로 이번에 안 맞춤
   //   -> 사용자 결정(10-24 "전투력 낮춤"): q1 3~5단계 전투력 100/130/160 -> 80/90/100. 다시 잼(20시드): fe 4주 20/20 · feden 2주 · greedy 3주 (가치 기준은 그대로)
+  //  ---- 5차 (2026-10-25, 시설 강화 기획서 ⑥ "시작 마석 200 시험"): q1 budget 110 -> 200 (시험값, 확정 아님). 같은 방식(20시드·12주·dt 0.1·카드 방향 무작위·문 처음 배치) ----
+  //   정책 추가: greedyUp = greedy 후보에 시설 강화도 넣음 · feUp = fe에서 남는 마석을 새 함정보다 강화(마석당 전투력 증가가 큰 것)에 먼저 씀
+  //    | 마석 | none | fe | feden | greedy | greedyUp | feUp |
+  //    | 110 | 13 (0/20) | 4 | 2 | 3 | - | - |
+  //    | 150 | - | 3.65 | 2 | 1 (20/20 첫 전투 전) | 1 (20/20) | 4.55 |
+  //    | 200 | 13 (0/20) | 2.85 | 1 (20/20 첫 전투 전) | 1 (20/20 첫 전투 전, 마석 50 남음) | 1 (20/20) | 3 |
+  //   읽는 법: 200이면 대기실 먼저(feden)·욕심쟁이(greedy)가 전투 한 번 없이 1주째 납품 (기획서 9절 "넉넉한 마석이 즉시 납품" 위험이 실제로 남).
+  //    안내대로(fe)는 2.85주(전투 약 2번). 강화는 같은 10마석으로 전투력 +0~1 (새 함정은 +4~8) -> 납품을 앞당기지 않음 (feUp가 fe보다 느림).
+  //    -> 200을 유지하려면 납품 기준(가치·전투력)을 올려야 함. 숫자 결정은 사용자 몫 (보고에 적음)
   QUESTS: [
     { key: 'q1', name: '작은 돌 성채', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 1, minCompanyLv: 1, noDeath: true,
-      boards: ['g1'], budget: 110,
+      boards: ['g1'], budget: 200,
       reward: { gold: 600, gems: 6, companyExp: 10 },
       stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 80 }, { value: 105, power: 90 }, { value: 130, power: 100 }] },
     { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2, noDeath: true, hidden: true,

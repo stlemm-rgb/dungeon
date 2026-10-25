@@ -4,7 +4,8 @@
 미리보기 경로 = 실제 전투 경로, 문 옮기기 미리보기·확정(tokens·target·disconnected·limit·budget·locked), 조사·가 본 방 빠르게·함정 같은 분대 2회,
 조우 즉시 승패(힘 비교 ±20%·진 쪽 퇴각·이긴 쪽 피해 상한·2초 멈춤·침입자 절반 퇴각·시간 초과 = 방어 성공·사망 없음), 결과 요약 한 줄,
 의뢰 예산·회사 금 분리, 던전 가치/전투력(B안), 납품 기준 5단계·수동 납품·q1 뒤 데모 끝(q2 숨김), 층(시험용 2층 의뢰: 층별 차례 전투),
-층별 출진·퇴각·쉼, 카드 위기 최대 2장(배속·복원 같음), 대기실 기본 부대, 끈 기능, 저장 v7·깨진 문 보완, ?seed=.
+층별 출진·퇴각·쉼, 카드 위기 최대 2장(배속·복원 같음), 대기실 기본 부대, 끈 기능, 저장 v7·깨진 문 보완, ?seed=,
+시설 강화(단계·비용·거절·실제 전투 피해·체력·전투력 일치·문만 옮기면 유지·교체 환급 1번·무료 부대 중복 없음·저장·전투 이어하기·옛 v7·납품 인계).
 옛 v6 저장 바꾸기(B안)는 tools/test_oldsaves.py가 tools/oldsaves/d1/로 검사한다.
 
 화면 없이 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다 (test_c1_core.py와 같은 방식).
@@ -529,7 +530,7 @@ startQ1();
 {
   const rule = P.cardRule();
   ok(rule.mode === 'crisis' && rule.maxPerBattle === 2 && rule.kinds.length === 3, '카드 규칙');
-  P.startBattle();
+  R.seed = 20261025; R.plan = null; P.startBattle();   // 씨앗 고정 (예전엔 Date.now 씨앗이라 가끔 위기 0번으로 실패)
   function runCount(dt, plan, cut) {
     const S = W.BSIM.create(P.battleInput(plan)); const list = [];
     for (let i = 0; i < 12000 && !S.done; i++) {
@@ -630,6 +631,155 @@ startQ1();
   ok(W2.PROGRESS.RUN.seed === 12345, '?seed= 주소 옵션 = 새 게임 씨앗: ' + W2.PROGRESS.RUN.seed);
   store[KEY] = keep;
 }
+
+// ===================== 14) 시설 강화 (docs/specs/facility_upgrade.md 7절) =====================
+function snapUp() { return JSON.stringify({ b: R.site.budget, s: R.site.spent, u: R.site.ups, z: R.site.zones, d: R.site.doors, q: R.site.squads.length, g: R.site.denGifts, st: R.quest.stage }); }
+startQ1(); R.seed = 20261025; R.plan = null;   // 씨앗 고정 (전투 결과가 매번 같게)
+{
+  // 데이터: 단계 표 (기본 포함 3단계, 10 -> 20), q1 시작 마석 200 (시험)
+  const T = BD.FAC_UP;
+  ok(T.trap.levels.length === 3 && T.den.levels.length === 3 && same(T.trap.levels.map(l => l.cost), [0, 10, 20]) && same(T.den.levels.map(l => l.cost), [0, 10, 20]), '강화 3단계·비용 10/20');
+  ok(same(T.trap.levels.map(l => 6 + l.dmgAdd), [6, 7, 8]) && same(T.den.levels.map(l => l.hpMul), [1, 1.05, 1.1]), '효과 피해 6·7·8 · 체력 ×1·1.05·1.10');
+  ok(BD.QUESTS[0].budget === 200 && P.budgetLeft() === 200, 'q1 시작 마석 200');
+  ok(R.site.ups && Object.keys(R.site.ups).length === 0 && P.upgradeLevel('C6') === 1, '새 현장 = 강화 없음');
+  R.site.budget = 999;
+  ok(P.buildZone('C6', 'trap').ok && P.buildZone('B7', 'den').ok && P.buildZone('D7', 'trap').ok && P.buildZone('A2', 'lure').ok, '시설 짓기');
+  // 미리보기 = 아무것도 안 바꿈, 값
+  const s0 = snapUp(), v0 = P.siteValue(), b0 = P.budgetLeft();
+  const i1 = P.upgradeInfo('C6');
+  ok(snapUp() === s0, 'upgradeInfo는 상태를 안 바꿈 (닫기 = 무변경)');
+  ok(i1.ok && i1.level === 1 && i1.max === 3 && i1.cost === 10 && i1.effectNow.dmg === 6 && i1.effectNext.dmg === 7 && i1.budgetAfter === b0 - 10 && i1.valueNow === v0 && i1.kind === 'trap' && i1.pass > 0,
+    '함정 강화 미리보기: ' + JSON.stringify([i1.ok, i1.why, i1.level, i1.cost, i1.effectNow, i1.effectNext, i1.pass]));
+  // 강화 -> 미리보기와 같은 결과, 가치 그대로
+  const r1 = P.upgradeFacility('C6');
+  ok(r1.ok && r1.level === 2 && P.budgetLeft() === b0 - 10 && same(R.site.ups.C6, { k: 'trap', lv: 2, paid: 10 }) && P.siteValue() === v0 && P.sitePower() === i1.powerAfter,
+    '함정 강화 1번: ' + JSON.stringify([r1, R.site.ups.C6, P.sitePower(), i1.powerAfter]));
+  // 연속 누르기: 누른 만큼만 (한 번에 한 단계), 최고 단계에서 멈춤, 마석은 실제 단계 비용만
+  const r2 = P.upgradeFacility('C6'), r3 = P.upgradeFacility('C6'), r4 = P.upgradeFacility('C6');
+  ok(r2.ok && r2.level === 3 && !r3.ok && r3.code === 'max' && !r4.ok && P.budgetLeft() === b0 - 30 && R.site.ups.C6.paid === 30 && R.site.ups.C6.lv === 3, '연속 강화: 3단계에서 멈춤, 마석 30만: ' + JSON.stringify([r2.level, r3.code, P.budgetLeft()]));
+  const im = P.upgradeInfo('C6');
+  ok(!im.ok && im.code === 'max' && im.effectNext === null && im.effectNow.dmg === 8 && im.cost === 0, '최고 단계 정보');
+  // 전투력: 함정 점수 × 8/6, 가치 보너스 없음
+  const pc = P.powerInfo().parts.filter(x => x.z === 'C6')[0];
+  ok(pc && pc.lv === 3 && Math.abs(pc.score - Math.round(Z.trapScore('C6', 0) * 8 / 6 * 10) / 10) < 0.11, '전투력 함정 점수 × 강화 피해: ' + JSON.stringify(pc));
+  // 거절: 입구·보물방·고정 구역·빈 방·미끼·없는 방·마석 부족·미확정·전투 중
+  const rej = { E: P.upgradeInfo('E'), B: P.upgradeInfo('B'), FZ1: P.upgradeInfo('FZ1'), C2: P.upgradeInfo('C2'), A2: P.upgradeInfo('A2'), X9: P.upgradeInfo('X9') };
+  ok(Object.keys(rej).every(k => !rej[k].ok), '못 하는 방 모두 거절: ' + JSON.stringify(Object.keys(rej).map(k => [k, rej[k].code, rej[k].why])));
+  ok(rej.FZ1.code === 'locked' && rej.E.code === 'target' && rej.B.code === 'target' && rej.C2.code === 'target' && rej.A2.code === 'target', '거절 이유 코드');
+  const s1 = snapUp();
+  ok(!P.upgradeFacility('E').ok && !P.upgradeFacility('A2').ok && !P.upgradeFacility('C2').ok && snapUp() === s1, '거절은 상태 안 바꿈');
+  const bs = R.site.budget; R.site.budget = 5; const ib = P.upgradeInfo('D7');
+  ok(!ib.ok && ib.code === 'budget' && /5 모자람/.test(ib.why) && ib.powerAfter >= ib.powerNow && !P.upgradeFacility('D7').ok && R.site.budget === 5, '마석 부족: ' + ib.why);
+  R.site.budget = bs;
+  const ip = P.upgradeInfo('D7', { builds: { D7: 'den' } });
+  ok(!ip.ok && ip.code === 'pending' && !P.upgradeFacility('D7', { builds: { D7: 'den' } }).ok && P.upgradeInfo('D7', { builds: { D7: 'trap' } }).ok, '미확정 시설 거절 (같은 시설이면 됨)');
+  R.battling = true;
+  ok(P.upgradeInfo('D7').code === 'locked' && !P.upgradeFacility('D7').ok, '전투 중 거절');
+  R.battling = false; P.setBattle(true);
+  ok(!P.upgradeFacility('D7').ok, '전투 화면 중 거절'); P.setBattle(false);
+  ok(snapUp() === s1, '거절 뒤 그대로');
+  // 대기실 강화: 그 방 부대 전투 체력 ×1.05 (전투 시작 때만), 영구 능력치 안 바뀜
+  const sq = R.site.units.B7 && R.site.units.B7[0], hp0 = P.unitById(sq).hp;
+  const id1 = P.upgradeInfo('B7');
+  ok(sq && id1.ok && id1.effectNext.hpMul === 1.05 && id1.units.length === 1 && !id1.noEffect && id1.powerGain > 0, '대기실 강화 미리보기: ' + JSON.stringify([id1.why, id1.effectNext, id1.powerGain]));
+  ok(P.upgradeFacility('B7').ok && P.unitById(sq).hp === hp0 && P.sitePower() === id1.powerAfter, '대기실 강화: 영구 체력 그대로, 전투력 = 미리보기');
+  const inp = P.battleInput();
+  ok(inp.up.trap.C6 === 2 && inp.up.den.B7 === 1.05 && !('D7' in inp.up.trap), '전투 입력에 강화: ' + JSON.stringify(inp.up));
+  ok(P.startBattle().ok);
+  const S = W.BSIM.create(P.battleInput(R.plan));
+  ok(S.dens.B7.every(m => Math.abs(m.max - hp0 * 1.05) < 1e-9) && Math.abs(S.mu[sq].max - hp0 * 1.05 * S.dens.B7.length) < 1e-6, '전투 체력 = 체력 × 1.05');
+  const dmgs = {};
+  for (let i = 0; i < 6000 && !S.done; i++) {
+    W.BSIM.step(S, 0.1).forEach(e => { if (e.type === 'trap') (dmgs[e.z] = dmgs[e.z] || []).push(e.dmg); });
+    if (i === 40) {   // 전투 중 저장 -> 복원: 대기실 체력을 다시 곱하지 않음
+      const sn = W.BSIM.snapshot(S), S2 = W.BSIM.restore(P.battleInput(R.plan), sn);
+      ok(S2 && same(S2.up, S.up) && S2.dens.B7.every((m, j) => m.max === S.dens.B7[j].max), '복원해도 강화 한 번만');
+      const sn2 = JSON.parse(JSON.stringify(sn)); delete sn2.up;
+      const S3 = W.BSIM.restore(P.battleInput(R.plan), sn2);
+      ok(S3 && S3.up.trap.C6 === 2 && S3.dens.B7.every((m, j) => m.max === S.dens.B7[j].max), '강화 칸 없는 옛 저장 지점 복원');
+    }
+  }
+  for (let sd = 1; sd <= 40 && !(dmgs.C6 && dmgs.D7); sd++) {   // 여러 시드로 두 함정을 모두 밟게 (카드 안 씀 = 피해 배율 1)
+    const pl = JSON.parse(JSON.stringify(R.plan)); pl.seed = sd * 101;
+    runSim(W, P.battleInput(pl), 0.1, ev => ev.forEach(e => { if (e.type === 'trap') (dmgs[e.z] = dmgs[e.z] || []).push(e.dmg); }));
+  }
+  ok(dmgs.C6 && dmgs.D7 && dmgs.C6.every(d => d === 8) && dmgs.D7.every(d => d === 6), '실제 전투 함정 피해 C6(3단계) 8 · D7(기본) 6: ' + JSON.stringify(dmgs));
+  sample.upTrapHits = { C6: (dmgs.C6 || []).length, D7: (dmgs.D7 || []).length };
+  R.battling = false; R.bsave = null;
+  // 문만 옮기면 강화 그대로
+  const u0 = JSON.stringify(R.site.ups), nd = R.site.doors[1].map(x => x === 'B2-C2' ? 'B1-B2' : x);
+  ok(P.commitLayout({ doors: { 1: nd } }).ok && JSON.stringify(R.site.ups) === u0 && P.upgradeLevel('C6') === 3, '문만 옮기면 강화 유지');
+  // 교체 미리보기: 사라질 강화·환급 표시, 상태 안 바꿈 (취소 = 무변경)
+  const s2 = snapUp(), b2 = P.budgetLeft();
+  const pv = P.previewLayout({ builds: { C6: 'den' } });
+  ok(pv.ok && pv.refund === 30 && pv.upLost.length === 1 && pv.upLost[0].z === 'C6' && pv.upLost[0].level === 3 && pv.budgetAfter === b2 - 10 + 30 && !pv.ups.C6 && snapUp() === s2,
+    '교체 미리보기: ' + JSON.stringify([pv.ok, pv.refund, pv.upLost, pv.budgetAfter]));
+  // 환급으로 낼 수 있는 교체 (마석 0 + 환급 30 >= 10)
+  R.site.budget = 0;
+  const pv0 = P.previewLayout({ builds: { C6: 'den' } });
+  ok(pv0.ok && pv0.budgetAfter === 20, '환급 마석으로 교체비 냄: ' + JSON.stringify([pv0.why, pv0.budgetAfter]));
+  R.site.budget = b2;
+  // 교체 확정: 강화 지우고 실제 낸 강화 마석만 한 번 환급
+  const sp = R.site.spent, gifts0 = R.site.denGifts, n0 = R.site.squads.length;
+  const c1 = P.commitLayout({ builds: { C6: 'den' } });
+  ok(c1.ok && c1.refund === 30 && P.budgetLeft() === b2 - 10 + 30 && !R.site.ups.C6 && P.upgradeLevel('C6') === 1 && R.site.spent === sp + 10 - 30 && /환급/.test(c1.msg), '교체 확정 환급: ' + JSON.stringify([c1.msg, P.budgetLeft()]));
+  ok(c1.gift === 1 && R.site.denGifts === gifts0 + 1 && R.site.squads.length === n0 + 1, '대기실이 늘면 기본 부대 1번 (원래 규칙)');
+  // 다시 짓기·철거: 두 번째 환급 없음, 무료 부대 더 안 생김
+  const b3 = P.budgetLeft();
+  ok(P.commitLayout({ builds: { C6: 'trap' } }).ok && P.budgetLeft() === b3 - 10 && P.upgradeLevel('C6') === 1, '다시 지어도 기본 단계, 환급 없음');
+  ok(P.upgradeFacility('B7').ok && R.site.ups.B7.paid === 30, '대기실 3단계');
+  const b4 = P.budgetLeft(), n4 = R.site.squads.length, g4 = R.site.denGifts;
+  const c2 = P.commitLayout({ builds: { B7: 'empty' } });
+  ok(c2.ok && c2.refund === 30 && P.budgetLeft() === b4 + 30 && !R.site.ups.B7, '철거 환급 30');
+  const c3 = P.commitLayout({ builds: { B7: 'den' } });
+  ok(c3.ok && c3.gift === 0 && R.site.squads.length === n4 && R.site.denGifts === g4 && c3.refund === 0 && P.budgetLeft() === b4 + 30 - 10, '철거 -> 재건: 무료 부대·환급 중복 없음');
+  // 납품 단계: 강화로 전투력이 오르면 단계도 다시 계산 (afterChange)
+  ok(P.upgradeFacility('B7').ok && P.upgradeFacility('D7').ok, '강화 2곳');
+  const q0 = R.quest.stage; P.questUpdate(); ok(R.quest.stage === q0, '강화 뒤 단계는 이미 반영됨');
+  // 저장: 새로고침 뒤 그대로, 효과 중복 없음
+  P.save(); const keepUp = JSON.stringify(R.site.ups), keepPow = P.sitePower();
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && JSON.stringify(R.site.ups) === keepUp && P.sitePower() === keepPow, '저장 -> 불러오기: 강화·전투력 그대로');
+  // 전투 중 저장 이어하기: 저장 지점의 대기실 체력이 그대로 (다시 안 곱함)
+  P.startBattle();
+  const SB = W.BSIM.create(P.battleInput(R.plan)); for (let i = 0; i < 30; i++) W.BSIM.step(SB, 0.1);
+  const maxB = SB.dens.B7 ? SB.dens.B7.map(m => m.max) : [];
+  ok(P.saveBattle({ snap: W.BSIM.snapshot(SB), ui: null }), '전투 저장');
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && R.battling && R.bsave.snap, '전투 중 불러오기');
+  const SR = W.BSIM.restore(P.battleInput(R.plan), R.bsave.snap);
+  ok(SR && same(SR.dens.B7 ? SR.dens.B7.map(m => m.max) : [], maxB) && maxB.length > 0, '전투 이어하기: 대기실 체력 중복 없음 ' + JSON.stringify(maxB));
+  R.battling = false; R.bsave = null; P.save();
+  // 강화 칸 없는 옛 v7 저장 = 기본 단계, 현장 진행 보존
+  const sv = JSON.parse(store[KEY]); delete sv.site.ups; store[KEY] = JSON.stringify(sv);
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && R.v === 7 && same(R.site.ups, {}) && P.upgradeLevel('B7') === 1 && same(R.site.zones, sv.site.zones) && R.site.budget === sv.site.budget && R.quest.key === 'q1', '강화 칸 없는 v7 저장 -> 기본 단계, 진행 보존');
+  // 깨진 강화 칸: 시설이 다름·빈 방·고정 구역·단계 밖 -> 지우거나 맞춤
+  const sv2 = JSON.parse(store[KEY]);
+  sv2.site.ups = { C2: { k: 'trap', lv: 3, paid: 30 }, FZ1: { k: 'fz_frozen_dock', lv: 2, paid: 10 }, D7: { k: 'trap', lv: 9, paid: -5 }, B7: { k: 'trap', lv: 2, paid: 10 }, E: 'x' };
+  store[KEY] = JSON.stringify(sv2);
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && same(Object.keys(R.site.ups), ['D7']) && R.site.ups.D7.lv === 3 && R.site.ups.D7.paid === 0, '깨진 강화 칸 보완: ' + JSON.stringify(R.site.ups));
+}
+// 납품: 강화는 현장과 함께 인계, 다음 현장·친위대에 안 남음 (시험용 2층 의뢰로 다음 현장 확인)
+fresh(); enableQ2(BD);
+P.pickQuest(P.offerQuests()[0]);
+{
+  R.site.budget = 999;
+  ['B7', 'C6', 'D7'].forEach(z => P.buildZone(z, 'den'));
+  ['C2', 'C3', 'C5', 'B1', 'D1', 'A1', 'E1', 'A2', 'E2', 'A3', 'E3', 'B5'].forEach(z => P.buildZone(z, 'trap'));
+  ['B7', 'B7', 'C2', 'C2'].forEach(z => P.upgradeFacility(z));
+  R.site.squads.forEach(s => { s.lv = 8; }); P.questUpdate();
+  const pid = R.site.units.B7 && R.site.units.B7[0];
+  const d = P.deliver();
+  ok(d && d.upgrades === 2 && d.lost.some(x => /시설 강화 2곳/.test(x)), '납품 보고: 강화 2곳 인계 ' + JSON.stringify(d && d.lost));
+  ok(d && P.pickQuest(R.offers[0], [pid]) && R.quest.key === 'q2' && same(R.site.ups, {}) && R.guards.length === 1, '다음 현장 = 강화 없음');
+  const gd = R.guards[0], gv = P.unitById(gd.id), gp = P.statParts(gd.id, 'hp');
+  ok(gv.hp === Math.round(gp.base + gp.level + gp.upgrade) && !('ups' in gd), '친위대 체력에 강화 보너스 없음');
+  const ib = P.battleInput();
+  ok(same(ib.up, { trap: {}, den: {} }), '다음 현장 전투 입력에 강화 없음');
+  ok(P.upgradeInfo('2C2').code === 'locked', '잠긴 층 거절: ' + P.upgradeInfo('2C2').why);
+}
 console.log(JSON.stringify({ problems, sample }));
 """
 
@@ -658,7 +808,7 @@ def main():
         for p in r["problems"][:60]:
             print("  - " + p)
         return 1
-    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed=")
+    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 

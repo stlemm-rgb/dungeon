@@ -26,6 +26,8 @@
  *     확정 불가: 문 수가 다름(tokens) · 없는 벽·겹침(target) · 끊긴 방(disconnected) · 미리보기 경로의 문 통과가 한도를 넘음(limit) · 마석 모자람(budget) · 잠김(locked)
  *     옛 v6 저장 = B안: 회사 기록(금·신석·회사 레벨·친위대·작품집·부족 강화·끝낸 의뢰)만 이어 받고, 진행 중 의뢰는 같은 의뢰를 새 판으로 처음부터 (migrateV6)
  *     데모 목록에서 숨긴 의뢰(QUESTS hidden: q2)는 고르지 않음 -> q1 납품 뒤 데모 끝
+ *  13) 시설 강화 (2026-10-25, docs/specs/facility_upgrade.md): 함정 피해·대기실 전투 체력을 마석으로 단계 강화 (upgradeInfo -> upgradeFacility, 표 = BATTLE_DATA.FAC_UP).
+ *     실제 전투(battleInput.up)와 전투력(powerParts)에 같이 반영, 가치에는 안 더함. 교체·철거 확정 때 강화 지우고 낸 마석만 환급. 저장 칸 site.ups (v7 그대로, 없으면 기본 단계)
  * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest) · demoEnd = 데모 끝
  */
 (function () {
@@ -78,6 +80,7 @@
   //  budget 남은 마석 · budgetStart 처음 마석 · budgetAdded 단계 보상으로 늘어난 마석 · spent 쓴 마석 · builds 마석을 쓴 건설 수 · value·power 저장 때 맞춰 둠 ·
   //  denGifts 대기실을 지어 받은 기본 부대 수 (DEN_GIFT. 받은 수 <= 동시에 있었던 대기실 수 최고치 × DEN_GIFT -> 철거·재건으로 안 늘어남)
   //  boards 층별 판 id (GRID_BOARDS) · doors 확정된 문 { 층: [벽 조각 id] } (층마다 개수 = 그 판의 문 토큰 수)
+  //  ups 시설 강화 { 방: { k 시설 id, lv 단계(2~), paid 실제 낸 강화 마석 } } (기본 단계는 칸 없음. 시설이 바뀌면 지움 + paid 환급. 납품 때 현장과 함께 인계)
   function freshSite(q) {
     var floors = q && q.floors > 1 ? q.floors | 0 : 1;
     var boards = questBoards(q, floors);
@@ -89,7 +92,7 @@
     Object.keys(fixed).forEach(function (z) { if (zones[z] !== ZONES.fixedFac(fixed[z])) delete fixed[z]; }); // 판에 없는 구역은 버림
     var site = { boards: boards, doors: doors, zones: zones, fixed: fixed, units: {}, squads: [], nextSquadNo: 1,
       floors: floors, floorsOpen: 1, deploy: freshDeploy(floors), pins: {}, auto: true, rest: {},
-      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0, denGifts: 0 };
+      budget: q ? q.budget : 0, budgetStart: q ? q.budget : 0, budgetAdded: 0, spent: 0, builds: 0, value: 0, power: 0, denGifts: 0, ups: {} };
     if (q && BD.MON_SQUAD_FREE) {   // 무료 기본 부대 (마석 0이어도 진행 가능)
       site.squads.push(newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true));
     }
@@ -239,6 +242,14 @@
     if (!isObj(st.fixed)) st.fixed = {};
     Object.keys(st.fixed).forEach(function (z) { if (z in dz && ZONES.FAC[ZONES.fixedFac(st.fixed[z])]) st.zones[z] = ZONES.fixedFac(st.fixed[z]); else delete st.fixed[z]; });   // 고정 구역은 늘 그대로
     Object.keys(st.zones).forEach(function (z) { if (ZONES.isFixedFac(st.zones[z]) && !st.fixed[z]) st.zones[z] = dz[z]; });
+    // 시설 강화: 칸 없는 v7 저장 = 모두 기본 단계. 시설이 다르거나 강화 못 하는 방·단계 밖은 지움 (환급 없음: 깨진 저장 보완)
+    if (!isObj(st.ups)) st.ups = {};
+    Object.keys(st.ups).forEach(function (z) {
+      var u = st.ups[z], t = upTable(st.zones[z]);
+      if (!isObj(u) || !t || u.k !== st.zones[z] || st.fixed[z] || ZONES.zoneType(z) !== 'room') { delete st.ups[z]; return; }
+      u.lv = Math.max(1, Math.min(t.levels.length, u.lv | 0)); u.paid = Math.floor(nonNeg(u.paid));
+      if (u.lv <= 1) delete st.ups[z];
+    });
     if (!Array.isArray(st.squads)) st.squads = [];
     st.squads = st.squads.filter(function (s) { return isObj(s) && typeof s.id === 'string' && tribeData(s.tribe); });
     st.squads.forEach(function (s) { s.count = Math.max(0, Math.min(BD.MON_SQUAD.cap, s.count | 0)); s.free = s.free === true; fixLevel(s); });
@@ -385,8 +396,8 @@
     return Math.round(v * 100) / 100;
   }
   function statsOf(u) { var o = {}; BD.STATS.forEach(function (s) { o[s.key] = statOf(u, s.key); }); return o; }
-  // 부대 점수 U (전투력 B안): 인원 × (1인 체력 ÷ hpDiv + 1인 초당 공격)
-  function squadScore(s) { return s.count * (statOf(s, 'hp') / BD.POWER.hpDiv + statOf(s, 'atk')); }
+  // 부대 점수 U (전투력 B안): 인원 × (1인 체력 × 대기실 강화 배율 ÷ hpDiv + 1인 초당 공격). hpMul 없으면 1 (전투 체력 = battle_sim과 같은 값)
+  function squadScore(s, hpMul) { return s.count * (statOf(s, 'hp') * (hpMul || 1) / BD.POWER.hpDiv + statOf(s, 'atk')); }
   // 화면·전투용 보기: { id, kind, tribe, tribeName, name, count, cap, lv, exp, need, hp, atk, def, free, placed(구역 또는 '') }
   function unitView(u) {
     if (!u) return null;
@@ -437,7 +448,8 @@
   // 편성 계산 (상태를 바꾸지 않음): 한도 맞추기 -> (auto면) 빈 칸 채우기 -> 대기실에 나눠 서기.
   //  돌려주는 값 { deploy, units, back(한도가 줄어 대기로 돌아간 수) }
   //  doors = 문 배치 (없으면 지금 문). 통과 비율·전투력을 그 문으로 계산
-  function formation(zones, deploy, pins, auto, doors) {
+  //  ups = 시설 강화 (없으면 지금 현장 강화). 강화된 대기실은 전투력이 커서 먼저 채워질 수 있음
+  function formation(zones, deploy, pins, auto, doors, ups) {
     var st = RUN.site, dep = {}, back = 0, used = {};
     for (var n = 1; n <= st.floors; n++) {
       var cap = floorCap(n, zones), list = (deploy[n] || []).filter(function (id) {
@@ -475,7 +487,7 @@
         dens.forEach(function (z) {
           if (!(free[z] > 0)) return;
           units[z].push(id);
-          var p = powerParts(zones, units, doors).raw;
+          var p = powerParts(zones, units, doors, ups).raw;
           units[z].pop();
           var d = pick ? p - best : 1, dw = pick ? (w[z] || 0) - (w[pick] || 0) : 0;
           if (d > 1e-6 || (d > -1e-6 && (dw > 1e-9 || (dw > -1e-9 && units[z].length < units[pick].length)))) { pick = z; best = p; }
@@ -569,23 +581,24 @@
   //  units = 대기실 배치 (출진 한도 안의 편성. 쉬는 부대도 인계 편성이라 셈). 친위대는 뺀다
   //  3차: 통과 비율·함정 횟수 = 미리보기 경로 12개 (ZONES.passInfo). 함정은 비율 대신 "경로마다 min(들어간 횟수, trapMax)의 평균"을 곱함 (막다른 방 왕복이 점수에 보임).
   //   parts[].w = 곱한 값 (대기실 = 통과 비율, 함정 = 평균 들어간 횟수). doors 없으면 지금 문
-  function powerParts(zones, units, doors) {
+  //  시설 강화(ups, 없으면 지금 현장): 함정 점수 × (강화 피해 ÷ 기본 피해) · 대기실 부대 점수의 체력 × 배율. parts[].lv = 그 시설 단계
+  function powerParts(zones, units, doors, ups) {
     var hand = handoverUnits(units), inf = ZONES.passInfo(zones, doors), w = inf.ratio, parts = [], total = 0, fl = {};
     Object.keys(zones).forEach(function (z) {
       var f = ZONES.FAC[zones[z]], n = ZONES.floorOf(z);
       if (!f || z === 'Y' || !ZONES.CELLS[z] || !ZONES.floorOpen(n)) return;
-      var r = w[z] || 0, score = 0;
-      if (f.kind === 'trap') { score = ZONES.trapScore(z, workshopEffect('lab')); r = inf.trap[z] || 0; }
-      else if (f.kind === 'den') (hand[z] || []).forEach(function (id) { score += squadScore(rawUnit(id)); });
+      var r = w[z] || 0, score = 0, lv = upLevel(z, zones, ups);
+      if (f.kind === 'trap') { score = ZONES.trapScore(z, workshopEffect('lab')) * trapDmgAt(z, lv) / Math.max(1e-9, ZONES.trapDmgOf(z)); r = inf.trap[z] || 0; }
+      else if (f.kind === 'den') { var mul = denHpMulAt(lv); (hand[z] || []).forEach(function (id) { score += squadScore(rawUnit(id), mul); }); }
       else return;
       if (!score) return;
-      parts.push({ z: z, floor: n, kind: f.kind, score: Math.round(score * 10) / 10, w: Math.round(r * 1000) / 1000, power: Math.round(score * r * 10) / 10 });
+      parts.push({ z: z, floor: n, kind: f.kind, lv: lv, score: Math.round(score * 10) / 10, w: Math.round(r * 1000) / 1000, power: Math.round(score * r * 10) / 10 });
       total += score * r; fl[n] = (fl[n] || 0) + score * r;
     });
     var floors = {}; Object.keys(fl).forEach(function (n) { floors[n] = Math.floor(fl[n] + 1e-6); });
     return { total: Math.floor(total + 1e-6), raw: total, parts: parts, floors: floors };   // raw = 버리기 전 합 (편성 비교용)
   }
-  function powerOf(zones, units, doors) { return powerParts(zones, units, doors).total; }
+  function powerOf(zones, units, doors, ups) { return powerParts(zones, units, doors, ups).total; }
   function sitePower() { return powerOf(RUN.site.zones, RUN.site.units); }
   function powerInfo() { return powerParts(RUN.site.zones, RUN.site.units); }
   // n층 전투력 (그 층 입구 기준 통과 비율). 잠긴 층은 0
@@ -781,6 +794,8 @@
     if (tb.length) rep.carry.push('부족 신석 강화: ' + tb.join(' · '));
     rep.lost = ['던전 시설 (의뢰인에게 인계)', '현장 부대 ' + rep.handover.length + '개 (의뢰인에게 인계, 친위대로 고른 대장은 동행)'];
     if (rep.budgetLeft > 0) rep.lost.push('남은 마석 ' + comma(rep.budgetLeft));
+    rep.upgrades = Object.keys(RUN.site.ups || {}).filter(function (z) { return upLevel(z) > 1; }).length;
+    if (rep.upgrades) rep.lost.push('시설 강화 ' + rep.upgrades + '곳 (현장과 함께 인계)');
     RUN.history.push({ name: q.name, key: q.key, week: RUN.week });
     if (RUN.history.length > 30) RUN.history.shift();
     RUN.report = rep; RUN.quest = null; RUN.phase = 'settle'; RUN.plan = null;
@@ -835,7 +850,8 @@
   // 미확정 문·시설 전부를 한 번에 미리보기 (아무것도 바꾸지 않음). change = { doors: { 층: [벽 조각 id] }, builds: { 방: 시설 } } (둘 다 없어도 됨)
   //  -> { ok, why, code('tokens'·'disconnected'·'limit'·'target'·'budget'·'locked'·''), cost, budgetAfter, valueNow, valueAfter, powerNow, powerAfter,
   //       gift, giftTribe, giftCount, giftText, units(바뀐 뒤 대기실 배치), back, zones, doors({ 층: [...] } 바뀐 뒤), isolated[끊긴 방], floor(문 검사에 걸린 층),
-  //       passes[습관별 한 층 최대 문 통과 수], limit, paid(돈 드는 건설 수), changed{ doors, builds } }
+  //       passes[습관별 한 층 최대 문 통과 수], limit, paid(돈 드는 건설 수), changed{ doors, builds },
+  //       refund(교체·철거로 돌려받을 강화 마석, budgetAfter에 들어 있음), upLost[{ z, name, fac, level, paid }](사라질 강화), ups(바뀐 뒤 강화) }
   //  확인 순서: 잠김(전투 중·의뢰 없음·잠긴 층·고정 구역) -> 시설 이름 -> 문(개수·벽·이어짐) -> 마석 -> 문 통과 한도(미리보기 경로 12개)
   //  문이 깨진 배치면 전투력은 계산하지 않음 (powerAfter = powerNow)
   function previewLayout(change) {
@@ -867,7 +883,15 @@
       var v = ZONES.validateDoors(doors[n], n);
       if (!v.ok) { doorsOk = false; if (!code) { code = v.code; why = v.why; isolated = v.isolated; badFloor = n; } break; }
     }
-    if (!code && cost > budgetLeft()) { code = 'budget'; why = '마석 ' + (cost - budgetLeft()) + ' 모자람'; }
+    // 시설 강화: 교체·철거되는 방의 강화는 사라지고 실제 낸 강화 마석(paid)을 돌려받음 (확정 때 한 번). 돌려받을 마석도 이번 건설비에 쓸 수 있음
+    var ups2 = copyUps(st.ups), upLost = [], refund = 0;
+    built.forEach(function (z) {
+      var lv = upLevel(z, st.zones, st.ups);
+      if (lv <= 1 && !ups2[z]) return;
+      if (lv > 1) { upLost.push({ z: z, name: ZONES.NAMES[z] || z, fac: st.zones[z], level: lv, paid: st.ups[z].paid }); refund += st.ups[z].paid; }
+      delete ups2[z];
+    });
+    if (!code && cost > budgetLeft() + refund) { code = 'budget'; why = '마석 ' + (cost - budgetLeft() - refund) + ' 모자람'; }
     var useDoors = doorsOk ? flatDoors(doors) : flatDoors(st.doors);
     var info = ZONES.passInfo(zones2, useDoors), limit = ZONES.GRID.passLimit;
     if (!code && doorsOk && info.maxPass > limit) {
@@ -877,11 +901,12 @@
     var gift = denGiftOf(zones2), temp = [], no0 = st.nextSquadNo;
     for (var gi = 0; gi < gift; gi++) temp.push(giftSquad(st));
     st.squads = st.squads.concat(temp);
-    var fm = formation(zones2, st.deploy, st.pins, st.auto, useDoors), units2 = fm.units;
-    var powerNow = sitePower(), powerAfter = doorsOk ? powerOf(zones2, units2, useDoors) : powerNow;
+    var fm = formation(zones2, st.deploy, st.pins, st.auto, useDoors, ups2), units2 = fm.units;
+    var powerNow = sitePower(), powerAfter = doorsOk ? powerOf(zones2, units2, useDoors, ups2) : powerNow;
     st.squads = st.squads.slice(0, st.squads.length - temp.length); st.nextSquadNo = no0;
     return {
-      ok: !code, why: why, code: code, cost: cost, budgetAfter: budgetLeft() - cost, valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
+      ok: !code, why: why, code: code, cost: cost, budgetAfter: budgetLeft() - cost + refund, refund: refund, upLost: upLost, ups: ups2,
+      valueNow: siteValue(), valueAfter: ZONES.summary(zones2, {}, null).value,
       powerNow: powerNow, powerAfter: powerAfter, gift: gift, giftTribe: gift ? BD.MON_SQUAD_FREE.tribe : '', giftCount: gift ? BD.MON_SQUAD_FREE.count : 0, giftText: giftText(gift),
       units: units2, back: fm.back, zones: zones2, doors: doors, isolated: isolated, floor: badFloor, passes: info.passes.slice(), limit: limit,
       paid: paid, changed: { doors: doorChanged, builds: built }
@@ -892,7 +917,8 @@
     var p = previewLayout(change), st = RUN.site;
     if (!p.ok) return { ok: false, msg: p.why, code: p.code, stages: [], gift: 0, units: [] };
     if (!p.changed.doors && !p.changed.builds.length) return { ok: false, msg: '바뀐 것이 없어요', code: '', stages: [], gift: 0, units: [] };
-    st.budget -= p.cost; st.spent += p.cost;   // 마석만 (회사 금 안 씀, 환불 없음)
+    st.budget -= p.cost; st.spent += p.cost;   // 마석만 (회사 금 안 씀. 건설비 환불 없음)
+    st.budget += p.refund; st.spent = Math.max(0, st.spent - p.refund); st.ups = copyUps(p.ups);   // 교체·철거된 방의 강화 마석만 한 번 환급
     p.changed.builds.forEach(function (z) { st.zones[z] = p.zones[z]; });
     if (p.changed.doors) { st.doors = copyDoors(p.doors); useSiteLayout(); }
     if (p.paid) { st.builds += p.paid; for (var i = 0; i < p.paid; i++) choreAdd('build'); }
@@ -904,8 +930,9 @@
     if (p.changed.builds.length === 1) { var z = p.changed.builds[0]; parts.push(ZONES.NAMES[z] + ' ' + ZONES.FAC[st.zones[z]].name + ' 완공'); }
     else if (p.changed.builds.length) parts.push('시설 ' + p.changed.builds.length + '곳 완공');
     if (p.changed.doors) parts.push('문 배치 확정');
-    var msg = parts.join(' · ') + (p.changed.builds.length ? ' (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' : '') + (gifts.length ? ' · ' + giftText(gifts.length) : '');
-    return { ok: true, msg: msg, code: '', stages: stages, gift: gifts.length, units: gifts.map(unitView) };
+    var msg = parts.join(' · ') + (p.changed.builds.length ? ' (마석 -' + p.cost + ', 가치 ' + (dv >= 0 ? '+' : '') + dv + ')' : '') + (gifts.length ? ' · ' + giftText(gifts.length) : '') +
+      (p.upLost.length ? ' · 강화 ' + p.upLost.length + '곳 사라짐, 강화 마석 +' + p.refund + ' 환급' : '');
+    return { ok: true, msg: msg, code: '', stages: stages, gift: gifts.length, units: gifts.map(unitView), refund: p.refund, upLost: p.upLost };
   }
   // (호환) 방 z를 시설 k로 지으면: 비용·가치·전투력 변화·막히는 이유. previewLayout({ builds: { z: k } })에 옛 칸을 붙임
   //  units = 지은 뒤의 대기실 배치 (출진 한도가 줄면 back명이 대기로, 자동 편성이 켜져 있으면 빈 칸이 채워진 모습). floor = 그 방의 층
@@ -954,6 +981,90 @@
     return { base: base, discount: discount, cost: base - discount };
   }
   function buildCost(k, z) { return buildCostInfo(k, z).cost; }
+
+  // ---------- 시설 강화 (docs/specs/facility_upgrade.md, 숫자 = BATTLE_DATA.FAC_UP) ----------
+  //  함정 = 피해, 대기실 = 그 방에 출진한 부대·친위대의 전투 체력 (전투 시작 때만, 영구 성장 아님). 마석만 씀, 시간 안 흐름. 시설 가치에는 안 더함.
+  //  site.ups[방] = { k, lv, paid }. 문만 옮기면 그대로, 시설 교체·철거 확정 때 지우고 paid만 한 번 환급 (commitLayout). 납품하면 현장과 함께 인계 (새 현장 = 빈 ups)
+  function upTable(k) { var t = (BD.FAC_UP || {})[k]; return t && Array.isArray(t.levels) && t.levels.length ? t : null; }
+  // 방 z의 강화 단계 (1 = 기본). zones·ups 없으면 지금 현장. 강화 칸의 시설이 지금 시설과 다르면 1
+  function upLevel(z, zones, ups) {
+    var st = RUN.site || {}; zones = zones || st.zones || {}; ups = ups || st.ups || {};
+    var u = ups[z], t = upTable(zones[z]);
+    return u && t && u.k === zones[z] ? Math.max(1, Math.min(t.levels.length, u.lv | 0)) : 1;
+  }
+  function upRow(k, lv) { var t = upTable(k); return t ? t.levels[Math.max(1, Math.min(t.levels.length, lv | 0)) - 1] : null; }
+  // 함정 1회 피해 (칸당 기본 + 강화) · 대기실 전투 체력 배율
+  function trapDmgAt(z, lv) { return ZONES.trapDmgOf(z) + ((upRow('trap', lv) || {}).dmgAdd || 0) * ZONES.sizeOf(z); }
+  function denHpMulAt(lv) { var r = upRow('den', lv); return r && r.hpMul > 0 ? r.hpMul : 1; }
+  // 효과 보기: 함정 { text, dmg } · 대기실 { text, hpMul }
+  function upEffect(k, z, lv) {
+    if (k === 'trap') { var d = trapDmgAt(z, lv); return { text: '피해 ' + d, dmg: d }; }
+    var m = denHpMulAt(lv); return { text: '전투 체력 ×' + m.toFixed(2), hpMul: m };
+  }
+  // 전투 입력용 (battle_sim o.up): 기본 단계는 뺌
+  function upMaps(zones, ups) {
+    var out = { trap: {}, den: {} };
+    Object.keys(ups || {}).forEach(function (z) {
+      var lv = upLevel(z, zones, ups), k = zones[z];
+      if (lv <= 1) return;
+      if (k === 'trap') out.trap[z] = (upRow('trap', lv).dmgAdd || 0);
+      else if (k === 'den') out.den[z] = denHpMulAt(lv);
+    });
+    return out;
+  }
+  function copyUps(u) { var o = {}; Object.keys(u || {}).forEach(function (z) { var x = u[z]; o[z] = { k: x.k, lv: x.lv, paid: x.paid }; }); return o; }
+  // 강화 화면용: 방 z 강화 미리보기 (아무것도 바꾸지 않음). change = 화면의 미확정 배치 { builds } (그 방이 미확정이면 거절, 없어도 됨)
+  //  -> { ok, why, code('locked'·'target'·'pending'·'max'·'budget'·''), z, name(방 이름), fac, facName, kind, level, max, cost(다음 단계, 최고면 0),
+  //       effectNow, effectNext(최고면 null), paid(지금까지 낸 강화 마석), budget, budgetAfter, powerNow, powerAfter (정수, 납품 기준과 같은 값),
+  //       powerGain(버리기 전 증가량 소수 1자리: 정수로는 +0이어도 조금 오르는 걸 보여 줄 때), valueNow(강화로 안 바뀜),
+  //       pass(통과 비율 0~1, 낮으면 "문 배치부터"), units[대기실 출진 부대 보기], noEffect(빈 대기실 = 전투 효과 없음) }
+  //  거절 순서: 전투 중·의뢰 없음 -> 없는 방 -> 잠긴 층 -> 고정 구역 -> 입구·보물방 -> 미확정 -> 빈 방·미끼·강화 없는 시설 -> 최고 단계 -> 마석
+  function upgradeInfo(z, change) {
+    var st = RUN.site, why = canEdit(), code = why ? 'locked' : '';
+    function no(c, w) { if (!code) { code = c; why = w; } }
+    var k = st && st.zones ? st.zones[z] : undefined, f = ZONES.FAC[k], t = upTable(k);
+    if (!st || typeof z !== 'string' || z === 'Y' || !ZONES.CELLS[z] || !f) {
+      return { ok: false, why: why || '없는 방이에요', code: code || 'target', z: z, level: 1, max: 1, cost: 0, effectNow: null, effectNext: null };
+    }
+    var fl = ZONES.floorOf(z), type = ZONES.zoneType(z), lv = upLevel(z), max = t ? t.levels.length : 1;
+    if (!ZONES.floorOpen(fl)) no('locked', fl + '층은 아직 잠겨 있어요');
+    if (st.fixed[z]) no('locked', '고정 구역은 강화할 수 없어요');
+    if (type === 'entry') no('target', '입구는 강화할 수 없어요');
+    if (type === 'boss') no('target', '보물방은 강화할 수 없어요');
+    var pend = isObj(change) && isObj(change.builds) ? change.builds[z] : undefined;
+    if (pend !== undefined && pend !== k) no('pending', '아직 확정하지 않은 시설이에요: [건설]로 확정한 뒤 강화할 수 있어요');
+    if (k === 'empty') no('target', '빈 방이에요: 함정이나 대기실을 지으면 강화할 수 있어요');
+    else if (f.kind === 'lure') no('target', '미끼는 강화할 수 없어요');
+    else if (!t) no('target', '강화할 수 없는 시설이에요');
+    var top = !t || lv >= max, cost = top ? 0 : Math.max(0, t.levels[lv].cost | 0);
+    if (t && top) no('max', '최고 단계예요');
+    if (!top && cost > budgetLeft()) no('budget', '마석 ' + (cost - budgetLeft()) + ' 모자람');
+    var pp = powerParts(st.zones, st.units), powerNow = pp.total, powerAfter = powerNow, rawNow = pp.raw, rawAfter = rawNow;
+    var paid = st.ups[z] && lv > 1 ? st.ups[z].paid : 0;
+    if (t && !top && (!code || code === 'budget')) {
+      var ups2 = copyUps(st.ups); ups2[z] = { k: k, lv: lv + 1, paid: paid + cost };
+      var fm = formation(st.zones, st.deploy, st.pins, st.auto && RUN.phase === 'play', undefined, ups2);
+      var pa = powerParts(st.zones, fm.units, undefined, ups2); powerAfter = pa.total; rawAfter = pa.raw;
+    }
+    var den = f.kind === 'den', us = den ? (st.units[z] || []).map(unitById) : [];
+    return {
+      ok: !code, why: why, code: code, z: z, name: ZONES.NAMES[z] || z, fac: k, facName: f.name, kind: f.kind, level: lv, max: max, cost: cost,
+      effectNow: t ? upEffect(k, z, lv) : null, effectNext: t && !top ? upEffect(k, z, lv + 1) : null, paid: paid,
+      budget: budgetLeft(), budgetAfter: budgetLeft() - cost, powerNow: powerNow, powerAfter: powerAfter,
+      powerGain: Math.round((rawAfter - rawNow) * 10) / 10, valueNow: siteValue(),
+      pass: Math.round((ZONES.passRatios(st.zones, {})[z] || 0) * 1000) / 1000, units: us, noEffect: den && !us.length
+    };
+  }
+  // [강화]: 한 단계 올림 (upgradeInfo가 ok일 때만). 마석 차감 -> 편성·납품 단계·침입자 예고 다시 계산 -> 저장. -> { ok, msg, code, level, cost, stages }
+  function upgradeFacility(z, change) {
+    var inf = upgradeInfo(z, change), st = RUN.site;
+    if (!inf.ok) return { ok: false, msg: inf.why, code: inf.code, level: inf.level, cost: 0, stages: [] };
+    st.budget -= inf.cost; st.spent += inf.cost;
+    st.ups[z] = { k: inf.fac, lv: inf.level + 1, paid: inf.paid + inf.cost };
+    var stages = afterChange();
+    return { ok: true, msg: inf.name + ' ' + inf.facName + ' ' + (inf.level + 1) + '단계 (마석 -' + inf.cost + ', ' + inf.effectNow.text + ' -> ' + inf.effectNext.text + ')',
+      code: '', level: inf.level + 1, cost: inf.cost, stages: stages };
+  }
 
   // ---------- 부대 조달 (마석만) ----------
   function procureInfo(tribe) {
@@ -1131,7 +1242,8 @@
       var l = RUN.site.units[z].filter(function (id) { return !isResting(id); });
       if (l.length) us[z] = l;
     });
-    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal(), doors: copyDoors(RUN.site.doors) };
+    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal(), doors: copyDoors(RUN.site.doors),
+      up: upMaps(RUN.site.zones, RUN.site.ups) };   // 시설 강화 (battle_sim이 전투 시작 때 한 번 적용)
   }
 
   // ---------- 전투 결과 반영 ----------
@@ -1388,6 +1500,8 @@
     previewBuild: previewBuild, buildZone: buildZone, buildCost: buildCost, forecast: forecast,
     // 문 토큰 (3차)
     previewLayout: previewLayout, commitLayout: commitLayout, doorInfo: doorInfo, exploreRoutes: exploreRoutes, takeNotice: takeNotice,
+    // 시설 강화
+    upgradeInfo: upgradeInfo, upgradeFacility: upgradeFacility, upgradeLevel: function (z) { return RUN.site ? upLevel(z) : 1; },
     // 부대·친위대
     TRIBES: BD.TRIBES, STATS: BD.STATS, squads: squads, guards: guards, unitById: unitById, monById: unitById, idleUnits: idleUnits,
     statOf: function (id, key) { var u = rawUnit(id); return u ? statOf(u, key) : 0; },

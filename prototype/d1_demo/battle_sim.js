@@ -23,6 +23,8 @@
  *  - 침입자 강함: 레벨(plan.groups[].lv) × 던전 가치 배율(plan.power). 던전 속성(plan.attr) fx는 침입자 카드 fx에 더함
  *  - 고정 구역 '얼어붙은 하역장'(kind fixed, FIXED_ZONES slow·span): 지나간 분대는 span 방 동안 느려짐 (q.chill, 사건 chill)
  *  - 카드 위기: 사건 'crisis' { kind: surge|treasure|boss, n, left } 전투당 최대 CARD_RULE.maxPerBattle (S.crisis에 저장)
+ *  - 시설 강화 (docs/specs/facility_upgrade.md): o.up = { trap: { 방: 칸당 더할 피해 }, den: { 방: 전투 체력 배율 } } (progress.js battleInput이 만듦).
+ *    S.up에 순수 데이터로 담아 저장 지점에도 남는다. 대기실 체력 배율은 create 때 전투 복사본에 한 번만 곱함 (restore는 저장된 체력을 그대로 써서 중복 없음)
  */
 (function () {
   'use strict';
@@ -52,6 +54,15 @@
   function retreatRule() { return BD.RETREAT || { hpRatio: 0.35, burstWindow: 4, bigShare: 0.4 }; }
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
   function doorsOf(o) { return o.doors || (Z.doors ? Z.doors() : null); }
+  // 시설 강화 입력 -> 순수 데이터 { trap: { 방: 칸당 더할 피해 }, den: { 방: 체력 배율 } } (없으면 빈 표)
+  function upOf(o) {
+    var u = o && o.up && typeof o.up === 'object' ? o.up : {}, out = { trap: {}, den: {} };
+    ['trap', 'den'].forEach(function (k) {
+      var t = u[k] && typeof u[k] === 'object' ? u[k] : {};
+      Object.keys(t).forEach(function (z) { if (typeof t[z] === 'number' && isFinite(t[z])) out[k][z] = t[z]; });
+    });
+    return out;
+  }
 
   function create(o) {
     var plan = o.plan, zones = o.zones, units = o.units, doors = doorsOf(o);
@@ -61,7 +72,8 @@
       mod: { trapDmg: 0, trapRate: 0, monAtk: 0, slow: 0, weak: 0 },
       gain: { gold: 0, gems: 0, exp: 0, kills: 0, porterKills: 0 }, reached: 0, retreated: 0, loot: 0, total: 0,
       goal: o.goal || (Z.goal ? Z.goal() : 'B'), front: [], mu: {}, crisis: { n: 0, kinds: {}, sq: {} },
-      floor: 1, floorT: 0, pending: 0, open: Z.OPEN || 1, tally: { trap: 0, den: 0, clash: 0, card: 0, timeout: 0 }, clashes: 0
+      floor: 1, floorT: 0, pending: 0, open: Z.OPEN || 1, tally: { trap: 0, den: 0, clash: 0, card: 0, timeout: 0 }, clashes: 0,
+      up: upOf(o)
     };
     S.front = Z.bossFront ? Z.bossFront(doors) : [];
     // 대기실 부대 (전투 안에서만 쓰는 복사본). 부대 하나 = 인원 수만큼의 개체
@@ -73,9 +85,9 @@
       units[z].forEach(function (id) {
         var u = getU ? getU(id) : null;
         if (!u || S.mu[id]) return;
-        var n = Math.max(1, (u.count === undefined ? 1 : u.count) | 0);
-        for (var i = 0; i < n; i++) list.push({ id: id, n: i, name: u.name, hp: u.hp, max: u.hp, atk: u.atk, def: u.def || 0, guard: u.kind === 'guard', lost: 0, out: false });
-        S.mu[id] = { z: z, max: u.hp * n, burst: 0, out: false, big: false, guard: u.kind === 'guard' };
+        var n = Math.max(1, (u.count === undefined ? 1 : u.count) | 0), hp = u.hp * (S.up.den[z] || 1);   // 대기실 강화: 이 방의 전투 체력만
+        for (var i = 0; i < n; i++) list.push({ id: id, n: i, name: u.name, hp: hp, max: hp, atk: u.atk, def: u.def || 0, guard: u.kind === 'guard', lost: 0, out: false });
+        S.mu[id] = { z: z, max: hp * n, burst: 0, out: false, big: false, guard: u.kind === 'guard' };
       });
       S.dens[z] = list;
     });
@@ -163,7 +175,7 @@
   function trapRoll(S, q, ev) {
     var chance = (BD.TRAP_CHANCE + S.mod.trapRate) * (1 - (S.fx.trap || 0));
     if (rand(S) >= chance) { ev.push({ type: 'trapMiss', z: q.zone, x: q.x, y: q.y }); return; }
-    var dmg = Z.trapDmgOf(q.zone) * (1 + S.mod.trapDmg + (S.plan.trapBoost || 0));
+    var dmg = (Z.trapDmgOf(q.zone) + (S.up.trap[q.zone] || 0) * Z.sizeOf(q.zone)) * (1 +S.mod.trapDmg + (S.plan.trapBoost || 0));
     ev.push({ type: 'trap', z: q.zone, x: q.x, y: q.y, dmg: Math.round(dmg), id: q.id });
     q.cause = 'trap';
     hurtAll(S, q, dmg, ev);
@@ -452,6 +464,8 @@
     if (typeof S.goal !== 'string') S.goal = o.goal || (Z.goal ? Z.goal() : 'B');
     S.plan = o.plan; S.zones = o.zones; S.units = o.units; S.doors = doorsOf(o); S.icard = cardById(o.plan.card); S.fx = mergeFx(o.plan);
     if (!Array.isArray(S.front)) S.front = Z.bossFront ? Z.bossFront(S.doors) : [];
+    // 강화 칸 없는 옛 저장 지점: 지금 입력으로 채움 (전투 중엔 강화를 못 바꿔 전투 시작 때와 같음. 대기실 체력은 저장된 값 그대로라 다시 곱하지 않음)
+    if (!S.up || typeof S.up !== 'object' || !S.up.trap || !S.up.den) S.up = upOf(o);
     return S;
   }
   function squadInfo(q) { var a = aliveMem(q); return { alive: a.length, porters: a.filter(function (m) { return m.porter; }).length }; }
