@@ -91,7 +91,7 @@
       var panel = div('fld-panel',
         '<h3 class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '보스 격퇴! 보스 검증 ' + b.stageAfter + '/' + b.total : '보스 실패: ' + b.reached + '/' + b.squads + '분대가 보물방 도달') + '</h3>' +
         '<div class="dim small-text bt-ressub">보스 ' + b.stage + '단계 · ' + esc(b.name) + ' · ' + b.tries + '번째 도전 · ' + b.time + '초</div>' +
-        (b.reward ? '<div class="bt-lv">첫 성공 보상: 마석 +' + b.reward + '</div>' : '') +
+        (b.reward || b.supply ? '<div class="bt-lv">마석 +' + ((b.supply || 0) + (b.reward || 0)) + ' (의뢰인 보급 ' + (b.supply || 0) + ' · 첫 성공 ' + (b.reward || 0) + ')</div>' : '') +
         '<div class="rsum">보물방 도달 ' + b.reached + '/' + b.squads + ' · 함정 피해 ' + b.trapDmg + ' · 퇴각 원인 ' + esc(causes) + '</div>' +
         (ok ? '' : '<div class="small-text dim">잃는 것은 없어요. 문·시설을 바꾸고 다시 도전해 보세요 (같은 배치 = 같은 결과)</div>') +
         '<div class="bt-sub">분대별 기록 (눌러서 펼치기 · 판에 끝 방 표시)</div>' + rowsHtml);

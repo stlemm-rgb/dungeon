@@ -330,12 +330,13 @@ async function d1drive_flow() {
     // 8) [일반 침입 재개] -> 운영 (큰 버튼 = 다음 보스 2단계)
     await b.click('[data-fresume]'); await b.sleep(500);
     need((await scr()) === 'field' && (await b.ev('PROGRESS.flowInfo().mode')) === 'normal' && !(await b.ev('PROGRESS.flowInfo().show')) && (await has('.hud.op')) && (await b.ev('document.querySelector("[data-fboss]").innerText.indexOf("2") >= 0')), '[일반 침입 재개]가 일반 판 운영(보스 2단계 예고)을 안 엶');
-    // 9) API로 빨리 감기: 회사 탭으로 나가(전투 화면 정리) 대기실 3 + 함정 9 + 문 하나(A2-A3 -> C3-D3)를 짓고 보스 2~5단계 (실제 전투 계산). 마지막 결과는 안 닫아 둠
+    // 9) API로 빨리 감기: 회사 탭으로 나가(전투 화면 정리) 대기실 2 + 함정 4(마석 60) + 문 여럿(core-dev 측정 10-29: C6 대기실과 함께 2~5단계 막음)을 짓고 보스 2~5단계 (실제 전투 계산). 마지막 결과는 안 닫아 둠
     await b.click('#tabs [data-go="company"]'); await b.sleep(400);
     need((await scr()) === 'company', '회사 탭으로 못 감');
     const ff = await b.ev(`(function () {
-      var P = PROGRESS, R = P.RUN, base = ZONES.initialDoors(1).map(function (d) { return d === 'A2-A3' ? 'C3-D3' : d; });
-      var c = P.commitLayout({ doors: { 1: base }, builds: { B7: 'den', D7: 'den', C5: 'trap', A7: 'trap', E7: 'trap', A6: 'trap', E6: 'trap', C3: 'trap', C2: 'trap', A5: 'trap', E5: 'trap' } });
+      var P = PROGRESS, R = P.RUN, out_ = ['A4-A5', 'E2-E3', 'C2-C3', 'C3-C4', 'C4-C5', 'C6-C7', 'B5-C5', 'C5-D5', 'A4-B4'];
+      var base = ZONES.initialDoors(1).filter(function (d) { return out_.indexOf(d) < 0; }).concat(['D4-E4', 'B6-C6', 'B3-B4', 'C3-D3', 'A5-B5', 'B3-C3', 'D6-D7', 'D3-D4', 'D4-D5']);
+      var c = P.commitLayout({ doors: { 1: base }, builds: { B3: 'den', A1: 'den', A3: 'trap', B5: 'trap', B6: 'trap', B1: 'trap' } });
       if (!c.ok) return { ok: false, why: '건설 실패: ' + c.msg };
       var out = [];
       for (var k = 0; k < 6 && R.quest.stage < 5; k++) {
@@ -349,7 +350,7 @@ async function d1drive_flow() {
       return { ok: R.quest.stage === 5 && P.checkQuest(), why: '보스 ' + out.join(' · ') + ' / ' + P.questProgress().line, line: P.questProgress().line, list: out.join(' · ') };
     })()`);
     if (!need(ff && ff.ok, '빨리 감기 실패: ' + (ff && ff.why))) return fin();
-    step('API로 배치(대기실 3 + 함정 9 + 문 1) -> 보스 ' + ff.list + ' (' + ff.line + ')');
+    step('API로 배치(대기실 2 + 함정 4 + 문 여럿) -> 보스 ' + ff.list + ' (' + ff.line + ')');
     // 10) 회사는 안내만 -> 현장 5/5 결과의 [납품]
     await b.reload(500); await d1drive_page(b);
     await b.ev('location.hash = "#company"'); await b.sleep(400);
