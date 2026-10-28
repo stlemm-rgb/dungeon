@@ -330,5 +330,44 @@ window.BATTLE_DATA = {
       reward: { gold: 900, gems: 8, companyExp: 15 },
       stages: [{ value: 60, power: 70 }, { value: 100, power: 110 }, { value: 140, power: 150, opens: 2, budget: 150 },
         { value: 190, power: 200, floor2: 50 }, { value: 230, power: 250, floor2: 90 }] }
-  ]
+  ],
+
+  // ===================== 흐름 시험 (2026-10-28, refs/brief_flow_test.md · 사용자 확정 refs/debate_ds_restructure_2026-10-28.md "최종 수렴" 1~6) =====================
+  // on = 흐름 시험 규칙 켬 (false면 예전 주 단위 [다음 주] 규칙 그대로. 되돌리기 쉽게 한곳에서 끔. progress.js·battle.js·shell.js가 봄)
+  //  rest = 일반 판이 끝나고 다음 판까지 쉬는 실제 초 · saveEvery = 진행 중 전투를 저장하는 간격(실제 초, 새로고침 이어하기용)
+  //  bossReward = 보스 단계 첫 성공 마석 (임시 시험값, 숫자 근거 없음. 실패·재도전 보상 없음)
+  FLOW: { on: true, rest: 1.5, saveEvery: 2, bossReward: 30 },
+  // 단계별 보스 (의뢰 key -> 납품 단계 수만큼). 같은 단계 재도전 = 같은 구성·같은 시드 -> 같은 배치면 같은 결과
+  //  name = 보스 이름 · groups = 무리 [{ name, grade(GRADE_STAT), squads(분대 수), lv, porters(분대 10명 중 짐꾼) }] · card = 침입자 카드 id (INVADER_CARDS)
+  //  power = 체력·공격 배율 (일반 판은 새 던전이면 ×0.6~1) · seed = 전투 시드 (의뢰·단계에 묶인 고정값)
+  //  일반 판(NORMAL)은 D·C 1분대씩 · 보스는 그 단계에서 가장 강한 분대 묶음 (시험용 숫자, 측정은 아래)
+  //  목표 (사용자 확정 6번 "밸런스 나중"의 작은 예외): 빈 판·대충 지은 판 = 짐, 문으로 길을 바꾸고 함정·대기실을 길목에 두면 = 이김. 시설비·대기실 힘 등 다른 숫자는 안 건드림
+  //  측정 (2026-10-28, node 실제 전투 dt 0.05, q1 마석 200, 보스 시드 고정이라 배치마다 1판 = 결과 하나. 같은 배치 두 번 = 같은 결과 확인. W 성공 · F n = n분대 보물방 도달):
+  //   | 배치 (마석) | 1 | 2 | 3 | 4 | 5 |
+  //   | 빈 판 (0) | F3 | F3 | F2 | F4 | F3 |
+  //   | 대기실 C6 하나 (10) | F2 | F3 | F1 | F4 | F3 |
+  //   | 대충: 대기실 C6 + 함정 4 (50) | F2 | F2 | F1 | F3 | F3 |
+  //   | 문 하나 바꿈(C1-D1 -> B6-C6) + 대기실 C6 (10) | W | F2 | F1 | F3 | F2 |
+  //   | 대기실 C6 + 함정 7 (80) | W | W | F1 | F3 | F3 |
+  //   | 위 + 문 하나(C1-D1 -> B1-B2) (80) | W | F1 | F1 | W | F3 |
+  //   | 함정만 20곳 (200, 마석 전부) | W | W | W | W | F3 (함정 해체꾼 카드) |
+  //   | 보물방 앞 대기실 3 (30) | W | W | W | F3 | F3 |
+  //   | 대기실 3 + 함정 9 (120) | W | W | W | W | F1 |
+  //   | 위 + 문 하나(A2-A3 -> C3-D3) (120) | W | W | W | W | W (시간 초과 2) |
+  //   문 하나 옮기기 735가지(확정 가능 318) 중 보스 성공 수: 대기실 하나 = 1단계 21 · 대기실 + 함정 7 = 1단계 271 · 2단계 260 · 3단계 100 · 4단계 3 · 5단계 0 (대기실 3 + 함정 9면 5단계 39)
+  //   -> 단계가 오를수록 같은 배치로는 못 막고 문·대기실 위치를 다시 맞춰야 함. 5단계(함정 해체꾼)는 함정만으로 못 막음
+  BOSSES: {
+    q1: [
+      { name: '은빛 여우 모험단', card: 'scout', power: 1, seed: 1101,
+        groups: [{ name: '초보 모험가 무리', grade: 'C', squads: 1, lv: 6, porters: 2 }, { name: '은빛 여우 모험단', grade: 'B', squads: 2, lv: 8, porters: 2 }] },
+      { name: '사막 도적단', card: 'berserk', power: 1, seed: 1102,
+        groups: [{ name: '용병 길드 견습대', grade: 'C', squads: 1, lv: 8, porters: 2 }, { name: '사막 도적단', grade: 'B', squads: 2, lv: 10, porters: 2 }] },
+      { name: '북부 왕국 은방패 기사단', card: 'armor', power: 1, seed: 1103,
+        groups: [{ name: '붉은 깃발 용병단', grade: 'B', squads: 2, lv: 10, porters: 2 }, { name: '북부 왕국 은방패 기사단', grade: 'A', squads: 1, lv: 12, porters: 2 }] },
+      { name: '대신전 순찰대', card: 'paladin', power: 1, seed: 1104,
+        groups: [{ name: '왕립 마법 학회 조사단', grade: 'B', squads: 2, lv: 12, porters: 2 }, { name: '대신전 순찰대', grade: 'A', squads: 2, lv: 14, porters: 2 }] },
+      { name: '용사 파티', card: 'disarm', power: 1, seed: 1105,
+        groups: [{ name: '서쪽 왕국 흑철 기사단', grade: 'A', squads: 2, lv: 14, porters: 2 }, { name: '용사 파티', grade: 'S', squads: 1, lv: 16, porters: 2 }] }
+    ]
+  }
 };

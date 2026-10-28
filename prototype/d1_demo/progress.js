@@ -28,6 +28,10 @@
  *     데모 목록에서 숨긴 의뢰(QUESTS hidden: q2)는 고르지 않음 -> q1 납품 뒤 데모 끝
  *  13) 시설 강화 (2026-10-25, docs/specs/facility_upgrade.md): 함정 피해·대기실 전투 체력을 마석으로 단계 강화 (upgradeInfo -> upgradeFacility, 표 = BATTLE_DATA.FAC_UP).
  *     실제 전투(battleInput.up)와 전투력(powerParts)에 같이 반영, 가치에는 안 더함. 교체·철거 확정 때 강화 지우고 낸 마석만 환급. 저장 칸 site.ups (v7 그대로, 없으면 기본 단계)
+ *  14) 흐름 시험 (2026-10-28, refs/brief_flow_test.md, BATTLE_DATA.FLOW.on 으로 켜고 끔): 주 단위 [다음 주] 대신 일반 침입이 한 판씩 자동으로 이어짐(startBattle = 다음 일반 판,
+ *     시드 = 전투 번호 RUN.flow.no 로 정함) + [보스 도전](challengeBoss, 단계마다 고정 구성·고정 시드 BATTLE_DATA.BOSSES). 보스 판에서 보물방 도달 분대가 없으면 성공 -> 의뢰 단계 +1
+ *     (가치·전투력으로 오르는 규칙은 끔, questUpdate는 아무것도 안 함). 마지막 단계 보스 성공 -> 납품. 일반 판: 금·신석만 (경험치·회사 경험치·마석 보급·다음 주 쉼 없음).
+ *     일반 판 중에 배치를 바꾸면(afterChange) 그 판은 버리고 다음 판이 새 배치로 시작 (dropNormal). 보스 판 중에는 못 바꿈. 저장 칸 RUN.flow (v7 그대로)
  * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest) · demoEnd = 데모 끝
  */
 (function () {
@@ -131,8 +135,9 @@
     } catch (e) { return null; }
   }
   function freshRun() {
+    var seed = urlSeed() !== null ? urlSeed() : (Date.now() ^ 0x5bd1e995) | 0;
     return {
-      v: VERSION, seed: urlSeed() !== null ? urlSeed() : (Date.now() ^ 0x5bd1e995) | 0,
+      v: VERSION, seed: seed,
       week: 1, gold: BD.START.gold, gems: BD.START.gems, company: { lv: 1, exp: 0 },
       phase: 'choose', quest: null, offers: null, report: null,
       qid: 1, siteNo: 0, doneQuests: [],
@@ -142,7 +147,7 @@
       surgeWeek: BD.SURGE_FIRST, adWeek: 0, plan: null, battling: false, bsave: null, lastBattle: null, history: [],
       prefs: freshPrefs(), workshop: freshWorkshop(),
       chores: freshChores(), idle: freshIdle(), lastSeen: now(),
-      tutorial: { on: true, seen: {} }, notice: ''
+      tutorial: { on: !flowOn(), seen: {} }, notice: '', flow: freshFlow(seed)
     };
   }
   // ---------- 일일·주간 업무 상태 (데모에서 꺼짐: 진행·받기 없음) ----------
@@ -285,6 +290,7 @@
     if (!isObj(tu.seen)) tu.seen = {};
     if (RUN.phase === 'play' && !RUN.quest) RUN.phase = 'choose';
     if (RUN.quest) fixQuest(RUN.quest);
+    fixFlow();
   }
   function fixLevel(u) { u.lv = Math.max(1, u.lv | 0); u.exp = Math.max(0, u.exp | 0); }
   function fixQuest(q) {
@@ -294,6 +300,26 @@
   function setRun(src) {
     Object.keys(RUN).forEach(function (k) { delete RUN[k]; });
     Object.keys(src).forEach(function (k) { RUN[k] = src[k]; });
+  }
+
+  // ---------- 흐름 시험 상태 (RUN.flow) ----------
+  //  no = 지금까지 시작한 일반 판 수 (전투 번호, 일반 판 시드를 정함) · base = 일반 판 시드 바탕 (새 게임 때 한 번) · mode = 진행 중 전투 '' | 'normal' | 'boss' ·
+  //  tries = 이 의뢰 보스 도전 횟수 · cleared = 첫 성공 보상을 받은 단계 번호 · show = 아직 닫지 않은 보스 결과 (새로고침해도 다시 보임, 보상은 applyBattle 때 한 번)
+  function flowOn() { return !!(BD.FLOW && BD.FLOW.on); }
+  function freshFlow(seed) { return { no: 0, base: mixSeed(seed | 0, 7919), mode: '', tries: 0, cleared: [], show: null }; }
+  function fixFlow() {
+    var fl = RUN.flow, had = isObj(fl);
+    if (!had) fl = RUN.flow = freshFlow(RUN.seed);
+    fl.no = Math.max(0, fl.no | 0); fl.base = fl.base | 0; fl.tries = Math.max(0, fl.tries | 0);
+    fl.cleared = (Array.isArray(fl.cleared) ? fl.cleared : []).filter(function (n) { return typeof n === 'number' && n >= 1; });
+    if (!isObj(fl.show)) fl.show = null;
+    if (['', 'normal', 'boss'].indexOf(fl.mode) < 0) fl.mode = '';
+    if (!flowOn()) return;
+    // 흐름 칸이 없던 옛 v7 저장(주 단위 규칙): 단계는 보스 검증이 아니었으니 0부터, 진행 중 전투는 버림 (시험용 단순 처리)
+    if (!had && RUN.phase === 'play' && RUN.quest) { RUN.quest.stage = 0; RUN.quest.stageWeeks = []; RUN.battling = false; RUN.bsave = null; RUN.plan = null; }
+    if (RUN.battling && (!isObj(RUN.plan) || !Array.isArray(RUN.plan.groups))) { RUN.battling = false; RUN.bsave = null; RUN.plan = null; }
+    if (!RUN.battling) fl.mode = '';
+    else fl.mode = RUN.plan.mode === 'boss' ? 'boss' : 'normal';
   }
 
   // ---------- 저장 (막혀도 동작) ----------
@@ -366,6 +392,21 @@
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
   function rint(n) { return Math.floor(rnd() * n); }
+  // 흐름 시험: 씨앗 두 개를 섞은 새 씨앗 (일반 판 = 바탕 씨앗 + 전투 번호) · 그 씨앗 하나로만 도는 무작위 (RUN.seed를 건드리지 않음 -> 같은 번호 = 같은 판)
+  function mixSeed(a, b) {
+    var h = (a ^ Math.imul((b | 0) + 1, 0x9E3779B1)) | 0;
+    h = Math.imul(h ^ (h >>> 16), 0x85EBCA6B); h = Math.imul(h ^ (h >>> 13), 0xC2B2AE35);
+    return (h ^ (h >>> 16)) | 0;
+  }
+  function seededRnd(seed) {
+    var s = seed | 0;
+    return function () {
+      s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), s | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
 
   // ---------- 작은 계산 ----------
   function gradeIdx(lv) { return Math.max(0, Math.min(MON_GRADES.length - 1, Math.floor(lv / 2))); }
@@ -658,7 +699,7 @@
   //  층이 열리면 배치를 다시 끼우고(계단 연결, 보물방이 아래층으로) 편성도 다시 맞춘다
   function questUpdate() {
     var q = RUN.quest, out = [];
-    if (RUN.phase !== 'play' || !q) return out;
+    if (RUN.phase !== 'play' || !q || flowOn()) return out;   // 흐름 시험: 단계는 보스 성공으로만 (applyFlow)
     var cur = curValues();
     while (q.stage < q.stages.length && meets(q.stages[q.stage], cur)) {
       var stg = q.stages[q.stage];
@@ -685,17 +726,23 @@
     if (q.floors > RUN.site.floorsOpen) {
       for (var i = 0; i < total; i++) { if (q.stages[i].opens > RUN.site.floorsOpen) { lock = { floor: q.stages[i].opens, atStage: i + 1 }; break; } }
     }
-    var tgt = nx || last, why = '';
-    if (!complete) why = '납품 기준 ' + total + '단계를 모두 채워야 납품할 수 있어요';
-    else if (!meets(last, cur)) why = '지금 값이 ' + total + '단계 기준보다 낮아요 (가치 ' + cur.value + '/' + last.value + ' · 전투력 ' + cur.power + '/' + last.power + ')';
-    else if (RUN.battling) why = '전투 중에는 납품할 수 없어요';
-    var line = (complete ? '의뢰 완료 · ' : '납품 기준 ' + q.stage + '/' + total + ' · ') + '가치 ' + cur.value + '/' + tgt.value + ' · 전투력 ' + cur.power + '/' + tgt.power;
-    if (tgt.floor2) line += ' · 2층 전투력 ' + cur.floor2 + '/' + tgt.floor2;
+    var tgt = nx || last, why = '', line, flow = flowOn(), bi = flow ? bossInfo() : null;
+    if (flow) {   // 흐름 시험: 납품 기준 = 보스 검증 n/5
+      if (!complete) why = '보스 검증 ' + total + '단계를 모두 통과해야 납품할 수 있어요';
+      else if (RUN.battling && RUN.flow.mode === 'boss') why = '보스전 중에는 납품할 수 없어요';
+      line = complete ? '의뢰 완료 · 보스 검증 ' + total + '/' + total : '보스 검증 ' + q.stage + '/' + total + (bi && bi.name ? ' · 다음 보스: ' + bi.name : '');
+    } else {
+      if (!complete) why = '납품 기준 ' + total + '단계를 모두 채워야 납품할 수 있어요';
+      else if (!meets(last, cur)) why = '지금 값이 ' + total + '단계 기준보다 낮아요 (가치 ' + cur.value + '/' + last.value + ' · 전투력 ' + cur.power + '/' + last.power + ')';
+      else if (RUN.battling) why = '전투 중에는 납품할 수 없어요';
+      line = (complete ? '의뢰 완료 · ' : '납품 기준 ' + q.stage + '/' + total + ' · ') + '가치 ' + cur.value + '/' + tgt.value + ' · 전투력 ' + cur.power + '/' + tgt.power;
+      if (tgt.floor2) line += ' · 2층 전투력 ' + cur.floor2 + '/' + tgt.floor2;
+    }
     return {
       stage: q.stage, total: total, complete: complete, canDeliver: !why, why: why, cur: cur,
       next: nx ? { stage: q.stage + 1, value: nx.value, power: nx.power, floor2: nx.floor2 || 0, opens: nx.opens || 0 } : null,
       floors: q.floors, floorsOpen: RUN.site.floorsOpen, floorLock: lock, line: line,
-      budget: budgetLeft(), budgetStart: RUN.site.budgetStart, budgetAdded: RUN.site.budgetAdded || 0, weeklyBudget: weeklyBudget()
+      budget: budgetLeft(), budgetStart: RUN.site.budgetStart, budgetAdded: RUN.site.budgetAdded || 0, weeklyBudget: weeklyBudget(), flow: flow, boss: bi
     };
   }
   function checkQuest() { var p = questProgress(); return !!(p && p.canDeliver); }
@@ -750,6 +797,7 @@
       RUN.tutorial.on = false;   // 정산 안내를 본 뒤 새 의뢰를 고르는 순간 튜토리얼 끝
     }
     found.startWeek = RUN.week;
+    RUN.flow.tries = 0; RUN.flow.cleared = []; RUN.flow.show = null; RUN.flow.mode = '';   // 보스 기록은 의뢰마다 (전투 번호·바탕 씨앗은 그대로)
     RUN.quest = found; RUN.offers = null; RUN.phase = 'play';
     RUN.siteNo++;
     RUN.site = freshSite(found);   // 판·층 배치도 여기서 바꿔 끼운다
@@ -769,6 +817,7 @@
   // 5단계를 채운 뒤(의뢰 완료) 불러야 납품. 지금 값으로 5단계를 다시 확인. 안 되면 null (이유는 questBlockers)
   function deliver() {
     if (!checkQuest()) return null;
+    if (flowOn()) { dropNormal(); RUN.flow.show = null; }   // 흐름 시험: 진행 중 일반 판은 버리고 납품
     var q = RUN.quest, cur = curValues();
     var rep = {
       quest: q, gold: q.reward.gold, gems: q.reward.gems, companyExp: q.reward.companyExp || 0,
@@ -826,12 +875,14 @@
   function setBattle(b) { battling = !!b; }
   function canEdit() {
     if (RUN.phase !== 'play') return '진행 중인 의뢰가 없어요';
+    if (flowOn() && RUN.battling && RUN.flow.mode === 'boss') return '보스전 중에는 바꿀 수 없어요';
+    if (flowOn() && !battling) return '';   // 흐름 시험: 일반 판 중에도 바꿀 수 있음 (바꾸면 그 판은 버리고 다음 판부터 새 배치, afterChange)
     if (battling || RUN.battling) return '전투 중에는 바꿀 수 없어요';
     return '';
   }
   function budgetLeft() { return RUN.site && RUN.site.budget > 0 ? RUN.site.budget : 0; }
   // 의뢰인 마석 보급: 전투(한 주)가 끝날 때마다 마석 +이만큼 (BATTLE_DATA.WEEKLY_BUDGET). 화면의 "다음 주 마석 +N"
-  function weeklyBudget() { return Math.max(0, BD.WEEKLY_BUDGET | 0); }
+  function weeklyBudget() { return flowOn() ? 0 : Math.max(0, BD.WEEKLY_BUDGET | 0); }   // 흐름 시험: 보급 없음
 
   // ---------- 대기실 기본 부대 (DEN_GIFT) ----------
   //  대기실을 지으면 기본 부대(MON_SQUAD_FREE 부족·인원, 무료)가 같이 온다. 한 현장에서 받는 수 <= 동시에 있었던 대기실 수의 최고치 × DEN_GIFT
@@ -844,7 +895,7 @@
   }
   function giftSquad(site) { return newSquad(site, BD.MON_SQUAD_FREE.tribe, BD.MON_SQUAD_FREE.count, true); }
   function giftText(n) { var t = tribeData(BD.MON_SQUAD_FREE.tribe); return n > 0 ? '기본 부대 +' + n + ' (' + t.name + ' ' + BD.MON_SQUAD_FREE.count + '명' + (n > 1 ? '씩' : '') + ', 무료)' : ''; }
-  function afterChange() { arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
+  function afterChange() { if (flowOn()) dropNormal(); arrange(); var st = questUpdate(); ensurePlan(); save(); return st; }
 
   // ---------- 건설·문 옮기기 (마석만, 문은 무료) ----------
   // 미확정 문·시설 전부를 한 번에 미리보기 (아무것도 바꾸지 않음). change = { doors: { 층: [벽 조각 id] }, builds: { 방: 시설 } } (둘 다 없어도 됨)
@@ -1154,22 +1205,44 @@
     p.groups.forEach(function (g) { g.lv = base + BD.GRADE_STAT[g.grade].lvAdd + g.roll; });
     return p;
   }
-  function makePlan(surge) {
+  // rf = 무작위 함수 (없으면 게임 무작위 rnd. 흐름 시험 일반 판은 전투 번호로 정한 씨앗 무작위)
+  function makePlan(surge, rf) {
+    var rr = rf || rnd, ri = function (n) { return Math.floor(rr() * n); };
     var spec = surge ? BD.SURGE : BD.NORMAL, groups = [], used = {};
-    var card = BD.INVADER_CARDS[rint(BD.INVADER_CARDS.length)];
+    var card = BD.INVADER_CARDS[ri(BD.INVADER_CARDS.length)];
     spec.grades.forEach(function (g, i) {
       var names = BD.GROUP_NAMES[g], name;
-      do { name = names[rint(names.length)]; } while (used[name] && names.length > 1);
+      do { name = names[ri(names.length)]; } while (used[name] && names.length > 1);
       used[name] = true;
-      var sq = spec.squads[0] + rint(spec.squads[1] - spec.squads[0] + 1);
-      groups.push({ name: name, grade: g, count: sq * BD.SQUAD, top: i === spec.grades.length - 1, lv: 0, roll: rint(3),
-        porters: BD.PORTER_MIN + rint(BD.PORTER_MAX - BD.PORTER_MIN + 1) });
+      var sq = spec.squads[0] + ri(spec.squads[1] - spec.squads[0] + 1);
+      groups.push({ name: name, grade: g, count: sq * BD.SQUAD, top: i === spec.grades.length - 1, lv: 0, roll: ri(3),
+        porters: BD.PORTER_MIN + ri(BD.PORTER_MAX - BD.PORTER_MIN + 1) });
     });
     var order = BD.EVENT_CARDS.map(function (c, i) { return i; });
-    for (var k = order.length - 1; k > 0; k--) { var j = rint(k + 1), t = order[k]; order[k] = order[j]; order[j] = t; }
-    return fitPlan({ week: RUN.week, surge: !!surge, ad: !OFF.adSurge && RUN.adWeek === RUN.week, groups: groups, card: card.id, order: order, seed: (rnd() * 4294967296) | 0 });
+    for (var k = order.length - 1; k > 0; k--) { var j = ri(k + 1), t = order[k]; order[k] = order[j]; order[j] = t; }
+    return fitPlan({ week: RUN.week, surge: !!surge, ad: !OFF.adSurge && RUN.adWeek === RUN.week, groups: groups, card: card.id, order: order, seed: (rr() * 4294967296) | 0 });
+  }
+  // ---------- 흐름 시험: 일반 판·보스 판 계획 ----------
+  // 일반 판 no번 = 바탕 씨앗 + 번호로 만든 씨앗 무작위 (같은 번호 = 같은 무리·같은 전투 시드). 강함은 지금 위협 점수(fitPlan) 그대로
+  function normalPlan(no) {
+    var p = makePlan(false, seededRnd(mixSeed(RUN.flow.base, no)));
+    p.mode = 'normal'; p.no = no;
+    return p;
+  }
+  // 보스 표 (BATTLE_DATA.BOSSES[의뢰 key][단계 0~]). 없으면 null
+  function bossData(key, idx) { var t = (BD.BOSSES || {})[key]; return Array.isArray(t) && t[idx] ? t[idx] : null; }
+  // 보스 판 = 표 그대로 (위협 점수·회사 레벨과 상관없음 -> 같은 단계는 늘 같은 무리·같은 시드 = 같은 배치면 같은 결과)
+  function bossPlan(q, idx) {
+    var b = bossData(q.key, idx);
+    if (!b) return null;
+    var groups = b.groups.map(function (g, i) {
+      return { name: g.name, grade: g.grade, count: (g.squads || 1) * BD.SQUAD, top: i === b.groups.length - 1, lv: g.lv | 0, roll: 0, porters: g.porters | 0 };
+    });
+    return { week: RUN.week, surge: false, ad: false, groups: groups, card: b.card, order: BD.EVENT_CARDS.map(function (c, i) { return i; }), seed: b.seed | 0,
+      mode: 'boss', stage: idx + 1, name: b.name, value: 0, dlv: 0, power: b.power || 1, attr: q.attr ? q.attr.id : '', trapBoost: 0 };
   }
   function ensurePlan() {
+    if (flowOn()) return;   // 흐름 시험: 계획은 전투를 시작할 때만 만든다 (startBattle·challengeBoss)
     if (RUN.phase !== 'play' || RUN.battling) return;
     if (!RUN.plan || RUN.plan.week !== RUN.week || RUN.plan.surge !== isSurgeWeek()) RUN.plan = makePlan(isSurgeWeek());
     else fitPlan(RUN.plan);
@@ -1205,6 +1278,13 @@
   function startBattle() {
     if (RUN.phase !== 'play') return { ok: false, msgs: ['진행 중인 의뢰가 없어요'] };
     if (RUN.battling) return { ok: true, plan: RUN.plan, msgs: [] };
+    if (flowOn()) {   // 흐름 시험: 다음 일반 판 (전투 번호 +1). 보스 결과 창은 닫음
+      RUN.flow.no++; RUN.flow.show = null; RUN.flow.mode = 'normal';
+      RUN.plan = normalPlan(RUN.flow.no);
+      RUN.battling = true; RUN.bsave = freshBattleSave();
+      save();
+      return { ok: true, plan: RUN.plan, msgs: battleNotes() };
+    }
     ensurePlan();
     RUN.battling = true;
     RUN.bsave = freshBattleSave();
@@ -1253,6 +1333,7 @@
   //  인원이 0이 된 부대(전멸)는 다음 주에 기본 인원 무료 보충
   function applyBattle(res) {
     if (RUN.phase !== 'play' || !RUN.battling) return null;
+    if (flowOn()) return applyFlow(res);
     var msgs = [], p = RUN.plan, st = RUN.site;
     var goldBefore = RUN.gold, gemsBefore = RUN.gems, compBefore = company();
     var gold = Math.max(0, Math.round(res.gold || 0)), gems = Math.max(0, Math.floor(res.gems || 0));
@@ -1333,6 +1414,96 @@
     return rep;
   }
 
+  // ---------- 흐름 시험: 일반 판 자동 반복 + 보스 도전 (refs/brief_flow_test.md, API.md 15절) ----------
+  // 진행 중 일반 판 버리기 (배치를 바꿨을 때·보스 도전·납품). 보상 없음. 버렸으면 true (저장은 부른 쪽이)
+  function dropNormal() {
+    if (!RUN.battling || RUN.flow.mode === 'boss') return false;
+    RUN.battling = false; RUN.bsave = null; RUN.plan = null; RUN.flow.mode = '';
+    return true;
+  }
+  // 다음 보스: { stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries, reward(첫 성공 마석), done(모두 통과), canChallenge, why }
+  function bossInfo() {
+    var q = RUN.quest;
+    if (!flowOn() || RUN.phase !== 'play' || !q) return null;
+    var total = q.stages.length, done = q.stage >= total, b = done ? null : bossData(q.key, q.stage), why = '';
+    if (done) why = '보스를 모두 이겼어요. 홈에서 납품하세요';
+    else if (!b) why = '이 단계 보스 자료가 없어요';
+    else if (RUN.battling && RUN.flow.mode === 'boss') why = '보스전 중이에요';
+    var sq = 0; (b ? b.groups : []).forEach(function (g) { sq += g.squads || 1; });
+    return { stage: Math.min(total, q.stage + 1), total: total, name: b ? b.name : '', squads: sq,
+      groups: b ? b.groups.map(function (g) { return { name: g.name, grade: g.grade, squads: g.squads || 1, lv: g.lv | 0 }; }) : [],
+      tries: RUN.flow.tries, reward: Math.max(0, (BD.FLOW && BD.FLOW.bossReward) | 0), done: done, canChallenge: !why, why: why };
+  }
+  // [보스 도전]: 진행 중 일반 판은 버리고 바로 보스 판 (보스 중엔 일반 침입 없음). -> { ok, msg, plan, msgs }
+  function challengeBoss() {
+    if (!flowOn()) return { ok: false, msg: '흐름 시험이 꺼져 있어요', msgs: [] };
+    if (RUN.phase !== 'play' || !RUN.quest) return { ok: false, msg: '진행 중인 의뢰가 없어요', msgs: [] };
+    if (RUN.battling && RUN.flow.mode === 'boss') return { ok: true, msg: '', plan: RUN.plan, msgs: [] };
+    var bi = bossInfo();
+    if (!bi.canChallenge) return { ok: false, msg: bi.why, msgs: [] };
+    dropNormal();
+    RUN.plan = bossPlan(RUN.quest, RUN.quest.stage);
+    RUN.flow.mode = 'boss'; RUN.flow.tries++; RUN.flow.show = null;
+    RUN.battling = true; RUN.bsave = freshBattleSave();
+    save();
+    return { ok: true, msg: '보스 ' + bi.stage + '단계 도전: ' + bi.name, plan: RUN.plan, msgs: battleNotes() };
+  }
+  // 보스 결과 창 닫기 (show 지움). 보상은 이미 applyBattle 때 받음
+  function closeBossResult() { if (!RUN.flow.show) return false; RUN.flow.show = null; save(); return true; }
+  // 화면용 요약: { on, no(일반 판 번호), mode, battling, show(보스 결과), boss(bossInfo), rest(판 사이 쉬는 초), saveEvery }
+  function flowInfo() {
+    var F = BD.FLOW || {};
+    return { on: flowOn(), no: RUN.flow ? RUN.flow.no : 0, mode: RUN.flow ? RUN.flow.mode : '', battling: !!RUN.battling, show: RUN.flow ? RUN.flow.show : null,
+      boss: bossInfo(), rest: typeof F.rest === 'number' ? F.rest : 1.5, saveEvery: typeof F.saveEvery === 'number' ? F.saveEvery : 2 };
+  }
+  // 보스 결과 자세히: 분대마다 어디까지 갔나(지난 방 수·끝난 방·보물방 도달)·함정 피해·퇴각 원인
+  var CAUSE_NAME = { trap: '함정', den: '대기실', clash: '조우 피해', card: '카드', timeout: '시간 초과', treasure: '보물방 도달' };
+  function bossReport(res, p) {
+    var rows = (Array.isArray(res.squadResults) ? res.squadResults : []).map(function (r) {
+      return { id: r.id, grade: r.grade || '', state: r.state, cause: r.cause || '', causeText: r.state === 'reached' ? '보물방 도달' : (CAUSE_NAME[r.cause] || r.cause || ''),
+        rooms: r.rooms | 0, last: r.last || '', lastName: ZONES.NAMES[r.last] || r.last || '', trapDmg: r.trapDmg | 0, hpLeft: r.hpLeft | 0 };
+    });
+    var causes = {}; rows.forEach(function (r) { if (r.state !== 'reached') causes[r.causeText] = (causes[r.causeText] || 0) + 1; });
+    return { stage: p.stage, name: p.name, success: (res.reached | 0) === 0, reached: res.reached | 0, squads: res.squads | 0, rows: rows,
+      trapDmg: Math.round(res.trapDmg || 0), causes: causes, tries: RUN.flow.tries, reward: 0, time: Math.round((res.time || 0) * 10) / 10 };
+  }
+  // 흐름 시험 결과 반영 (applyBattle이 부름). 일반 판: 금·신석만 (경험치·회사 경험치·마석 보급·쉼 없음, 부대는 다음 판에 회복).
+  //  보스 판: 보물방 도달 0이면 성공 -> 의뢰 단계 +1 (+ 그 단계 첫 성공 마석 FLOW.bossReward, 한 번만). 실패는 잃는 것 없음. 결과는 RUN.flow.show에 남김
+  function applyFlow(res) {
+    var p = RUN.plan || {}, st = RUN.site, q = RUN.quest, boss = p.mode === 'boss';
+    var goldBefore = RUN.gold, gemsBefore = RUN.gems;
+    var gold = Math.max(0, Math.round(res.gold || 0)), gems = Math.max(0, Math.floor(res.gems || 0));
+    var loot = Math.min(Math.max(0, Math.round(res.loot || 0)), gold);
+    RUN.gold += gold - loot; RUN.gems += gems;
+    RUN.stats.battles++;
+    var rep = { mode: boss ? 'boss' : 'normal', no: p.no || 0, kills: res.kills | 0, porterKills: res.porterKills | 0, total: res.total | 0,
+      gold: gold, gems: gems, loot: loot, reached: res.reached | 0, squads: res.squads | 0, retreated: res.retreated | 0, timeout: !!res.timeout,
+      defended: (res.reached | 0) === 0, goldBefore: goldBefore, goldAfter: RUN.gold, gemsBefore: gemsBefore, gemsAfter: RUN.gems,
+      trapRetreats: res.trapRetreats | 0, denRepels: res.denRepels | 0, clashes: res.clashes | 0, stages: [], budgetGain: 0, boss: null };
+    rep.summary = String(BD.SUMMARY_TEXT || '').replace('{trap}', rep.trapRetreats).replace('{den}', rep.denRepels);
+    if (boss && q) {
+      var b = bossReport(res, p), idx = (p.stage | 0) - 1;
+      if (b.success && q.stage === idx && idx < q.stages.length) {
+        var stg = q.stages[idx];
+        q.stage++; q.stageWeeks.push(RUN.week); rep.stages.push(q.stage);
+        if (stg.budget > 0) { st.budget += stg.budget; st.budgetAdded += stg.budget; }
+        if (stg.opens > st.floorsOpen) { st.floorsOpen = Math.min(st.floors, stg.opens); useSiteLayout(); arrange(); }
+        if (RUN.flow.cleared.indexOf(p.stage) < 0) {   // 그 단계 첫 성공 보상 (한 번만)
+          var gain = Math.max(0, (BD.FLOW && BD.FLOW.bossReward) | 0);
+          st.budget += gain; st.budgetAdded += gain; RUN.flow.cleared.push(p.stage);
+          b.reward = gain; rep.budgetGain = gain;
+        }
+      }
+      b.stageAfter = q.stage; b.total = q.stages.length; b.complete = q.stage >= q.stages.length;
+      rep.boss = b; RUN.flow.show = b;
+    }
+    RUN.battling = false; RUN.bsave = null; RUN.plan = null; RUN.flow.mode = ''; RUN.lastBattle = rep;
+    rep.budgetAfter = budgetLeft();
+    rep.progress = questProgress();
+    save();
+    return rep;
+  }
+
   // ---------- 해금 (경험 중심, GAME_STRUCTURE 5절) ----------
   function unlocks() {
     return { corps: RUN.stats.battles > 0, guards: RUN.stats.delivers > 0, works: RUN.works.length > 0,
@@ -1346,7 +1517,7 @@
     if (OFF.workshop || !d || !d.ready || !RUN.workshop) return 0;
     return d.per * (RUN.workshop[id] || 0);
   }
-  function upgradeBlock() { return RUN.battling || battling ? '전투 중에는 강화할 수 없어요' : ''; }
+  function upgradeBlock() { return (flowOn() ? RUN.battling && RUN.flow.mode === 'boss' : RUN.battling) || battling ? '전투 중에는 강화할 수 없어요' : ''; }
   function workshopInfo(id) {
     var d = workshopDef(id);
     if (!d) return null;
@@ -1518,6 +1689,8 @@
     planInfo: planInfo, isSurgeWeek: isSurgeWeek, surgeIn: surgeIn, watchAd: watchAd, cardRule: cardRule,
     startBattle: startBattle, battlePlan: battlePlan, battleInput: battleInput, battleSave: battleSave, saveBattle: saveBattle,
     setBattleSpeed: setBattleSpeed, setCardCount: setCardCount, applyBattle: applyBattle, setBattle: setBattle,
+    // 흐름 시험 (API.md 15절)
+    flowInfo: flowInfo, bossInfo: bossInfo, challengeBoss: challengeBoss, closeBossResult: closeBossResult, stopBattle: function () { var r = dropNormal(); if (r) save(); return r; },
     // 튜토리얼
     tutorial: tutorial, tutorialSeen: tutorialSeen, skipTutorial: skipTutorial, tutorialPath: tutorialPath,
     // 데모에서 꺼진 기능 (늘 거절·0)

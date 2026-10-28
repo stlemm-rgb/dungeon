@@ -959,3 +959,14 @@ body.reduce .bt-mon.retreating, body.reduce .bt-board.bt-alarm { animation: none
 .demoend h3 { font-size: 18px; color: var(--accent); }
 .demoend .stat { font-size: 14px; }
 .demoshaft .surface { background: var(--earth-edge); }
+
+/* ===== 흐름 시험 (2026-10-28, 임시 화면: battle.js·shell.js flow, API.md 15절) ===== */
+#tabs.inbattle .bt-fbtn { flex: 1; min-width: 0; color: var(--text); font-size: 14px; }
+#tabs.inbattle .bt-fbtn.off, #tabs.inbattle .bt-fbtn:disabled { opacity: .45; }
+#tabs.inbattle .tab-main { flex: 1.6; font-size: 14px; }
+.bt-surgechip.normal { background: var(--panel-2); color: var(--dim); }
+.bt-flowline { font-size: 12px; color: var(--dim); }
+.bt-fbtns { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.bt-fbtns .btn.big { padding: 12px; font-size: 16px; }
+.bt-bossres .stat b { font-weight: normal; text-align: right; margin-left: 8px; }
+.bt-bossres .stat span { white-space: nowrap; }

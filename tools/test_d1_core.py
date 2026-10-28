@@ -6,6 +6,8 @@
 의뢰 예산·회사 금 분리, 던전 가치/전투력(B안), 납품 기준 5단계·수동 납품·q1 뒤 데모 끝(q2 숨김), 층(시험용 2층 의뢰: 층별 차례 전투),
 층별 출진·퇴각·쉼, 카드 위기 최대 2장(배속·복원 같음), 대기실 기본 부대, 끈 기능, 저장 v7·깨진 문 보완, ?seed=,
 시설 강화(단계·비용·거절·실제 전투 피해·체력·전투력 일치·문만 옮기면 유지·교체 환급 1번·무료 부대 중복 없음·저장·전투 이어하기·옛 v7·납품 인계).
+1~15절은 예전 주 단위 규칙이라 BATTLE_DATA.FLOW.on을 끄고 불러온다. 16절 = 흐름 시험(켬): 일반 판 번호·씨앗, 금만 받음, 판 중 건설 = 그 판 버림,
+보스 도전·고정 시드·결정론·보스 중 잠김·새로고침 이어하기·실패(잃는 것 없음)·문 고쳐 성공·첫 성공 보상 한 번·납품·흐름 칸 없는 옛 v7.
 옛 v6 저장 바꾸기(B안)는 tools/test_oldsaves.py가 tools/oldsaves/d1/로 검사한다.
 
 화면 없이 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다 (test_c1_core.py와 같은 방식).
@@ -29,13 +31,18 @@ const problems = [];
 function ok(c, msg) { if (!c) problems.push(msg); }
 let FAKE_NOW = null;
 class FakeDate extends Date { static now() { return FAKE_NOW !== null ? FAKE_NOW : super.now(); } }
+// 흐름 시험(BATTLE_DATA.FLOW.on): 1~14절은 예전 주 단위 규칙을 검사하므로 끄고 불러옴, 16절에서 켬
+let FLOW_ON = false;
 function boot(search) {
   const sb = { console, Math, JSON, Date: FakeDate, Object, Array, String, Number };
   if (search) sb.location = { search };
   sb.window = sb;
   sb.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
   vm.createContext(sb);
-  ['battle_data.js', 'zones.js', 'progress.js', 'battle_sim.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), sb, { filename: f }));
+  ['battle_data.js', 'zones.js', 'progress.js', 'battle_sim.js'].forEach(f => {
+    vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), sb, { filename: f });
+    if (f === 'battle_data.js' && sb.BATTLE_DATA.FLOW) sb.BATTLE_DATA.FLOW.on = FLOW_ON;
+  });
   return sb;
 }
 function runSim(W, inp, dt, onEv) {
@@ -780,6 +787,97 @@ P.pickQuest(P.offerQuests()[0]);
   ok(same(ib.up, { trap: {}, den: {} }), '다음 현장 전투 입력에 강화 없음');
   ok(P.upgradeInfo('2C2').code === 'locked', '잠긴 층 거절: ' + P.upgradeInfo('2C2').why);
 }
+
+// ===================== 16) 흐름 시험 (refs/brief_flow_test.md, API.md 15절): 일반 판 자동 반복 + 보스 도전 =====================
+FLOW_ON = true;
+{
+  startQ1();
+  ok(BD.FLOW.on && P.flowInfo().on && R.v === 7 && R.flow && R.flow.no === 0 && !R.tutorial.on, '흐름 시험 켬: 저장 v7 + flow 칸, 튜토리얼 끔');
+  ok(P.weeklyBudget() === 0 && P.questUpdate().length === 0 && P.questProgress().line.indexOf('보스 검증 0/5') === 0, '마석 보급 없음·가치/전투력 단계 없음: ' + P.questProgress().line);
+  ok(!R.plan && !P.planInfo(), '전투 전에는 계획 없음');
+  // 일반 판: 번호 1, 2 ... 같은 바탕 씨앗 + 번호 = 같은 판
+  const s1 = P.startBattle(), p1 = JSON.stringify(R.plan);
+  ok(s1.ok && R.battling && R.plan.mode === 'normal' && R.plan.no === 1 && R.flow.mode === 'normal', '일반 1판 시작');
+  const budget0 = R.site.budget, week0 = R.week, lv0 = JSON.stringify(R.site.squads.map(s => [s.lv, s.exp])), co0 = JSON.stringify(R.company), gold0 = R.gold;
+  const S1 = runSim(W, P.battleInput()), rp = P.applyBattle(W.BSIM.result(S1));
+  ok(rp && rp.mode === 'normal' && !R.battling && !R.plan && R.flow.no === 1, '일반 판 결과 반영 -> 전투 끝');
+  ok(R.site.budget === budget0 && R.week === week0 && JSON.stringify(R.site.squads.map(s => [s.lv, s.exp])) === lv0 && JSON.stringify(R.company) === co0, '일반 판: 마석·주·경험치·회사 레벨 그대로');
+  ok(R.gold === gold0 + rp.gold - rp.loot && Object.keys(R.site.rest).length === 0 && R.quest.stage === 0 && R.stats.battles === 1, '일반 판: 금만, 쉼 없음, 단계 그대로');
+  P.startBattle();
+  ok(R.plan.no === 2 && JSON.stringify(R.plan) !== p1, '일반 2판 = 다른 판');
+  sample.flowNormal = { gold: rp.gold, reached: rp.reached, summary: rp.summary };
+  // 같은 바탕 씨앗(같은 ?seed) = 같은 1판
+  {
+    const Wa = boot('?seed=99'), Wb = boot('?seed=99');
+    [Wa, Wb].forEach(w => { w.PROGRESS.reset(); w.PROGRESS.pickQuest(w.PROGRESS.offerQuests()[0]); w.PROGRESS.startBattle(); });
+    ok(JSON.stringify(Wa.PROGRESS.RUN.plan) === JSON.stringify(Wb.PROGRESS.RUN.plan), '같은 씨앗 + 같은 번호 = 같은 일반 판');
+  }
+  // 일반 판 중 배치 변경: 바로 확정되고 그 판은 버림 (다음 판부터 새 배치)
+  ok(P.doorInfo(1).canEdit && P.previewLayout({ builds: { C6: 'den' } }).ok, '일반 판 중에도 건설 가능');
+  const cl = P.commitLayout({ builds: { C6: 'den' } });
+  ok(cl.ok && !R.battling && !R.plan && R.flow.mode === '', '일반 판 중 [건설] 확정 -> 그 판은 버림: ' + cl.msg);
+  // 보스 도전: 일반 판 중이면 끊고 바로 보스
+  P.startBattle();
+  const bi = P.bossInfo();
+  ok(bi && bi.stage === 1 && bi.total === 5 && bi.canChallenge && bi.name === BD.BOSSES.q1[0].name, '보스 정보 1단계: ' + JSON.stringify(bi && [bi.stage, bi.name, bi.squads]));
+  const cb = P.challengeBoss();
+  ok(cb.ok && R.battling && R.plan.mode === 'boss' && R.plan.stage === 1 && R.plan.seed === BD.BOSSES.q1[0].seed && R.flow.mode === 'boss' && R.flow.tries === 1, '보스 1단계 시작 (일반 판 끊음)');
+  ok(P.startBattle().plan === R.plan && P.commitLayout({ builds: { C5: 'trap' } }).code === 'locked' && !P.doorInfo(1).canEdit && P.upgradeInfo('C6').code === 'locked', '보스 중: 일반 판 없음·배치 못 바꿈');
+  ok(P.questProgress().why.indexOf('보스') >= 0 || !P.questProgress().complete, '보스 중 납품 불가');
+  // 같은 배치 = 같은 결과 (결정론)
+  const inB = P.battleInput(), rA = W.BSIM.result(runSim(W, inB)), rB = W.BSIM.result(runSim(W, P.battleInput()));
+  ok(same(rA, rB), '같은 단계 보스 두 번 = 같은 결과');
+  // 저장 지점 이어하기 (보스 중 새로고침)
+  {
+    const S = W.BSIM.create(P.battleInput());
+    for (let i = 0; i < 100; i++) W.BSIM.step(S, 0.1);
+    P.saveBattle({ snap: W.BSIM.snapshot(S), ui: { paused: true } });
+    W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+    ok(P.load() && R.battling && R.flow.mode === 'boss' && R.plan.mode === 'boss' && R.bsave.snap && R.bsave.ui.paused === true, '보스 중 새로고침 -> 보스 판·멈춤 상태 이어짐');
+    const S2 = W.BSIM.restore(P.battleInput(), R.bsave.snap);
+    for (let i = 0; i < 6000 && !S2.done; i++) W.BSIM.step(S2, 0.1);
+    ok(same(W.BSIM.result(S2).reached, rA.reached), '이어한 보스 판도 같은 결과');
+  }
+  // 대충 지은 판(대기실 하나) = 보스 1단계 실패, 잃는 것 없음
+  const b0 = R.site.budget, gold1 = R.gold;
+  const fail = P.applyBattle(rA);
+  ok(rA.reached > 0 && fail && fail.mode === 'boss' && fail.boss && !fail.boss.success && R.quest.stage === 0 && R.site.budget === b0 && R.flow.cleared.length === 0, '대기실 하나 = 보스 1단계 실패, 단계·마석 그대로');
+  ok(R.flow.show && R.flow.show.rows.length === rA.squads && R.flow.show.rows.some(r => r.state === 'reached' && r.rooms > 0 && r.lastName) && typeof R.flow.show.trapDmg === 'number' && Object.keys(R.flow.show.causes).length >= 0, '실패 결과: 분대마다 도달·지난 방·함정 피해·퇴각 원인');
+  ok(P.applyBattle(rA) === null && R.gold === gold1 + fail.gold - fail.loot, '결과는 한 번만 반영');
+  sample.bossFail = { reached: rA.reached, squads: rA.squads, time: Math.round(rA.time) };
+  // 새로고침해도 결과 창 남음, 보상 중복 없음
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && !R.battling && R.flow.show && !R.flow.show.success && R.quest.stage === 0 && R.site.budget === b0, '결과 직후 새로고침: 결과 창 그대로, 바뀐 것 없음');
+  // [배치 고치기]: 입구 오른쪽 문 C1-D1 -> B6-C6 (오른쪽 길이 막히고 모두 가운데 대기실로) -> [다시 도전] 성공
+  const dl = R.site.doors[1].map(d => d === 'C1-D1' ? 'B6-C6' : d), fx = P.commitLayout({ doors: { 1: dl } });
+  ok(fx.ok, '문 바꾸기 확정: ' + fx.msg);
+  ok(R.flow.show, '배치를 고쳐도 결과 창은 남음 (돌아와서 [다시 도전])');
+  ok(P.challengeBoss().ok && R.flow.tries === 2 && !R.flow.show && R.plan.seed === BD.BOSSES.q1[0].seed, '다시 도전 = 같은 보스·같은 시드');
+  const rW = W.BSIM.result(runSim(W, P.battleInput())), win = P.applyBattle(rW);
+  ok(rW.reached === 0 && win.boss.success && R.quest.stage === 1 && win.stages[0] === 1, '문을 고친 배치 = 보스 1단계 성공 -> 단계 1');
+  ok(R.site.budget === b0 + BD.FLOW.bossReward && win.boss.reward === BD.FLOW.bossReward && same(R.flow.cleared, [1]), '첫 성공 보상 마석 +' + BD.FLOW.bossReward);
+  sample.bossWin = { time: Math.round(rW.time), den: rW.denRepels, trap: rW.trapRetreats, timeouts: rW.timeouts };
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && R.quest.stage === 1 && R.site.budget === b0 + BD.FLOW.bossReward && R.flow.show.success, '성공 직후 새로고침: 보상 한 번만');
+  ok(P.bossInfo().stage === 2 && P.questProgress().line.indexOf('보스 검증 1/5') === 0, '다음 보스 = 2단계');
+  // 마지막 단계 성공 -> 납품 (가치·전투력과 상관없이). 일반 판 중이면 끊고 납품
+  R.quest.stage = 4; P.save();
+  P.challengeBoss(); const pb = R.plan;
+  ok(pb.stage === 5 && pb.seed === BD.BOSSES.q1[4].seed, '5단계 보스');
+  // 시험: 결과만 성공으로 꾸며 넣음 (보스 판정 = 보물방 도달 0)
+  const r5 = W.BSIM.result(runSim(W, P.battleInput())); r5.reached = 0;
+  const w5 = P.applyBattle(r5);
+  ok(w5.boss.success && w5.boss.complete && R.quest.stage === 5 && P.questProgress().complete && P.checkQuest(), '마지막 보스 성공 -> 납품 가능: ' + P.questProgress().line);
+  P.startBattle();
+  ok(R.battling && P.checkQuest(), '일반 판 중에도 납품 가능');
+  const dv = P.deliver();
+  ok(dv && R.phase === 'settle' && !R.battling && !R.plan && dv.demoEnd, '납품 -> 정산 (일반 판은 버림) -> 데모 끝 신호');
+  // 흐름 칸 없는 옛 v7 저장: 단계는 0부터, 진행 중 전투 버림
+  startQ1();
+  R.quest.stage = 3; P.startBattle(); delete R.flow; P.save();
+  W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
+  ok(P.load() && R.flow && R.flow.no === 0 && R.quest.stage === 0 && !R.battling && !R.plan, '흐름 칸 없는 옛 v7 저장 -> 단계 0, 전투 버림');
+}
 console.log(JSON.stringify({ problems, sample }));
 """
 
@@ -808,7 +906,7 @@ def main():
         for p in r["problems"][:60]:
             print("  - " + p)
         return 1
-    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화")
+    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화 -> 흐름 시험(일반 판 반복·보스 도전)")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 

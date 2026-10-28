@@ -24,6 +24,9 @@
  *  - 튜토리얼 말풍선(api.tutStart): 첫 전투 화면(battle) · 첫 이벤트 카드(card) · 첫 결과표(result). 안 켜져 있으면 아무 일도 안 일어난다.
  *    카드 전용 화면에서는 말풍선(#tut)이 카드 화면 위(z-index)에 떠 있고, 카드 화면은 말풍선 높이만큼 아래를 비워 가리지 않게 한다
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드)
+ *  - 흐름 시험 (2026-10-28, P.flowInfo().on, API.md 15절, 임시 화면): 이 화면 = 현장 운영. 들어오면 일반 판이 바로 시작(무리 등장·침입자 카드 창·위기 카드·결과표 없음),
+ *    끝나면 한 줄 기록 뒤 FLOW.rest초 쉬고 다음 일반 판 (api.rerender). 아래 막대 = [배속] [건설] [보스 도전 ▶] [⏸] [정비]. 보스 판도 카드 없이 바로 시작, 끝나면 보스 결과 창
+ *    (어디까지 갔나·함정 피해·퇴각 원인 + [배치 고치기] [다시 도전] [일반 침입 재개]). 진행 중 전투는 FLOW.saveEvery초마다·화면을 떠날 때 저장 -> 새로고침하면 이어서 (멈춤 상태도 그대로)
  */
 (function () {
   'use strict';
@@ -43,11 +46,65 @@
     var div = api.div, buzz = api.buzz, fxRandom = api.fxRandom;
     function tutStart(id, target) { if (api.tutStart) api.tutStart(id, { target: target }); }
     function tutDone(id) { if (api.tutDone) api.tutDone(id); }
+    var recent = [];   // 흐름 시험: 최근 일반 판 한 줄 기록 (새로 그린 화면 맨 위에 다시 보여 줌, 저장 안 함)
+    var CAUSE_ROW = { reached: '보물방 도달', retreat: '퇴각', dead: '전멸' };
+    // 흐름 시험 보스 결과 창 (b = RUN.flow.show). 버튼: 실패 = [배치 고치기] [다시 도전] [일반 침입 재개] · 성공 = [다음 보스 도전]/[홈에서 납품] [일반 침입 재개]
+    function bossBox(b) {
+      var ok = b.success, rows = (b.rows || []).map(function (r) {
+        return '<div class="stat"><span>분대 ' + (r.id + 1) + ' · ' + esc(r.grade) + '급</span><b>' + esc(r.state === 'reached' ? '보물방 도달' : (CAUSE_ROW[r.state] || r.state) + ' · ' + r.causeText) +
+          ' · 방 ' + r.rooms + '곳 · 끝: ' + esc(r.lastName) + ' · 함정 피해 ' + r.trapDmg + (r.state === 'reached' ? ' · 체력 ' + r.hpLeft + '%' : '') + '</b></div>';
+      }).join('');
+      var causes = Object.keys(b.causes || {}).map(function (k) { return k + ' ' + b.causes[k]; }).join(' · ') || '없음';
+      var btns = ok
+        ? (b.complete ? '<button class="btn primary big" type="button" data-fhome>홈에서 납품하기</button>' : '<button class="btn primary big" type="button" data-fretry>다음 보스 도전 ▶</button>') +
+          '<button class="btn big" type="button" data-fresume>일반 침입 재개</button>'
+        : '<button class="btn primary big" type="button" data-ffix>배치 고치기</button><button class="btn big" type="button" data-fretry>다시 도전</button>' +
+          '<button class="btn big" type="button" data-fresume>일반 침입 재개</button>';
+      return div('bt-result bt-bossres', '<div class="card bt-resbox"><h3 class="' + (ok ? 'ok' : 'bad') + '">' +
+        (ok ? '보스 격퇴! 보스 검증 ' + b.stageAfter + '/' + b.total : '보스 실패: ' + b.reached + '/' + b.squads + '분대가 보물방 도달') + '</h3>' +
+        '<div class="dim small-text bt-ressub">보스 ' + b.stage + '단계 · ' + esc(b.name) + ' · ' + b.tries + '번째 도전 · ' + b.time + '초</div>' +
+        (b.reward ? '<div class="bt-lv">첫 성공 보상: 마석 +' + b.reward + '</div>' : '') +
+        '<div class="bt-sub">분대마다 어디까지 갔나</div>' + rows +
+        '<div class="stat"><span>함정 피해 합</span><b>' + b.trapDmg + '</b></div><div class="stat"><span>퇴각 원인</span><b>' + esc(causes) + '</b></div>' +
+        (ok ? '' : '<div class="small-text dim">잃는 것은 없어요. 문·시설을 바꾸고 다시 도전해 보세요 (같은 배치 = 같은 결과)</div>') +
+        '<div class="bt-fbtns">' + btns + '</div></div>');
+    }
+    function bindBossBox(box) {
+      box.addEventListener('click', function (e) {
+        var t = e.target.closest ? e.target.closest('[data-ffix],[data-fretry],[data-fresume],[data-fhome]') : null;
+        if (!t) return;
+        var P = window.PROGRESS;
+        buzz('tap');
+        if (t.hasAttribute('data-ffix')) { api.go('build', true); return; }   // 결과 창은 남겨 둠: 돌아오면 [다시 도전]
+        if (t.hasAttribute('data-fhome')) { P.closeBossResult(); api.go('company', false); return; }
+        if (t.hasAttribute('data-fretry')) { var r = P.challengeBoss(); if (!r.ok) { api.toast(r.msg); buzz('warn'); return; } api.rerender(); return; }
+        P.closeBossResult(); P.startBattle(); api.rerender();
+      });
+    }
+    // 흐름 시험: 보스 결과만 있고 전투가 없을 때 (새로고침·배치 고치기에서 돌아옴)
+    function bossOnly(el, b) {
+      var P = window.PROGRESS, RUN = P.RUN;
+      el.className = 'screen bt-screen';
+      var board = div('zboard bt-board');
+      board.innerHTML = window.ZONEVIEW.boardHtml({ zones: RUN.site.zones, units: RUN.site.units, doors: RUN.site.doors, floor: 1 });
+      el.appendChild(div('bt-top', '<span class="bt-surgechip">보스</span><span class="bt-flowline">' + esc(P.questProgress() ? P.questProgress().line : '') + '</span>'));
+      el.appendChild(board);
+      var bar = api.bar();
+      bar.innerHTML = '<button class="bt-fbtn" type="button" data-go="build">건설</button><span class="bt-note">보스 결과</span><button class="bt-fbtn" type="button" data-go="field">정비</button>';
+      var box = bossBox(b);
+      bindBossBox(box);
+      el.appendChild(box);
+    }
 
     return function (el) {
       Z = window.ZONES || Z; // 판이 바뀌었을 수 있으니 화면을 만들 때마다 다시 잡는다
       var P = window.PROGRESS, RUN = P.RUN, plan = P.battlePlan();
+      var FL = P.flowInfo ? P.flowInfo() : null, flow = !!(FL && FL.on && RUN.phase === 'play');
+      if (flow && !plan && FL.show) { bossOnly(el, FL.show); return; }
+      if (flow && !plan) { P.startBattle(); plan = P.battlePlan(); }   // 현장 운영: 들어오면 다음 일반 판
       if (!plan) { el.appendChild(div('dim', '전투가 없어요')); return; }
+      var boss = flow && plan.mode === 'boss', restTimer = 0, saveT = 0;
+      api.onLeave(function () { clearTimeout(restTimer); flowSave(); });
       var run = { alive: true, raf: 0 };
       api.onLeave(function () { run.alive = false; cancelAnimationFrame(run.raf); });
       el.className = 'screen bt-screen';
@@ -63,9 +120,12 @@
         floorNotice: null, notice: false   // 층 넘어가기 알림 (floorEnd 사건 -> 알림 -> [N층으로])
       };
       // 저장 지점에 넣는 화면 진행 (기다리는 위기 카드 · 카드 몇 장째 · 고른 카드 목록)
-      var UI_KEYS = ['queue', 'cardsShown', 'cardsUsed', 'cardNo', 'picks'];
+      var UI_KEYS = ['queue', 'cardsShown', 'cardsUsed', 'cardNo', 'picks', 'paused'];
       if (resumed && bs.ui) UI_KEYS.forEach(function (k) { if (bs.ui[k] !== undefined) U[k] = bs.ui[k]; });
-      if (resumed) {
+      if (flow) {   // 흐름 시험: 무리 등장·침입자 카드 창 없이 바로 싸움. 이어하기는 멈춤 상태 그대로 (보통은 계속 진행)
+        U.phase = 'fight'; U.appearIdx = plan.groups.length; U.paused = resumed && !!(bs.ui && bs.ui.paused); U.queue = [];
+        if (S.pending) U.floorNotice = { type: 'floorEnd', n: S.floor, next: S.pending };
+      } else if (resumed) {
         U.phase = 'fight'; U.paused = true; U.appearIdx = plan.groups.length;
         if (S.pending) U.floorNotice = { type: 'floorEnd', n: S.floor, next: S.pending };   // 층 알림이 떠 있던 중에 저장됨: 알림부터 다시
       }
@@ -73,6 +133,8 @@
         var ui = {}; UI_KEYS.forEach(function (k) { ui[k] = U[k]; });
         P.saveBattle({ snap: SIM.snapshot(S), ui: JSON.parse(JSON.stringify(ui)) });
       }
+      // 흐름 시험: 진행 중 전투 저장 (이 화면의 전투가 아직 진행 중일 때만. 보스 도전·배치 변경으로 바뀌었으면 안 함)
+      function flowSave() { if (flow && !S.done && P.battlePlan() === plan) checkpoint(); }
       var top = plan.groups[plan.groups.length - 1];
       var cr = P.cardRule(), cardMax = cr.maxPerBattle;   // 카드는 위기 때만, 전투 한 번에 최대 cardMax장
       function crisisInfo(kind) { return (cr.kinds || []).filter(function (k) { return k.id === kind; })[0] || { id: kind, label: '위기', text: '위기가 닥쳤어요!' }; }
@@ -82,6 +144,7 @@
       function stat(cls, label) { return '<span class="bt-st ' + cls + '"><small>' + label + '</small><b></b></span>'; }
       el.innerHTML =
         '<div class="bt-top' + (plan.surge ? ' surge' : '') + '">' + (plan.surge ? '<span class="bt-surgechip">대량</span>' : '') +
+        (flow ? '<span class="bt-surgechip' + (boss ? '' : ' normal') + '">' + (boss ? '보스 ' + plan.stage : '일반 ' + (plan.no || '')) + '</span>' : '') +
         '<span class="bt-time">1:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
         stat('kill', '처치') + stat('gold', '금') + stat('gem', '신석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
         '<div class="zboard bt-board"></div>' +
@@ -91,7 +154,11 @@
       // 아래 막대: 하단 탭 막대 자리에 [배속] [카드 남음] [전투 시작] [짧은 안내]. 전투 시작이 홈의 가운데 "다음 주" 탭과 같은 좌표·크기에 온다
       //  카드 = 위기 때만 (전투 한 번에 최대 maxPerBattle장). 가운데 왼쪽 버튼은 남은 장 수를 보여 주고, 누르면 규칙을 토스트로 알려 준다
       var bar = api.bar();
-      bar.innerHTML = '<button class="bt-speed" type="button">배속 ×1</button>' +
+      if (flow) bar.innerHTML = '<button class="bt-speed" type="button">배속 ×1</button><button class="bt-cards" type="button" hidden></button>' +
+        '<button class="bt-fbtn" type="button" data-fbuild>건설</button>' +
+        '<button class="tab-main bt-start" type="button"></button>' +
+        '<button class="bt-fbtn" type="button" data-fpause>⏸</button><button class="bt-fbtn" type="button" data-ffield>정비</button>';
+      else bar.innerHTML = '<button class="bt-speed" type="button">배속 ×1</button>' +
         '<button class="bt-cards" type="button">카드 ' + cardMax + '장</button>' +
         '<button class="tab-main bt-start" type="button">전투 시작 ▶</button>' +
         '<span class="bt-note">전투 중 이동 불가</span>';
@@ -269,7 +336,7 @@
             case 'wipe': floatText(e.x, e.y, '분대 전멸', 'big'); buzz('tap'); break;
             case 'mdown': flashZone(e.z, 'bt-hit'); log(Z.NAMES[e.z] + ' 대기실 부대원이 쓰러졌어요', 'bad'); break;
             case 'mretreat': retreatFx(e); break;
-            case 'crisis': onCrisis(e); break;
+            case 'crisis': if (!flow) onCrisis(e); break;   // 흐름 시험: 카드 없음
             case 'chill': flashZone(e.z, 'bt-chill'); floatText(e.x, e.y - 0.2, '얼어붙음', 'chill'); log('분대 ' + (e.id + 1) + '가 얼어붙은 하역장에 들어서 느려져요', 'good'); break;
             case 'reach':
               flashZone(S.goal, 'bt-hit'); floatText(e.x, e.y - 0.3, '약탈 -' + e.loot + '금', 'big');
@@ -481,6 +548,7 @@
       function nameOf(r) { return (api.unitName && api.unitName(r.id)) || r.name; }
       function coText(c) { return 'Lv ' + c.lv + ' (' + c.exp + '/' + c.need + ')'; }
       function finish() {
+        if (flow) { finishFlow(); return; }
         U.phase = 'result';
         if (U.card) { endCard(); }
         removeNow(ov); ov = null;
@@ -550,8 +618,57 @@
         tutStart('result', '.bt-result [data-home]');
       }
 
+      // ---------- 흐름 시험: 결과·버튼 ----------
+      function finishFlow() {
+        U.phase = 'result';
+        var rep = api.finishBattle(SIM.result(S));
+        if (!rep) { api.rerender(); return; }
+        if (rep.mode === 'boss') {
+          var box = bossBox(rep.boss);
+          bindBossBox(box); el.appendChild(box);
+          box.querySelector('.card').animate([{ transform: 'scale(.7)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: MOTION.dur.panel, easing: MOTION.ease.popS });
+          startBtn.disabled = true; pauseBtn.disabled = true;
+          buzz(rep.boss.success ? 'stamp' : 'warn');
+          return;
+        }
+        var line = '일반 ' + rep.no + '판: ' + (rep.defended ? '방어 성공' : '보물방 침입 ' + rep.reached + '분대') + ' · 금 +' + money(rep.gold - rep.loot) + ' · ' + rep.summary;
+        recent.push({ text: line, ok: rep.defended }); while (recent.length > 3) recent.shift();
+        log(line, rep.defended ? 'good' : 'bad');
+        log('다음 일반 판까지 잠깐 쉬어요…', 'dim');
+        drawFlowBar();
+        restTimer = setTimeout(function () { if (!run.alive || P.battlePlan()) return; P.startBattle(); api.rerender(); }, Math.max(0, FL.rest) * 1000);
+      }
+      var pauseBtn = bar.querySelector('[data-fpause]');
+      function drawFlowBar() {
+        if (!flow) return;
+        var bi = P.bossInfo();
+        if (boss) { startBtn.textContent = U.paused ? '계속 ▶' : '일시정지 ❚❚'; startBtn.disabled = U.phase === 'result'; }
+        else { startBtn.textContent = bi && !bi.done ? '보스 도전 ' + bi.stage + ' ▶' : '보스 모두 통과'; startBtn.disabled = !(bi && bi.canChallenge); }
+        pauseBtn.textContent = U.paused ? '▶' : '⏸'; pauseBtn.disabled = U.phase === 'result';
+        bar.querySelector('[data-fbuild]').classList.toggle('off', boss);
+        bar.querySelector('[data-ffield]').classList.toggle('off', boss);
+      }
+      if (flow) {
+        pauseBtn.addEventListener('click', function () { if (U.phase !== 'fight') return; U.paused = !U.paused; flowSave(); drawFlowBar(); buzz('tap'); });
+        bar.querySelector('[data-fbuild]').addEventListener('click', function () {
+          if (boss) { api.toast('보스전 중에는 바꿀 수 없어요'); buzz('warn'); return; }
+          buzz('tap'); api.go('build', true);   // 떠나면서 저장(멈춤). 확정하면 이 일반 판은 버리고 새 배치로 다음 판
+        });
+        bar.querySelector('[data-ffield]').addEventListener('click', function () {
+          if (boss) { api.toast('보스전이 끝나면 갈 수 있어요'); buzz('warn'); return; }
+          buzz('tap'); api.go('field', true);
+        });
+      }
+
       // ---------- 버튼 ----------
       startBtn.addEventListener('click', function () {
+        if (flow) {
+          if (boss) { if (U.phase !== 'fight') return; U.paused = !U.paused; flowSave(); drawFlowBar(); buzz('tap'); return; }
+          var r = P.challengeBoss();
+          if (!r.ok) { api.toast(r.msg); buzz('warn'); return; }
+          buzz('warn'); api.rerender();
+          return;
+        }
         if (U.phase === 'ready') {
           U.phase = 'appear'; U.appearT = 0.2;
           P.setBattleSpeed(U.speedIdx, U.fastUsed); // 시작하면 지금 배속 기준이 이 전투에 굳는다
@@ -609,6 +726,7 @@
           checkFloorNotice();
           paint();
           if (S.done) finish();
+          else if (flow && (saveT += real) >= FL.saveEvery) { saveT = 0; flowSave(); }
         } else if (U.phase === 'fight') {
           checkFloorNotice();   // 일시정지·저장에서 이어진 중에도 층 알림은 띄움
         }
@@ -616,6 +734,16 @@
       drawSpeed();
       paint();
       var dlvLine = '던전 레벨 ' + (plan.dlv || 0) + ((plan.power || 1) < 1 ? ' · 새 던전이라 침입자 힘 ×' + plan.power : '');
+      if (flow) {
+        S.squads.forEach(function (q) { var d = sqEls[q.id]; if (d && !d.classList.contains('out')) d.hidden = false; });
+        if (boss) log('<b>보스 ' + plan.stage + '단계: ' + esc(plan.name) + '</b> — ' + plan.groups.map(function (g) { return g.grade + '급 ' + esc(g.name) + ' ' + (g.count / BD.SQUAD) + '분대 Lv ' + g.lv; }).join(' · '), 'bad');
+        else log('일반 ' + plan.no + '판: ' + plan.groups.map(function (g) { return g.grade + '급 ' + esc(g.name) + ' Lv ' + g.lv; }).join(' · ') + ' · ' + dlvLine, 'dim');
+        log('침입자 카드: ' + S.icard.tag + ' (' + S.icard.text + ')' + (resumed ? ' · 저장 지점부터 이어짐 (' + Math.floor(S.t) + '초)' : ''), 'icard');
+        recent.forEach(function (r) { log(r.text, r.ok ? 'good' : 'bad'); });   // 지난 일반 판 기록이 맨 아래 (보이는 줄)
+        drawFlowBar();
+        run.raf = requestAnimationFrame(frame);
+        return;
+      }
       if (resumed) {
         log('저장 지점부터 이어집니다 (고른 카드 ' + U.picks.length + '장 · ' + Math.floor(S.t) + '초)', 'good');
         U.picks.forEach(function (pk) {

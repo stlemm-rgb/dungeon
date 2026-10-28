@@ -1,4 +1,6 @@
-# D1 데모 핵심 로직 API (1차 + 2차 2026-10-23, 3차 문 토큰 2026-10-24 → 13절, 시설 강화 2026-10-25 → 14절)
+# D1 데모 핵심 로직 API (1차 + 2차 2026-10-23, 3차 문 토큰 2026-10-24 → 13절, 시설 강화 2026-10-25 → 14절, 흐름 시험 2026-10-28 → 15절)
+
+> **흐름 시험이 켜져 있으면(`BATTLE_DATA.FLOW.on`, 기본 켬) 15절이 1~14절의 주 단위 규칙(다음 주·납품 기준 가치/전투력·마석 보급·다음 주 쉼·경험치)보다 우선한다.**
 
 화면 파일(shell.js·build.js·battle.js·stage.js)이 부르는 공개 함수 목록. 값은 **이 함수들로만** 바꾼다 (RUN을 화면에서 직접 고치지 않는다).
 숫자·글 표는 `battle_data.js`의 `DEMO` 아래(의뢰·납품 기준·부족·회사 레벨·고정 구역·끈 기능·판). 검사는 `tools/test_d1_core.py`, 옛 저장은 `tools/test_oldsaves.py`.
@@ -441,3 +443,56 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 - 대기실은 `units`(출진 부대)와 "이 방에서만 적용", `noEffect`면 "출진 부대가 없어 효과 없음". `pass`가 낮으면 "문 배치부터 바꿔 보세요".
 - 건설 미리보기: `upLost`·`refund`가 있으면 "사라질 강화 · 환급 +N" 표시. 판의 방 단계 표시는 `upgradeLevel(방)`.
 - 첫 현장 시작 마석이 **200**(시험값)이라 마석 숫자가 보이는 화면 글·사진이 바뀔 수 있음.
+
+## 15. 흐름 시험 (2026-10-28, 지시서 `refs/brief_flow_test.md`, 근거 `refs/debate_ds_restructure_2026-10-28.md` "최종 수렴" 1~6)
+
+주 단위 [다음 주] 대신 **일반 판이 한 판씩 자동으로 이어지고**, 플레이어가 **[보스 도전]**으로 보스 분대를 보물방 앞에서 막으면 의뢰 단계가 오른다. 손맛 시험이라 작게 만들었고, `BATTLE_DATA.FLOW.on = false`면 1~14절 규칙·화면이 그대로 돌아온다 (검사 `test_d1_core` 1~15절은 끄고, 16절은 켜고 본다).
+
+### 15-1. 규칙
+
+| 것 | 흐름 시험 |
+| --- | --- |
+| 일반 판 | `startBattle()` = 다음 일반 판. 전투 번호 `RUN.flow.no` +1, 계획 = 예전 `NORMAL`(D·C 1분대씩) 그대로, **씨앗 = `mixSeed(RUN.flow.base, no)`** (게임 무작위 `RUN.seed`를 안 씀 → 같은 번호 = 같은 판). 강함은 예전처럼 위협 점수(`fitPlan`) |
+| 일반 판 보상 | 회사 금·신석만 (약탈 빼고). **경험치·회사 경험치·마석 보급(+30)·다음 주 쉼 없음**, `RUN.week` 안 늘어남. 부대는 다음 판에 회복 (판마다 새 전투 복사본) |
+| 판 사이 건설 | 일반 판 중에도 `canEdit()` = 통과 (전투 화면에 있을 때만 막힘). 배치를 바꾸면(`afterChange`: 건설·문·강화·출진·조달·부족 강화) **진행 중 일반 판은 버리고**(`dropNormal`, 보상 없음) 다음 판부터 새 배치. 지시서 2번의 "버리고 새 판" 쪽 |
+| 보스 | `challengeBoss()` = 진행 중 일반 판은 끊고 바로 보스 판. 표 = `BATTLE_DATA.BOSSES[의뢰 key][단계]` (무리·등급·분대 수·레벨·짐꾼·침입자 카드·힘 배율·**고정 시드**). 위협 점수·회사 레벨과 상관없음 → **같은 단계 재도전 = 같은 침입, 같은 배치면 같은 결과** |
+| 보스 중 | 일반 판 없음, 배치·강화 못 바꿈(`locked` "보스전 중에는 바꿀 수 없어요"), 화면은 전투 화면에 묶임, 카드 없음 |
+| 보스 판정 | **성공 = 보물방 도달 0** (격퇴·퇴각·시간 초과 모두 성공). 성공 → `quest.stage +1` (층 열림·단계 마석은 예전과 같음) + 그 단계 **첫 성공 마석 `FLOW.bossReward`(30, 임시)** 한 번. 실패 = 잃는 것 없음 |
+| 단계·납품 | 가치·전투력으로 단계가 오르는 규칙은 끔 (`questUpdate()`는 늘 `[]`). 진행 줄 = "보스 검증 n/5 · 다음 보스: 이름". 5단계 성공 → `checkQuest()` 참 (가치·전투력 재확인 없음). 납품은 `deliver()` 그대로 (진행 중 일반 판은 버림) |
+| 튜토리얼 | 새 게임 `tutorial.on = false`, 화면 `tutOn()`도 거짓 (새 흐름과 안 맞는 말풍선) |
+
+### 15-2. 함수 (`window.PROGRESS`)
+
+| 함수 | 돌려주는 값 |
+| --- | --- |
+| `flowInfo()` | `{ on, no(일반 판 번호), mode(''·'normal'·'boss'), battling, show(닫지 않은 보스 결과 또는 null), boss(bossInfo), rest(판 사이 실제 초), saveEvery }` |
+| `bossInfo()` | `{ stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries(이 의뢰 도전 수), reward, done(모두 통과), canChallenge, why }` · 진행 중 의뢰 없으면 null |
+| `challengeBoss()` | `{ ok, msg, plan, msgs }` (보스 판 시작. 이미 보스 중이면 그 판) |
+| `closeBossResult()` | 보스 결과 창 닫기 (`flow.show = null`) |
+| `stopBattle()` | 진행 중 일반 판 버리기 (보스는 안 됨) |
+| `startBattle()` | 흐름 시험: 다음 일반 판 (보스 결과 창도 닫음) |
+| `applyBattle(res)` | 흐름 시험: `{ mode, no, gold, gems, loot, reached, squads, defended, summary, trapRetreats, denRepels, stages, budgetGain, budgetAfter, boss, progress }`. 보스면 `boss` = 아래 보스 결과 |
+| `questProgress()` | 늘어난 칸 `flow`, `boss`(bossInfo). `line`·`why`가 보스 검증 글 |
+
+보스 결과 (`applyBattle().boss` = `RUN.flow.show`): `{ stage, name, success, reached, squads, rows[{ id, grade, state('reached'·'retreat'·'dead'), cause, causeText, rooms(지난 방 수), last·lastName(끝난 방), trapDmg(함정에 잃은 체력), hpLeft(%) }], trapDmg(합), causes{ 원인 글: 분대 수 }, tries, reward, time, stageAfter, total, complete }`.
+
+`battle_sim.js` `result()`에 늘어난 값: `trapDmg`, `squadResults[].grade·rooms·last·trapDmg·hpLeft` (함정이 실제로 깎은 체력을 분대마다 `q.trapDmg`에 쌓음, 옛 저장 지점엔 없어서 0).
+
+### 15-3. 저장 (v7 그대로, 칸 하나 늘어남)
+
+| 칸 | 모양 | 뜻 |
+| --- | --- | --- |
+| `flow` | `{ no, base, mode, tries, cleared[단계], show }` | 일반 판 번호·씨앗 바탕·진행 중 전투 종류·보스 도전 수·첫 성공 보상 받은 단계·닫지 않은 보스 결과 |
+| `plan.mode`·`plan.no`·`plan.stage`·`plan.name` | | 진행 중 전투가 일반 몇 판인지 / 보스 몇 단계인지 |
+| `bsave.ui.paused` | | 멈춘 채 저장했으면 새로고침 뒤에도 멈춤 |
+
+- 진행 중 전투는 화면이 `FLOW.saveEvery`(2)초마다·다른 화면으로 갈 때 `saveBattle`로 저장 → 새로고침하면 그 지점부터 이어 감 (일반 판은 저장 전이면 같은 번호 판을 처음부터).
+- 결과 반영(`applyBattle`)은 끝나는 순간 한 번, 바로 저장(`battling = false`) → 결과 직전·직후 새로고침해도 보상이 두 번 안 됨. 첫 성공 마석은 `cleared`로 한 번 더 막음.
+- **버전을 안 올린 이유**: 칸이 늘기만 했고(빠지면 `fixFlow`가 채움) 옛 칸 뜻은 그대로. 다만 `flow` 칸이 없는 옛 v7 저장(주 단위 규칙으로 오른 단계)은 **의뢰 단계를 0으로, 진행 중 전투는 버림** (시험용 단순 처리, 회사 기록·현장 배치·마석은 그대로).
+
+### 15-4. 화면 (임시, core-dev가 최소한으로)
+
+- 현장 탭·회사의 가운데 [운영 ▶] = 전투 화면 = **현장 운영**: 들어오면 일반 판 바로 시작 (무리 등장·침입자 카드 창·위기 카드·결과표 없음), 끝나면 기록 줄 한 줄 + `FLOW.rest`초 뒤 다음 판 (`api.rerender`). 아래 막대 [배속] [건설] [보스 도전 n ▶] [⏸] [정비].
+- 보스 판: 같은 화면, 가운데 = 일시정지. 끝나면 보스 결과 창: 분대마다 어디까지 갔나·함정 피해·퇴각 원인 + 실패 [배치 고치기](건설 모드, 창은 남음) [다시 도전] [일반 침입 재개] / 성공 [다음 보스 도전]·[홈에서 납품하기] [일반 침입 재개].
+- 옛 현장 화면 = **정비**(시설 강화 창·출진·건설 + [운영 ▶]·[보스 도전]). 진행 띠·현장 위 줄 = "보스 검증 n/5 · 다음 보스". 일반 판 중엔 다른 탭으로 자유롭게(그 판은 멈춤), 보스 판 중에만 전투 화면에 묶임.
+- UI 개편 때 다시 만들 것 (3탭·현장 4상태). 이 절의 함수는 그대로 쓰면 됨.

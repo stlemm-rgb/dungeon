@@ -62,7 +62,9 @@ if (EXP.quest) {
   const S = sb.BSIM.create(P.battleInput());
   for (let i = 0; i < 6000 && !S.done; i++) sb.BSIM.step(S, 0.1);
   const rep = P.applyBattle(sb.BSIM.result(S));
-  ok(S.done && rep && R.week === old.week + 1, '바꾼 뒤 한 주 진행');
+  // 흐름 시험(BATTLE_DATA.FLOW.on, prototype/d1_demo/API.md 15절)이면 주가 안 늘고 일반 1판이 끝남
+  const flowOn = !!(BD.FLOW && BD.FLOW.on);
+  ok(S.done && rep && (flowOn ? rep.mode === 'normal' && R.flow.no === 1 && R.week === old.week : R.week === old.week + 1), flowOn ? '바꾼 뒤 일반 1판 진행' : '바꾼 뒤 한 주 진행');
   fixes.push('의뢰 ' + q.key + ' 새 판으로 처음부터');
 } else {
   ok(!R.quest, '진행 중 의뢰 없음');

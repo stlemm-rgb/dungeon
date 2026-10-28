@@ -178,7 +178,9 @@
     var dmg = (Z.trapDmgOf(q.zone) + (S.up.trap[q.zone] || 0) * Z.sizeOf(q.zone)) * (1 +S.mod.trapDmg + (S.plan.trapBoost || 0));
     ev.push({ type: 'trap', z: q.zone, x: q.x, y: q.y, dmg: Math.round(dmg), id: q.id });
     q.cause = 'trap';
+    var hp0 = hpOf(q);
     hurtAll(S, q, dmg, ev);
+    q.trapDmg = (q.trapDmg || 0) + (hp0 - hpOf(q));   // 흐름 시험 보스 결과: 이 분대가 함정에 잃은 체력 합
     checkInvader(S, q, 'trap', ev);
   }
   function trapLive(S, q) { return kindOf(S, q.zone) === 'trap' && (q.trapIn[q.zone] || 0) <= (grid().trapMax || 2); }
@@ -432,7 +434,8 @@
       if (down) monDown[id] = down;
       if (mu.out) monRetreat.push({ id: id, big: false, down: down, guard: !!mu.guard });
     });
-    var tl = S.tally || {};
+    var tl = S.tally || {}, trapDmg = 0;
+    S.squads.forEach(function (q) { trapDmg += q.trapDmg || 0; });
     return {
       kills: S.gain.kills, porterKills: S.gain.porterKills, total: S.total, squads: S.squads.length,
       gold: S.gain.gold, gems: S.gain.gems, exp: S.gain.exp, reached: S.reached, retreated: S.retreated,
@@ -440,7 +443,9 @@
       monRetreat: monRetreat, monDown: monDown, crises: S.crisis ? S.crisis.n : 0,
       // 3차: 결과 요약 한 줄용 (함정으로 퇴각·전멸한 분대, 대기실에서 격퇴한 분대 ...) · 분대별 결과
       trapRetreats: tl.trap || 0, denRepels: tl.den || 0, clashRetreats: tl.clash || 0, timeouts: tl.timeout || 0, clashes: S.clashes || 0,
-      squadResults: S.squads.map(function (q) { return { id: q.id, habit: q.habit, state: q.state, cause: q.cause, passes: q.passes, time: Math.round((q.endT || S.t) * 100) / 100 }; })
+      squadResults: S.squads.map(function (q) { return { id: q.id, habit: q.habit, state: q.state, cause: q.cause, passes: q.passes, time: Math.round((q.endT || S.t) * 100) / 100,
+        grade: q.grade, rooms: Object.keys(q.seen || {}).length, last: q.zone, trapDmg: Math.round(q.trapDmg || 0), hpLeft: Math.round(hpOf(q) / (q.maxHp || 1) * 100) }; }),
+      trapDmg: Math.round(trapDmg)   // 흐름 시험: 함정이 침입자에게 준 피해 합 · squadResults[].rooms(지난 방 수)·last(끝난 방)·trapDmg·hpLeft(남은 체력 %)
     };
   }
   var REFS = { plan: 1, zones: 1, units: 1, doors: 1, icard: 1, fx: 1 };
