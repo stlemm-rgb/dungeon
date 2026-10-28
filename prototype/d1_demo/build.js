@@ -7,7 +7,9 @@
  *  - 흐름 (시설): 아래 시설 띠(함정·대기실·미끼)에서 시설을 끌어 빈 구역에 놓는다 (눌러 고른 뒤 칸을 눌러도 됨). 놓은 것은 "미확정"(점선·반투명·× 빼기, 여러 곳 가능).
  *  - 흐름 (문): 노란 문 표시를 끌어 문 없는 안쪽 벽(점선 칸)에 놓는다 (문을 누른 뒤 빈 벽을 눌러도 됨). 끄는 동안 P.previewLayout 으로 검사:
  *    거절이면 이유(why) 토스트 + 끊긴 방(isolated) 빗금, 문은 원래 자리로. 옮긴 문은 미확정(점선·반투명).
- *  - 아래 한 줄 합계 (미확정 시설 n곳 · 문 n개 옮김 · 마석 a → b · 가치 · 전투력). [건설] = P.commitLayout 으로 문 + 시설 한 번에 확정 (문은 무료) / [끝내기] = 미확정 버리고 나감. 탭을 옮겨도 버림.
+ *  - UI 개편 (2026-10-29): 현장 탭의 건설 상태. 위 = 공통 상단 바(api.hud) + 판을 크게 + 아래 시설 띠·합계·[취소][건설 확정 · 마석 N]. 확정·취소 모두 현장(운영 또는 보스 결과)으로 돌아간다.
+ *    미확정이 있는데 탭·설정을 누르면 [확정하고 이동][버리고 이동][계속 수정]을 묻는다 (api.setGuard). 브라우저 뒤로 가기는 미확정을 버린다.
+ *  - 아래 한 줄 합계 (미확정 시설 n곳 · 문 n개 옮김 · 마석 a → b · 가치 · 전투력). [건설 확정] = P.commitLayout 으로 문 + 시설 한 번에 확정 (문은 무료) / [취소] = 미확정 버리고 나감 (비용 없음).
  *    놓이는 곳(판정점) = 손·커서 끝 그대로 (위로 띄우지 않음). 끄는 그림은 그 자리에 작게 붙고, 대신 놓일 칸·벽을 판에서 크고 밝게 강조하며 놓을 곳·거절 이유는 아래 합계 줄에 쓴다 (손가락에 안 가림). 이미 지은 구역 위에 놓기(교체)는 데모에서 막음(토스트).
  *  - 시설 강화 표시: 강화된 함정·대기실 방 글에 단계(+1·+2, P.upgradeLevel)와 함정은 실제 피해. 합계 줄에 previewLayout 의 upLost·refund 가 있으면 "강화 사라짐 N곳 · 환급 +N" (데모에서는 지은 구역을 못 바꿔 거의 안 뜸). 강화 창은 shell.js 현장 화면이 맡고, 건설 모드에서 시설을 눌러도 창은 안 뜬다.
  *  - 층: 지하 단면 전체를 세로로 이어 그린다 (층이 늘면 단면만 스크롤). 잠긴 층은 어둡게 + 🔒 + 열림 조건.
@@ -289,7 +291,8 @@
       var timers = [];
       el.classList.add('fixed', 'buildmode');
 
-      var hdrBox = api.div('fhdr');
+      var hudCtx = { tab: 'field', label: '건설', state: 'build', pending: false };   // 공통 상단 바 (shell.js hud). 미확정이 있으면 다음 목표가 "확정하거나 취소하세요"로 바뀜
+      var hdrBox = api.hud(hudCtx);
       var shaft = api.div('shaft');
       var scroll = api.div('fscroll');
       scroll.appendChild(shaft);
@@ -297,9 +300,9 @@
       var toolsBox = api.div('tools');
       var sumBox = api.div('bsumline');
       var endBtn = document.createElement('button');
-      endBtn.className = 'bbtn'; endBtn.type = 'button'; endBtn.textContent = '끝내기'; endBtn.setAttribute('data-end', '');
+      endBtn.className = 'bbtn'; endBtn.type = 'button'; endBtn.textContent = '취소'; endBtn.setAttribute('data-end', '');
       var okBtn = document.createElement('button');
-      okBtn.className = 'bbtn main'; okBtn.type = 'button'; okBtn.textContent = '건설'; okBtn.setAttribute('data-confirm', '');
+      okBtn.className = 'bbtn main'; okBtn.type = 'button'; okBtn.textContent = '건설 확정'; okBtn.setAttribute('data-confirm', '');
       var btns = api.div('bbtns');
       btns.appendChild(endBtn); btns.appendChild(okBtn);
       var dock = api.div('bdock');
@@ -339,7 +342,7 @@
       function pendSpent() { return spentOthers(null); }
       function lockTextOf(n) {
         var fi = P.floorInfo(n);
-        return '지하 ' + n + '층: ' + (fi && fi.lockAt ? '납품 기준 ' + fi.lockAt + '단계 달성 시 열림' : '이 의뢰에서는 열리지 않아요');
+        return '지하 ' + n + '층: ' + (fi && fi.lockAt ? '보스 검증 ' + fi.lockAt + '단계 달성 시 열림' : '이 의뢰에서는 열리지 않아요');
       }
       // z 방에 시설 k를 놓을 수 있나. light = true면 미리보기를 안 부르고 비용만 본다 (끄는 동안 밝게 할 칸 고르기용)
       function canPlace(z, k, light) {
@@ -368,7 +371,8 @@
         return zs;
       }
       function drawHeader() {
-        morphHtml(hdrBox, api.siteHeader(q).replace('</b><span class="fmas">', '</b><span class="chip accent">건설 모드</span><span class="fmas">'));
+        hudCtx.pending = !!(order.length || movedTotal());
+        api.hudRefresh(hdrBox);
       }
       function liftEdge() { return drag && drag.kind === 'door' && drag.started ? drag.edge : null; }
       function drawBoard() {
@@ -437,6 +441,7 @@
         var any = order.length || nd;
         okBtn.setAttribute('aria-disabled', any ? 'false' : 'true');
         okBtn.classList.toggle('off', !any);
+        okBtn.textContent = '건설 확정' + (any && cur && cur.cost ? ' · 마석 ' + cur.cost : '');
       }
       function redraw() { drawHeader(); drawBoard(); drawTools(); drawDoorLine(); drawSum(); }
 
@@ -472,26 +477,48 @@
         zs.forEach(function (z) { shaft.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('built'); }); });
         timers.push(setTimeout(function () { shaft.querySelectorAll('.zc.built').forEach(function (c) { c.classList.remove('built'); }); }, 1100));
       }
-      function confirmBuild() {
-        if (!order.length && !movedTotal()) { api.toast('먼저 시설을 놓거나 문을 옮겨 주세요'); api.buzz('warn'); return; }
+      // 확정 = P.commitLayout 한 번 (진행 중 일반 판은 progress.js가 버림 -> 현장에 돌아가면 새 배치로 새 판). 성공하면 true
+      function commitNow() {
+        if (!order.length && !movedTotal()) { api.toast('먼저 시설을 놓거나 문을 옮겨 주세요'); api.buzz('warn'); return false; }
         var made = order.slice(), r = P.commitLayout({ doors: changedDoors(), builds: buildsMap() });
-        if (!r.ok) { api.toast(r.msg); api.buzz('warn'); return; }
+        if (!r.ok) { api.toast(r.msg); api.buzz('warn'); return false; }
         pend = {}; order = []; armed = null; armedDoor = null; cur = null; isoRooms = null;
         orig = copyDoors(Z.doors()); pdoors = copyDoors(orig);
         api.buzz('good');
         api.toast(r.msg);
         api.stageToast((r.stages || []).filter(function (n, i, a) { return a.indexOf(n) === i; }));
-        var pr = P.questProgress();
-        if (pr && pr.complete) api.toast('의뢰 완료! 홈의 진행 띠에서 [납품하기]를 누르세요');
         redraw();
         buildFx(made);
         if (made.length) { api.tutDone('place'); if (RUN.site.builds > 0) api.tutStart('tohome', { target: '#tabs [data-go="company"]' }); }
+        return true;
       }
-      okBtn.addEventListener('click', confirmBuild);
+      // [건설 확정] / [취소] -> 원래 운영 또는 보스 결과로 복귀 (현장 탭이 상태를 보고 정함). 취소는 이번 수정만 버리고 비용을 쓰지 않는다
+      okBtn.addEventListener('click', function () { if (commitNow()) api.go('field', false); });
       endBtn.addEventListener('click', function () {
         var nd = movedTotal();
         if (order.length || nd) api.toast('미확정을 버렸어요 (' + [order.length ? '시설 ' + order.length + '곳' : '', nd ? '문 ' + nd + '개' : ''].filter(Boolean).join(' · ') + ')');
         api.buzz('tap'); api.go('field', false);
+      });
+      // 미확정이 있는데 탭·설정으로 나가려 하면 확정·버리기·계속 수정을 먼저 묻는다 (shell.js가 누름마다 이 함수를 부름. 막았으면 true)
+      var leaveAsk = null;
+      api.setGuard(function (dest, proceed) {
+        if (drag || !(order.length || movedTotal())) return false;
+        if (leaveAsk) return true;
+        var nd = movedTotal();
+        leaveAsk = api.div('popbg', '<div class="pop" role="dialog" aria-label="미확정 배치"><h3 class="pophead">미확정 배치가 있어요</h3>' +
+          '<div class="small-text dim">' + [order.length ? '시설 ' + order.length + '곳' : '', nd ? '문 ' + nd + '개 옮김' : ''].filter(Boolean).join(' · ') + '을 확정할까요?</div>' +
+          '<button class="btn primary" type="button" data-pk="ok">건설 확정하고 이동</button><button class="btn" type="button" data-pk="drop">버리고 이동</button><button class="btn" type="button" data-pk="stay">계속 수정</button></div>');
+        leaveAsk.addEventListener('click', function (e) {
+          var t = e.target.closest ? e.target.closest('[data-pk]') : null;
+          if (!t && e.target !== leaveAsk) return;
+          var k = t ? t.getAttribute('data-pk') : 'stay';
+          if (leaveAsk.parentNode) leaveAsk.parentNode.removeChild(leaveAsk);
+          leaveAsk = null;
+          if (k === 'ok') { if (commitNow()) proceed(); }
+          else if (k === 'drop') proceed();
+        });
+        document.body.appendChild(leaveAsk);
+        return true;
       });
 
       // ----- 문 옮기기 -----
@@ -775,6 +802,7 @@
       });
 
       api.onLeave(function () {
+        if (leaveAsk && leaveAsk.parentNode) leaveAsk.parentNode.removeChild(leaveAsk);
         if (drag) { endDrag(); drag = null; }
         timers.forEach(clearTimeout);
       });
