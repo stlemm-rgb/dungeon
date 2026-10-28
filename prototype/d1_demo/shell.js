@@ -4,6 +4,7 @@
  *  - 하단 탭: 마계 · 군단 · 회사(가운데) · 현장 · 내 집. 가운데 칸 = 회사가 아닌 화면에서는 [홈](회사로), 회사 화면에서는 [다음 주 ▶](P.startBattle). 다음 주는 여기서만.
  *  - 회사(홈) = 사무실 무대(캐릭터 걷기·터치 대사·입구)는 그대로 + 위에 얇은 진행 띠(의뢰·납품 기준 n/5·가치/전투력 막대·마석·주·침입자 예고·출진 요약). 의뢰 완료면 띠가 "의뢰 완료 → 납품" + [납품하기].
  *  - 현장 = 위 두 줄 요약 / 지하 단면(구역 판이 바로 보임, 층이 늘면 단면만 세로 스크롤) / 아래 [출진][건설] / 포로 수용소(취소선). 층 머리에는 출진 n/한도 · ⚔ 만.
+ *  - 시설 강화 (2단계 화면, API.md 14절): 현장 기본 화면에서 지은 함정·대기실 방을 누르면 아래 강화 창(.upsheet). 값은 P.upgradeInfo, [강화] = P.upgradeFacility 한 번 (누른 뒤 UP_LOCK_MS 동안 잠금), [닫기]·바깥 누르기 = 함수 안 부름. 건설 모드에서는 창 안 뜸.
  *  - 출진 = 별도 화면(SCREENS.sortie, 현장 [출진]에서). 건설 모드 = 별도 화면(build.js, 현장 [건설]에서): 아래 시설 띠에서 끌어서 빈 구역에 놓기, 미확정 표시, [건설]로 확정.
  *  - 튜토리얼: 한 번에 하나만 반짝. 회사 [다음 주] 전에 현장 탭 -> [건설] -> 추천 칸 + 대기실 끌기 -> [건설] -> [홈] -> [다음 주]. (lines.js tofield·build·zones·place·tohome·nextweek)
  *  - 납품 직후 정산 화면의 'deliver' 안내는 P.deliver()가 튜토리얼을 안 끄므로 그냥 tutOn()으로 뜬다. 데모 의뢰를 다 납품하면 정산 끝에 [정산 마치기] -> P.leaveSettle() -> 현장 탭 자리에 "데모는 여기까지" 화면.
@@ -317,30 +318,126 @@
     return n;
   }
 
+  var UP_LOCK_MS = 600;   // [강화] 누른 뒤 다시 눌릴 때까지 (연타·더블탭에 두 번 차감 안 되게)
   SCREENS.field = function (el) {
     var q = RUN.quest;
     if (RUN.phase === 'demoEnd') { topbar(el); demoEndScreen(el); return; }
     if (!q) { topbar(el); el.appendChild(div('', '<button class="btn primary big" data-go="contract">의뢰 고르기</button>')); return; }
     el.classList.add('fixed');   // 화면을 꽉 채우고 단면만 세로로 스크롤 (위 요약·아래 버튼은 고정)
-    el.appendChild(div('fhdr', siteHeader(q)));
-    var dbg = ZV().debugData ? ZV().debugData() : null;   // ?debug 일 때만: 분대 색 경로 선 + 문 통과 수 (평소엔 통로(파이프)만 보인다. 문을 끄는 건 건설 모드에서)
-    var shaft = div('shaft', shaftHtml(function (n, locked, text) {
-      return ZV().boardHtml ? ZV().boardHtml({ zones: RUN.site.zones, units: RUN.site.units, floor: n, noYard: true, locked: locked, lockText: text,
-        counts: dbg && dbg.counts, routes: dbg && dbg.routes }) : '';
-    }));
+    var hdr = div('fhdr', siteHeader(q));
+    el.appendChild(hdr);
+    var shaft = div('shaft');
     var scroll = div('fscroll');
     scroll.appendChild(shaft);
     el.appendChild(scroll);
-    bindShaft(shaft);
-    // 구역을 누르면 이름·시설 한 줄 (건설은 [건설] 모드에서)
+    var upSel = null;      // 강화 창이 열려 있는 방 (없으면 null)
+    var upLock = false;    // [강화]를 누른 직후 잠깐 잠금 (빠른 두 번 누르기에 두 번 차감 안 됨)
+    var upTimer = 0;
+    var sheet = div('upsheet');
+    sheet.hidden = true;
+    // 위 요약 + 지하 단면 다시 그리기 (강화 뒤 마석·단계 표시를 함께 갱신. 처음 그릴 때도 이걸 씀)
+    function drawField() {
+      hdr.innerHTML = siteHeader(q);
+      var dbg = ZV().debugData ? ZV().debugData() : null;   // ?debug 일 때만: 분대 색 경로 선 + 문 통과 수 (평소엔 통로(파이프)만 보인다. 문을 끄는 건 건설 모드에서)
+      shaft.innerHTML = shaftHtml(function (n, locked, text) {
+        return ZV().boardHtml ? ZV().boardHtml({ zones: RUN.site.zones, units: RUN.site.units, floor: n, noYard: true, locked: locked, lockText: text,
+          sel: upSel, counts: dbg && dbg.counts, routes: dbg && dbg.routes }) : '';
+      });
+      bindShaft(shaft);
+    }
+    drawField();
+    // ----- 시설 강화 창 (아래쪽 상세 창): 값은 P.upgradeInfo 만 읽고, [강화] = P.upgradeFacility 한 번. 닫기·바깥 누르기는 아무 함수도 안 부름 -----
+    function upRow(label, html) { return '<div class="uprow"><span class="uplab">' + label + '</span><span class="upval">' + html + '</span></div>'; }
+    function upUnitsText(inf) {
+      var us = inf.units || [], names = us.slice(0, 3).map(function (u) { return esc(uname(u)) + (u.kind === 'guard' ? '' : ' ' + u.count + '명'); }).join(', ');
+      return names + (us.length > 3 ? ' 외 ' + (us.length - 3) : '');
+    }
+    function upSheetHtml(inf) {
+      var top = !inf.effectNext, h = '<div class="upbody">';
+      h += '<div class="uphead"><b>' + esc(inf.name) + ' · ' + esc(inf.facName) + '</b><span class="uplv">단계 ' + inf.level + '/' + inf.max + (inf.level > 1 ? ' (+' + (inf.level - 1) + ')' : '') + '</span></div>';
+      h += upRow('효과', top ? esc(inf.effectNow ? inf.effectNow.text : '') + ' <b class="uptop">최고 단계</b>'
+        : esc(inf.effectNow.text) + ' → <b>' + esc(inf.effectNext.text) + '</b>');
+      if (inf.kind === 'den') {
+        h += upRow('출진 부대', inf.noEffect ? '<b class="upwarn">출진 부대가 없어 효과 없음</b>' : upUnitsText(inf));
+        h += '<div class="upnote">이 방에서만 적용돼요 (전투 체력, 영구 성장 아님)</div>';
+      }
+      if (top) h += upRow('비용', '없음 · 남은 마석 <b class="mas">' + money(inf.budget) + '</b>');
+      else if (inf.budgetAfter < 0) h += upRow('비용', '마석 <b>' + money(inf.cost) + '</b> · 지금 마석 <b class="mas">' + money(inf.budget) + '</b> <b class="upwarn">(모자람)</b>');
+      else h += upRow('비용', '마석 <b>' + money(inf.cost) + '</b> · 남을 마석 <b class="mas">' + money(inf.budget) + ' → ' + money(inf.budgetAfter) + '</b>');
+      h += upRow('전투력', top ? fmtN(inf.powerNow) : fmtN(inf.powerNow) + ' → <b>' + fmtN(inf.powerAfter) + '</b>' +
+        (inf.powerAfter === inf.powerNow && inf.powerGain > 0 ? ' <small class="upgain">(+' + fmtN(inf.powerGain) + ')</small>' : ''));
+      if (inf.pass < 0.2) h += '<div class="upnote upwarn">이 방은 지나가는 침입자가 적어요 — 문 배치부터 바꿔 보세요</div>';
+      if (!top) h += '<div class="upnote dim">전투력은 예상이에요. 실제 전투 결과는 달라질 수 있어요</div>';
+      return h + '</div>';
+    }
+    function drawSheet() {
+      if (!upSel) { sheet.hidden = true; sheet.innerHTML = ''; el.classList.remove('upopen'); return; }
+      var inf = P.upgradeInfo(upSel), off = !inf.ok || upLock;
+      sheet.hidden = false;
+      el.classList.add('upopen');
+      sheet.innerHTML = upSheetHtml(inf) + '<div class="upfoot"><span class="upwhy">' + (inf.ok || upLock ? '' : esc(inf.why)) + '</span>' +
+        '<button class="upbtn" type="button" data-up-close>닫기</button>' +
+        '<button class="upbtn main' + (off ? ' off' : '') + '" type="button" data-up-do aria-disabled="' + (off ? 'true' : 'false') + '">강화' + (inf.cost ? ' · 마석 ' + inf.cost : '') + '</button></div>';
+      tutPlace();
+    }
+    function showSel() {   // 선택한 방이 창에 가리지 않게 단면을 맞춰 준다
+      var c = upSel ? shaft.querySelector('.zc[data-z="' + upSel + '"]') : null;
+      if (!c) return;
+      var sr = scroll.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      if (cr.bottom > sr.bottom - 6) scroll.scrollTop += cr.bottom - sr.bottom + 6;
+      else if (cr.top < sr.top + 6) scroll.scrollTop -= sr.top - cr.top + 6;
+    }
+    function openUp(z) {
+      upSel = z;
+      drawField(); drawSheet(); showSel();
+      tutPlace();
+    }
+    function closeUp() {
+      if (!upSel) return;
+      upSel = null;
+      drawField(); drawSheet();
+    }
+    function doUp() {
+      if (!upSel || upLock) return;
+      var inf = P.upgradeInfo(upSel);
+      if (!inf.ok) { toast(inf.why); buzz('warn'); drawSheet(); return; }
+      upLock = true;   // 이 다음 눌림은 잠깐 막는다 (타이머가 풀어 줌)
+      var r = P.upgradeFacility(upSel);
+      if (r.ok) { buzz('good'); toast(r.msg); stageToast(r.stages); var pr = P.questProgress(); if (pr && pr.complete) toast('의뢰 완료! 홈의 진행 띠에서 [납품하기]를 누르세요'); }
+      else { toast(r.msg); buzz('warn'); }
+      drawField(); drawSheet(); showSel();
+      flashUp(sheet.querySelector('.uplv'));
+      clearTimeout(upTimer);
+      upTimer = setTimeout(function () { upLock = false; if (upSel) drawSheet(); }, UP_LOCK_MS);
+    }
+    leaveHooks.push(function () { clearTimeout(upTimer); });
+    sheet.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('[data-up-close],[data-up-do]') : null;
+      if (!t) return;
+      if (t.hasAttribute('data-up-close')) { buzz('tap'); closeUp(); return; }
+      if (t.getAttribute('aria-disabled') === 'true') { buzz('warn'); return; }
+      doUp();
+    });
+    // 바깥 누르기 = 닫기 (판의 구역과 창 안은 빼고. 구역은 아래 판 눌림이 처리)
+    el.addEventListener('click', function (e) {
+      if (!upSel || !e.target.closest) return;
+      var path = e.composedPath ? e.composedPath() : [];   // 눌린 뒤 창·판이 다시 그려져 target 이 떨어져 나갔어도 경로는 남아 있다
+      if (path.indexOf(sheet) >= 0 || path.indexOf(shaft) >= 0) return;
+      closeUp();
+    });
+    // 구역을 누르면: 지은 함정·대기실은 강화 창, 그 밖(빈 방·입구·고정 구역 등)은 이름·시설 한 줄 (건설은 [건설] 모드에서)
     shaft.addEventListener('click', function (e) {
       var lk = e.target.closest ? e.target.closest('.zlock') : null;   // 잠긴 층: 열림 조건
       if (lk) { toast('🔒 ' + (lk.querySelector('span') || lk).textContent); buzz('tap'); return; }
       var c = e.target.closest ? e.target.closest('.zc[data-z]') : null;
       if (!c) return;
       var z = c.getAttribute('data-z'), f = window.ZONES.FAC[RUN.site.zones[z]];
+      var ui = f ? P.upgradeInfo(z) : null;
+      if (ui && ui.code !== 'target' && ui.code !== 'locked') { buzz('tap'); openUp(z); return; }
+      closeUp();
       if (f) { toast(zoneName(z) + ' — ' + f.name); buzz('tap'); }
     });
+    el.appendChild(sheet);
     var empties = emptyZoneCount();
     el.appendChild(div('factions',
       '<button class="fbtn" data-go="sortie">출진<small>' + (RUN.site.auto ? '자동 편성 켬' : '자동 편성 꺼짐') + '</small></button>' +

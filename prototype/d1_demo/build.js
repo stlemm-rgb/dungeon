@@ -9,6 +9,7 @@
  *    거절이면 이유(why) 토스트 + 끊긴 방(isolated) 빗금, 문은 원래 자리로. 옮긴 문은 미확정(점선·반투명).
  *  - 아래 한 줄 합계 (미확정 시설 n곳 · 문 n개 옮김 · 마석 a → b · 가치 · 전투력). [건설] = P.commitLayout 으로 문 + 시설 한 번에 확정 (문은 무료) / [끝내기] = 미확정 버리고 나감. 탭을 옮겨도 버림.
  *    놓이는 곳(판정점) = 손·커서 끝 그대로 (위로 띄우지 않음). 끄는 그림은 그 자리에 작게 붙고, 대신 놓일 칸·벽을 판에서 크고 밝게 강조하며 놓을 곳·거절 이유는 아래 합계 줄에 쓴다 (손가락에 안 가림). 이미 지은 구역 위에 놓기(교체)는 데모에서 막음(토스트).
+ *  - 시설 강화 표시: 강화된 함정·대기실 방 글에 단계(+1·+2, P.upgradeLevel)와 함정은 실제 피해. 합계 줄에 previewLayout 의 upLost·refund 가 있으면 "강화 사라짐 N곳 · 환급 +N" (데모에서는 지은 구역을 못 바꿔 거의 안 뜸). 강화 창은 shell.js 현장 화면이 맡고, 건설 모드에서 시설을 눌러도 창은 안 뜬다.
  *  - 층: 지하 단면 전체를 세로로 이어 그린다 (층이 늘면 단면만 스크롤). 잠긴 층은 어둡게 + 🔒 + 열림 조건.
  *  - 돈: 건설·부대 조달은 마석(회사 금 아님). 쓴 마석은 돌려받지 못한다. 마석 0이어도 다음 주는 진행된다.
  *  - 고정 구역(의뢰가 정함, 예: 얼어붙은 하역장)은 🔒로 보이고 못 짓고 못 바꾼다 (바깥 벽의 문은 옮길 수 있음).
@@ -46,11 +47,16 @@
     if (f.kind === 'fixed') return '<div class="fn">🔒 ' + esc(Z.NAMES[z] || f.short) + '</div><div class="zi">고정 구역</div>';
     h = '<div class="zn">' + esc(Z.NAMES[z] || z) + '</div>';
     if (k === 'empty') return h;   // 빈 방은 이름만 (통로 파이프와 글이 겹치지 않게)
-    h += '<div class="fn">' + esc(f.short) + '</div>';
+    var lv = (f.kind === 'trap' || f.kind === 'den') && P.upgradeLevel ? P.upgradeLevel(z) : 1;   // 강화 단계 (1 = 기본, 표시 없음)
+    h += '<div class="fn">' + esc(f.short) + (lv > 1 ? ' <b class="zup">+' + (lv - 1) + '</b>' : '') + '</div>';
     if (f.kind === 'den') {
       var sl = Z.slotsOf(k, z);
       h += '<div class="zi' + (us.length ? '' : ' warn') + '">' + us.length + '/' + sl + '</div>';
-    } else if (f.kind === 'trap') h += '<div class="zi">피해 ' + Z.trapDmgOf(z) + '</div>';
+    } else if (f.kind === 'trap') {
+      var dmg = Z.trapDmgOf(z), ui = lv > 1 ? P.upgradeInfo(z) : null;   // 강화된 함정은 실제 피해를 보인다
+      if (ui && ui.effectNow && ui.effectNow.dmg) dmg = ui.effectNow.dmg;
+      h += '<div class="zi">피해 ' + dmg + '</div>';
+    }
     if (pp && pp[z] && pp[z].power > 0) h += '<div class="zp">⚔ ' + fmtN(pp[z].power) + '</div>';
     if (pend && pend[z]) h += '<div class="ptag">미확정</div><button class="pendx" type="button" data-unpend="' + z + '" aria-label="' + esc(Z.NAMES[z] || z) + ' 빼기">×</button>';
     return h;
@@ -424,6 +430,7 @@
           if (order.length) ps.push('가치 ' + sign(c.valueAfter - c.valueNow));
           ps.push('전투력 ' + sign(c.powerAfter - c.powerNow));
           if (c.gift) ps.push('부대 +' + c.gift);
+          if (c.upLost && c.upLost.length) ps.push('강화 사라짐 <b>' + c.upLost.length + '곳</b>' + (c.refund ? ' · 환급 <b class="mas">+' + money(c.refund) + '</b>' : ''));   // 시설 교체·철거로 사라질 강화와 돌려받는 강화 마석
           h = ps.join(' · ');
         }
         morphHtml(sumBox, '<div>' + h + '</div>');
