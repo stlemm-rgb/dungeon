@@ -32,6 +32,8 @@
  *     시드 = 전투 번호 RUN.flow.no 로 정함) + [보스 도전](challengeBoss, 단계마다 고정 구성·고정 시드 BATTLE_DATA.BOSSES). 보스 판에서 보물방 도달 분대가 없으면 성공 -> 의뢰 단계 +1
  *     (가치·전투력으로 오르는 규칙은 끔, questUpdate는 아무것도 안 함). 마지막 단계 보스 성공 -> 납품. 일반 판: 금·신석만 (경험치·회사 경험치·마석 보급·다음 주 쉼 없음).
  *     일반 판 중에 배치를 바꾸면(afterChange) 그 판은 버리고 다음 판이 새 배치로 시작 (dropNormal). 보스 판 중에는 못 바꿈. 저장 칸 RUN.flow (v7 그대로)
+ *  15) 마석 경제 (2026-10-29, refs/brief_ui_restructure_core.md, API.md 16절): 흐름 시험의 마석 = 의뢰 시작 마석(QUESTS budget) + 단계 보스를 처음 이겼을 때
+ *     의뢰인 보급(QUESTS stages[i].budget, 단계마다 한 번) + 첫 성공 보상(FLOW.bossReward, 단계마다 한 번). 일반 판·실패·재도전은 마석 0. 새 저장 칸 없음
  * phase(RUN.phase): choose = 의뢰 고르는 중 · play = 의뢰 진행 중 · settle = 납품 직후 정산 화면 (여기서 친위대 고르고 다음 의뢰 pickQuest) · demoEnd = 데모 끝
  */
 (function () {
@@ -1421,7 +1423,8 @@
     RUN.battling = false; RUN.bsave = null; RUN.plan = null; RUN.flow.mode = '';
     return true;
   }
-  // 다음 보스: { stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries, reward(첫 성공 마석), done(모두 통과), canChallenge, why }
+  // 다음 보스: { stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries, reward(첫 성공 마석), supply(그 단계 의뢰인 보급 마석),
+  //  gain(이기면 받을 마석 = supply + reward, 이미 받은 단계면 0), done(모두 통과), canChallenge, why }
   function bossInfo() {
     var q = RUN.quest;
     if (!flowOn() || RUN.phase !== 'play' || !q) return null;
@@ -1430,10 +1433,14 @@
     else if (!b) why = '이 단계 보스 자료가 없어요';
     else if (RUN.battling && RUN.flow.mode === 'boss') why = '보스전 중이에요';
     var sq = 0; (b ? b.groups : []).forEach(function (g) { sq += g.squads || 1; });
+    var reward = bossReward(), supply = done ? 0 : stageSupply(q, q.stage), got = done || RUN.flow.cleared.indexOf(q.stage + 1) >= 0;
     return { stage: Math.min(total, q.stage + 1), total: total, name: b ? b.name : '', squads: sq,
       groups: b ? b.groups.map(function (g) { return { name: g.name, grade: g.grade, squads: g.squads || 1, lv: g.lv | 0 }; }) : [],
-      tries: RUN.flow.tries, reward: Math.max(0, (BD.FLOW && BD.FLOW.bossReward) | 0), done: done, canChallenge: !why, why: why };
+      tries: RUN.flow.tries, reward: reward, supply: supply, gain: got ? 0 : supply + reward, done: done, canChallenge: !why, why: why };
   }
+  // 마석 경제 (API.md 16절): 단계 보스 첫 성공 보상 · idx(0~)단계 의뢰인 보급
+  function bossReward() { return Math.max(0, (BD.FLOW && BD.FLOW.bossReward) | 0); }
+  function stageSupply(q, idx) { var s = q && q.stages ? q.stages[idx] : null; return s && s.budget > 0 ? s.budget | 0 : 0; }
   // [보스 도전]: 진행 중 일반 판은 버리고 바로 보스 판 (보스 중엔 일반 침입 없음). -> { ok, msg, plan, msgs }
   function challengeBoss() {
     if (!flowOn()) return { ok: false, msg: '흐름 시험이 꺼져 있어요', msgs: [] };
@@ -1465,10 +1472,10 @@
     });
     var causes = {}; rows.forEach(function (r) { if (r.state !== 'reached') causes[r.causeText] = (causes[r.causeText] || 0) + 1; });
     return { stage: p.stage, name: p.name, success: (res.reached | 0) === 0, reached: res.reached | 0, squads: res.squads | 0, rows: rows,
-      trapDmg: Math.round(res.trapDmg || 0), causes: causes, tries: RUN.flow.tries, reward: 0, time: Math.round((res.time || 0) * 10) / 10 };
+      trapDmg: Math.round(res.trapDmg || 0), causes: causes, tries: RUN.flow.tries, reward: 0, supply: 0, time: Math.round((res.time || 0) * 10) / 10 };
   }
   // 흐름 시험 결과 반영 (applyBattle이 부름). 일반 판: 금·신석만 (경험치·회사 경험치·마석 보급·쉼 없음, 부대는 다음 판에 회복).
-  //  보스 판: 보물방 도달 0이면 성공 -> 의뢰 단계 +1 (+ 그 단계 첫 성공 마석 FLOW.bossReward, 한 번만). 실패는 잃는 것 없음. 결과는 RUN.flow.show에 남김
+  //  보스 판: 보물방 도달 0이면 성공 -> 의뢰 단계 +1 (+ 그 단계 의뢰인 보급 stages[i].budget + 첫 성공 마석 FLOW.bossReward, 단계마다 한 번만). 실패는 잃는 것 없음. 결과는 RUN.flow.show에 남김
   function applyFlow(res) {
     var p = RUN.plan || {}, st = RUN.site, q = RUN.quest, boss = p.mode === 'boss';
     var goldBefore = RUN.gold, gemsBefore = RUN.gems;
@@ -1486,12 +1493,11 @@
       if (b.success && q.stage === idx && idx < q.stages.length) {
         var stg = q.stages[idx];
         q.stage++; q.stageWeeks.push(RUN.week); rep.stages.push(q.stage);
-        if (stg.budget > 0) { st.budget += stg.budget; st.budgetAdded += stg.budget; }
         if (stg.opens > st.floorsOpen) { st.floorsOpen = Math.min(st.floors, stg.opens); useSiteLayout(); arrange(); }
-        if (RUN.flow.cleared.indexOf(p.stage) < 0) {   // 그 단계 첫 성공 보상 (한 번만)
-          var gain = Math.max(0, (BD.FLOW && BD.FLOW.bossReward) | 0);
-          st.budget += gain; st.budgetAdded += gain; RUN.flow.cleared.push(p.stage);
-          b.reward = gain; rep.budgetGain = gain;
+        if (RUN.flow.cleared.indexOf(p.stage) < 0) {   // 그 단계 의뢰인 보급 + 첫 성공 보상 (단계마다 한 번만, API.md 16절)
+          var supply = stageSupply(q, idx), gain = bossReward();
+          st.budget += supply + gain; st.budgetAdded += supply + gain; RUN.flow.cleared.push(p.stage);
+          b.supply = supply; b.reward = gain; rep.budgetGain = supply + gain;
         }
       }
       b.stageAfter = q.stage; b.total = q.stages.length; b.complete = q.stage >= q.stages.length;

@@ -457,7 +457,7 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 | 판 사이 건설 | 일반 판 중에도 `canEdit()` = 통과 (전투 화면에 있을 때만 막힘). 배치를 바꾸면(`afterChange`: 건설·문·강화·출진·조달·부족 강화) **진행 중 일반 판은 버리고**(`dropNormal`, 보상 없음) 다음 판부터 새 배치. 지시서 2번의 "버리고 새 판" 쪽 |
 | 보스 | `challengeBoss()` = 진행 중 일반 판은 끊고 바로 보스 판. 표 = `BATTLE_DATA.BOSSES[의뢰 key][단계]` (무리·등급·분대 수·레벨·짐꾼·침입자 카드·힘 배율·**고정 시드**). 위협 점수·회사 레벨과 상관없음 → **같은 단계 재도전 = 같은 침입, 같은 배치면 같은 결과** |
 | 보스 중 | 일반 판 없음, 배치·강화 못 바꿈(`locked` "보스전 중에는 바꿀 수 없어요"), 화면은 전투 화면에 묶임, 카드 없음 |
-| 보스 판정 | **성공 = 보물방 도달 0** (격퇴·퇴각·시간 초과 모두 성공). 성공 → `quest.stage +1` (층 열림·단계 마석은 예전과 같음) + 그 단계 **첫 성공 마석 `FLOW.bossReward`(30, 임시)** 한 번. 실패 = 잃는 것 없음 |
+| 보스 판정 | **성공 = 보물방 도달 0** (격퇴·퇴각·시간 초과 모두 성공). 성공 → `quest.stage +1` (층 열림은 예전과 같음) + 그 단계 **의뢰인 보급 + 첫 성공 마석** 한 번 (16절). 실패 = 잃는 것 없음 |
 | 단계·납품 | 가치·전투력으로 단계가 오르는 규칙은 끔 (`questUpdate()`는 늘 `[]`). 진행 줄 = "보스 검증 n/5 · 다음 보스: 이름". 5단계 성공 → `checkQuest()` 참 (가치·전투력 재확인 없음). 납품은 `deliver()` 그대로 (진행 중 일반 판은 버림) |
 | 튜토리얼 | 새 게임 `tutorial.on = false`, 화면 `tutOn()`도 거짓 (새 흐름과 안 맞는 말풍선) |
 
@@ -466,7 +466,7 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 | 함수 | 돌려주는 값 |
 | --- | --- |
 | `flowInfo()` | `{ on, no(일반 판 번호), mode(''·'normal'·'boss'), battling, show(닫지 않은 보스 결과 또는 null), boss(bossInfo), rest(판 사이 실제 초), saveEvery }` |
-| `bossInfo()` | `{ stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries(이 의뢰 도전 수), reward, done(모두 통과), canChallenge, why }` · 진행 중 의뢰 없으면 null |
+| `bossInfo()` | `{ stage(도전할 단계 1~), total, name, squads, groups[{ name, grade, squads, lv }], tries(이 의뢰 도전 수), reward, supply, gain(16절), done(모두 통과), canChallenge, why }` · 진행 중 의뢰 없으면 null |
 | `challengeBoss()` | `{ ok, msg, plan, msgs }` (보스 판 시작. 이미 보스 중이면 그 판) |
 | `closeBossResult()` | 보스 결과 창 닫기 (`flow.show = null`) |
 | `stopBattle()` | 진행 중 일반 판 버리기 (보스는 안 됨) |
@@ -474,7 +474,7 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 | `applyBattle(res)` | 흐름 시험: `{ mode, no, gold, gems, loot, reached, squads, defended, summary, trapRetreats, denRepels, stages, budgetGain, budgetAfter, boss, progress }`. 보스면 `boss` = 아래 보스 결과 |
 | `questProgress()` | 늘어난 칸 `flow`, `boss`(bossInfo). `line`·`why`가 보스 검증 글 |
 
-보스 결과 (`applyBattle().boss` = `RUN.flow.show`): `{ stage, name, success, reached, squads, rows[{ id, grade, state('reached'·'retreat'·'dead'), cause, causeText, rooms(지난 방 수), last·lastName(끝난 방), trapDmg(함정에 잃은 체력), hpLeft(%) }], trapDmg(합), causes{ 원인 글: 분대 수 }, tries, reward, time, stageAfter, total, complete }`.
+보스 결과 (`applyBattle().boss` = `RUN.flow.show`): `{ stage, name, success, reached, squads, rows[{ id, grade, state('reached'·'retreat'·'dead'), cause, causeText, rooms(지난 방 수), last·lastName(끝난 방), trapDmg(함정에 잃은 체력), hpLeft(%) }], trapDmg(합), causes{ 원인 글: 분대 수 }, tries, reward, supply(16절), time, stageAfter, total, complete }`.
 
 `battle_sim.js` `result()`에 늘어난 값: `trapDmg`, `squadResults[].grade·rooms·last·trapDmg·hpLeft` (함정이 실제로 깎은 체력을 분대마다 `q.trapDmg`에 쌓음, 옛 저장 지점엔 없어서 0).
 
@@ -496,3 +496,41 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 - 보스 판: 같은 화면, 가운데 = 일시정지. 끝나면 보스 결과 창: 분대마다 어디까지 갔나·함정 피해·퇴각 원인 + 실패 [배치 고치기](건설 모드, 창은 남음) [다시 도전] [일반 침입 재개] / 성공 [다음 보스 도전]·[홈에서 납품하기] [일반 침입 재개].
 - 옛 현장 화면 = **정비**(시설 강화 창·출진·건설 + [운영 ▶]·[보스 도전]). 진행 띠·현장 위 줄 = "보스 검증 n/5 · 다음 보스". 일반 판 중엔 다른 탭으로 자유롭게(그 판은 멈춤), 보스 판 중에만 전투 화면에 묶임.
 - UI 개편 때 다시 만들 것 (3탭·현장 4상태). 이 절의 함수는 그대로 쓰면 됨.
+
+## 16. 마석 경제 (2026-10-29, 지시서 `refs/brief_ui_restructure_core.md`, 근거 `refs/debate_ds_restructure_2026-10-28.md` 최종 수렴 "경제" 줄)
+
+흐름 시험(`FLOW.on`)의 마석 = **의뢰 시작 마석 + 단계 보스를 처음 이겼을 때 [의뢰인 보급 + 첫 성공 보상]**. 주마다 +30 무한 보급·다음 주 쉼은 없다. 새 저장 칸 없음(`flow.cleared`가 받은 단계를 기억). 숫자는 모두 **임시**(밸런스는 나중).
+
+### 16-1. 규칙·숫자
+
+| 것 | 어디 | 값 (q1) | 언제 |
+| --- | --- | --- | --- |
+| 시작 마석 | `QUESTS[].budget` | 50 (200에서 내림) | 의뢰 수락 때 |
+| 의뢰인 보급 | `QUESTS[].stages[i].budget` | 10 · 10 · 10 · 10 · 0 | i+1단계 보스를 **처음** 이겼을 때 한 번 |
+| 첫 성공 보상 | `FLOW.bossReward` | 10 (30에서 내림) | 같은 때 한 번 |
+| 보스 힘 | `BOSSES.q1[].power` | 1 · 1.5 · 2 · 3 · 3 (1·1·1·1·1에서 올림, 구성·시드 그대로) | |
+| 일반 판·실패·재도전 | | 마석 0 | |
+
+- n단계 보스에 도전할 때 쓸 수 있는 마석 합: **50 · 70 · 90 · 110 · 130**.
+- 한 번만: 보급과 보상은 `flow.cleared`에 단계 번호가 없을 때만 주고 바로 넣는다. 결과 반영(`applyBattle`)은 한 번이고 저장도 바로 하므로 새로고침·중간 저장 이어하기로 두 번 받지 않는다. `cleared`에 이미 있는 단계(깨진·옛 저장)는 단계만 오르고 마석은 0.
+- 옛 주 단위 규칙(`FLOW.on = false`)에서는 `stages[i].budget`이 예전처럼 "그 단계를 채우면 추가 마석"으로 쓰인다(시작 마석 50도 같이 적용).
+
+### 16-2. 화면이 읽을 값 (15절에 더한 것)
+
+| 어디 | 값 |
+| --- | --- |
+| `bossInfo()` | `reward`(첫 성공 보상) · `supply`(그 단계 의뢰인 보급) · `gain`(이기면 받을 마석 = supply + reward, 이미 받은 단계면 0) |
+| `applyBattle(res)` (보스 성공) | `budgetGain` = 보급 + 보상 (예전엔 보상만) · `boss.supply` · `boss.reward` (실패·받은 단계면 둘 다 0) |
+| `questProgress()` | 그대로: `budget`(남은 마석) · `budgetStart`(시작) · `budgetAdded`(받은 보급 + 보상 합) · `weeklyBudget`(흐름 시험이면 0) |
+
+### 16-3. 측정 요약 (자세한 표·방식은 `battle_data.js` BOSSES 주석 "2차")
+
+| 측정 | 결과 |
+| --- | --- |
+| 문 그대로, 시설만 처음부터 최선 배치(언덕 오르기)로 막히는 최소 마석 | 1단계 20 · 2단계 40 · 3단계 60 · **4단계 150~160** · **5단계 260으로도 못 막음** |
+| 그 단계 도전 때 마석 | 50 · 70 · 90 · **110** · **130** → 4·5단계는 문 없이 못 막음 |
+| 사람 배치(보물방 앞 대기실 B7·C6·D7, 30) | 1단계 성공 (문 안 옮김). + 함정 4(70)면 2단계도 성공. 3단계부터 앞에 쌓기만 하면 실패 |
+| 한 의뢰 통째로, 언덕 오르기 20시드 | **문 + 시설 19/20 납품** (1판은 5단계에서 마석 0으로 막힘) · 시설만 1/20 |
+
+- **문이 필요한 단계 = 4·5단계.** 3단계는 시설을 잘 놓으면(미끼로 길 돌리기 등) 문 없이도 막힌다.
+- **남은 문제(사용자 결정 필요):** 문을 2개쯤 옮겨 길을 길게 만들면 시설 없이도(마석 0) 4·5단계가 **시간 초과(60초)로** 막힌다(보스 힘과 상관없음). 문 퍼즐이 "길 늘리기"만으로 풀릴 수 있다 → 보스전 시간·문 통과 한도 규칙을 볼 때 같이 정할 것.

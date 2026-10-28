@@ -320,11 +320,13 @@ window.BATTLE_DATA = {
   //   읽는 법: 200이면 대기실 먼저(feden)·욕심쟁이(greedy)가 전투 한 번 없이 1주째 납품 (기획서 9절 "넉넉한 마석이 즉시 납품" 위험이 실제로 남).
   //    안내대로(fe)는 2.85주(전투 약 2번). 강화는 같은 10마석으로 전투력 +0~1 (새 함정은 +4~8) -> 납품을 앞당기지 않음 (feUp가 fe보다 느림).
   //    -> 200을 유지하려면 납품 기준(가치·전투력)을 올려야 함. 숫자 결정은 사용자 몫 (보고에 적음)
+  //  ---- 6차 (2026-10-29, 마석 경제 refs/brief_ui_restructure_core.md): q1 budget 200 -> 50, stages[0~3].budget = 10 (흐름 시험에서는 그 단계 보스를 처음 이겼을 때
+  //   의뢰인 보급, 옛 주 단위 규칙에서는 그 단계를 채웠을 때 추가 마석). value·power는 옛 주 단위 규칙(FLOW.on = false)에서만 씀. 근거·측정은 아래 BOSSES 주석
   QUESTS: [
     { key: 'q1', name: '작은 돌 성채', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 1, minCompanyLv: 1, noDeath: true,
-      boards: ['g1'], budget: 200,
+      boards: ['g1'], budget: 50,
       reward: { gold: 600, gems: 6, companyExp: 10 },
-      stages: [{ value: 30, power: 50 }, { value: 55, power: 75 }, { value: 80, power: 80 }, { value: 105, power: 90 }, { value: 130, power: 100 }] },
+      stages: [{ value: 30, power: 50, budget: 10 }, { value: 55, power: 75, budget: 10 }, { value: 80, power: 80, budget: 10 }, { value: 105, power: 90, budget: 10 }, { value: 130, power: 100 }] },
     { key: 'q2', name: '지하 보물고', client: { name: '은발 마왕', kind: '마왕' }, attr: 'phys', floors: 2, minCompanyLv: 2, noDeath: true, hidden: true,
       board: 'fork3', fixed: { CB: 'frozen_dock' }, budget: 150,
       reward: { gold: 900, gems: 8, companyExp: 15 },
@@ -335,8 +337,10 @@ window.BATTLE_DATA = {
   // ===================== 흐름 시험 (2026-10-28, refs/brief_flow_test.md · 사용자 확정 refs/debate_ds_restructure_2026-10-28.md "최종 수렴" 1~6) =====================
   // on = 흐름 시험 규칙 켬 (false면 예전 주 단위 [다음 주] 규칙 그대로. 되돌리기 쉽게 한곳에서 끔. progress.js·battle.js·shell.js가 봄)
   //  rest = 일반 판이 끝나고 다음 판까지 쉬는 실제 초 · saveEvery = 진행 중 전투를 저장하는 간격(실제 초, 새로고침 이어하기용)
-  //  bossReward = 보스 단계 첫 성공 마석 (임시 시험값, 숫자 근거 없음. 실패·재도전 보상 없음)
-  FLOW: { on: true, rest: 1.5, saveEvery: 2, bossReward: 30 },
+  //  bossReward = 보스 단계 첫 성공 마석 (임시. 실패·재도전 보상 없음)
+  //  마석 경제 (2026-10-29, API.md 16절): 마석 = 의뢰 시작 마석(QUESTS budget 50) + 단계 보스 첫 성공 때 [의뢰인 보급 stages[i].budget 10 + bossReward 10].
+  //   일반 판·실패·재도전 = 마석 0 (주마다 +30 무한 보급·다음 주 쉼 없음). n단계 보스에 도전할 때 쓸 수 있는 마석 합 = 50 · 70 · 90 · 110 · 130
+  FLOW: { on: true, rest: 1.5, saveEvery: 2, bossReward: 10 },
   // 단계별 보스 (의뢰 key -> 납품 단계 수만큼). 같은 단계 재도전 = 같은 구성·같은 시드 -> 같은 배치면 같은 결과
   //  name = 보스 이름 · groups = 무리 [{ name, grade(GRADE_STAT), squads(분대 수), lv, porters(분대 10명 중 짐꾼) }] · card = 침입자 카드 id (INVADER_CARDS)
   //  power = 체력·공격 배율 (일반 판은 새 던전이면 ×0.6~1) · seed = 전투 시드 (의뢰·단계에 묶인 고정값)
@@ -356,17 +360,45 @@ window.BATTLE_DATA = {
   //   | 위 + 문 하나(A2-A3 -> C3-D3) (120) | W | W | W | W | W (시간 초과 2) |
   //   문 하나 옮기기 735가지(확정 가능 318) 중 보스 성공 수: 대기실 하나 = 1단계 21 · 대기실 + 함정 7 = 1단계 271 · 2단계 260 · 3단계 100 · 4단계 3 · 5단계 0 (대기실 3 + 함정 9면 5단계 39)
   //   -> 단계가 오를수록 같은 배치로는 못 막고 문·대기실 위치를 다시 맞춰야 함. 5단계(함정 해체꾼)는 함정만으로 못 막음
+  //  ---- 2차 (2026-10-29, 마석 경제와 같이, refs/brief_ui_restructure_core.md 2번): power 1·1·1·1·1 -> 1·1.5·2·3·3 (구성·시드는 그대로) ----
+  //   왜: 위 1차 표는 "사람이 대충 지을 법한 배치"만 봤다. 언덕 오르기로 찾아보니 power 1이면 대기실 2개(20)로 3단계, 시설 50으로 5단계까지 문 없이 막혀
+  //    (대기실이 매우 셈 + 갈림길에 미끼) 마석이 얼마든 문을 옮길 이유가 없었다.
+  //   목표: 1단계 = 문 없이 보물방 앞 대기실로 막힘 · 3~5단계 중 하나 이상 = 그때 마석으로 문 없이는 못 막고 문을 옮기면 막힘 · 문을 쓰는 정책은 대부분 납품
+  //   측정 방식 (node로 battle_data·zones·progress·battle_sim을 불러 실제 보스 전투, dt 0.05, 보스 시드 고정이라 배치마다 결과 하나):
+  //    점수 = 보물방 도달 분대 × 1000 + 도달 분대 남은 체력% (낮을수록 좋음). 언덕 오르기 = 후보(빈 방에 함정·대기실·미끼 / 철거·교체 / 강화 / 시설 옮기기
+  //    (+ 문 하나 옮기기 735가지, 확정 불가는 뺌))를 섞은 순서로 보고 점수가 내려가는 첫 후보를 받아들임. 시작 = 빈 판·보물방 앞 대기실 3·무작위 배치 여럿
+  //   (a) 문 그대로, 시설만 처음부터 새로 짓는 최선(마석 M 안, 시작 배치 6~26개): 막히는 최소 마석
+  //    | 단계 (power) | 1 (1) | 2 (1.5) | 3 (2) | 4 (3) | 5 (3) |
+  //    | 막히는 최소 마석 | 20 | 40 | 60 | 150~160 (110·120·130 못 막음) | 260까지 못 막음 (늘 1분대 도달) |
+  //    | 그 단계 도전 때 마석 | 50 | 70 | 90 | 110 | 130 |
+  //    부족 신석 강화(돌등껍질 +10%)를 해도 4단계 100·120·140, 5단계 130 못 막음
+  //   (b) 사람 배치 그대로 (문 그대로): W 성공 · F n = n분대 도달
+  //    | 배치 (마석) | 1 | 2 | 3 | 4 | 5 |
+  //    | 빈 판 (0) | F3 | F3 | F2 | F4 | F3 |
+  //    | 대기실 C6 (10) | F2 | F3 | F2 | F4 | F3 |
+  //    | 보물방 앞 대기실 B7·C6·D7 (30) | W | F3 | F2 | F4 | F3 |
+  //    | 위 + 함정 C5·A6 (50) | W | F3 | F2 | F4 | F3 |
+  //    | 위 + 함정 E6·C2 (70) | W | W | F2 | F4 | F3 |
+  //    | 대기실 3 + 함정 10 (130) | W | W | F1 | F4 | F3 |
+  //    문 하나 옮기기 전수(확정 가능 318): 대기실 3 = 1~5단계 287·1·2·0·0 성공, 대기실 3 + 함정 2 = 297·25·4·0·0 -> 4·5단계는 문을 2개 이상 옮겨야 함
+  //   (c) 한 의뢰 통째로 (시작 마석 50 -> 보스 1~5, 지은 시설은 남고 철거 환불 없음, 실패하면 언덕 오르기로 한 수씩 고치고 다시 도전, 단계마다 60수 안에 못 막으면 막힘), 20시드:
+  //    | 정책 | 납품 | 막힌 단계 | 문을 쓴 판 (1~5단계) | 보스 도전 수 평균 |
+  //    | 문 + 시설 | 19/20 | 5단계 1판 (마석 0) | 17·17·16·17·13 | 21.9 |
+  //    | 시설만 | 1/20 | 1단계 1 · 2단계 12 · 3단계 6 | - | 10.8 |
+  //   -> 문이 필요한 단계 = 4·5단계 (3단계는 시설을 잘 놓으면 문 없이도 됨, 보물방 앞에 쌓기만 하면 못 막음). 2단계는 보물방 앞 대기실 3 + 함정 4(70 = 그때 마석 전부)로 막힘
+  //   주의: 문을 2개쯤 옮겨 길을 길게 만들면 시설 없이도(마석 0) 4·5단계가 시간 초과(60초)로 막힌다 (분대 15방쯤 걷다 퇴각, 보스 힘과 상관없음).
+  //    문 퍼즐이 "길 늘리기"만으로 풀리는 셈이라 보스 시간·한도 규칙은 사용자 결정이 필요 (지금은 숫자만 맞춤)
   BOSSES: {
     q1: [
       { name: '은빛 여우 모험단', card: 'scout', power: 1, seed: 1101,
         groups: [{ name: '초보 모험가 무리', grade: 'C', squads: 1, lv: 6, porters: 2 }, { name: '은빛 여우 모험단', grade: 'B', squads: 2, lv: 8, porters: 2 }] },
-      { name: '사막 도적단', card: 'berserk', power: 1, seed: 1102,
+      { name: '사막 도적단', card: 'berserk', power: 1.5, seed: 1102,
         groups: [{ name: '용병 길드 견습대', grade: 'C', squads: 1, lv: 8, porters: 2 }, { name: '사막 도적단', grade: 'B', squads: 2, lv: 10, porters: 2 }] },
-      { name: '북부 왕국 은방패 기사단', card: 'armor', power: 1, seed: 1103,
+      { name: '북부 왕국 은방패 기사단', card: 'armor', power: 2, seed: 1103,
         groups: [{ name: '붉은 깃발 용병단', grade: 'B', squads: 2, lv: 10, porters: 2 }, { name: '북부 왕국 은방패 기사단', grade: 'A', squads: 1, lv: 12, porters: 2 }] },
-      { name: '대신전 순찰대', card: 'paladin', power: 1, seed: 1104,
+      { name: '대신전 순찰대', card: 'paladin', power: 3, seed: 1104,
         groups: [{ name: '왕립 마법 학회 조사단', grade: 'B', squads: 2, lv: 12, porters: 2 }, { name: '대신전 순찰대', grade: 'A', squads: 2, lv: 14, porters: 2 }] },
-      { name: '용사 파티', card: 'disarm', power: 1, seed: 1105,
+      { name: '용사 파티', card: 'disarm', power: 3, seed: 1105,
         groups: [{ name: '서쪽 왕국 흑철 기사단', grade: 'A', squads: 2, lv: 14, porters: 2 }, { name: '용사 파티', grade: 'S', squads: 1, lv: 16, porters: 2 }] }
     ]
   }

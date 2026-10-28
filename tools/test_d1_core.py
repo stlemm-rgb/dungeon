@@ -8,6 +8,7 @@
 시설 강화(단계·비용·거절·실제 전투 피해·체력·전투력 일치·문만 옮기면 유지·교체 환급 1번·무료 부대 중복 없음·저장·전투 이어하기·옛 v7·납품 인계).
 1~15절은 예전 주 단위 규칙이라 BATTLE_DATA.FLOW.on을 끄고 불러온다. 16절 = 흐름 시험(켬): 일반 판 번호·씨앗, 금만 받음, 판 중 건설 = 그 판 버림,
 보스 도전·고정 시드·결정론·보스 중 잠김·새로고침 이어하기·실패(잃는 것 없음)·문 고쳐 성공·첫 성공 보상 한 번·납품·흐름 칸 없는 옛 v7.
+17절 = 마석 경제(켬): 시작 마석·일반 판/실패/재도전 0·단계 보급 + 첫 성공 보상 한 번·새로고침/중간 저장 이어하기 중복 없음·받은 단계 다시 안 줌·5단계 합계.
 옛 v6 저장 바꾸기(B안)는 tools/test_oldsaves.py가 tools/oldsaves/d1/로 검사한다.
 
 화면 없이 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다 (test_c1_core.py와 같은 방식).
@@ -368,7 +369,7 @@ startQ1();
 {
   const q1 = R.quest;
   ok(P.budgetLeft() === q1.budget && q1.budget > 0 && R.site.squads.length === 1 && R.site.squads[0].free, '의뢰 예산·무료 기본 부대');
-  R.gold = 5000;
+  R.gold = 5000; R.site.budget = 200;   // 조달까지 해 보려고 넉넉히 (시작 마석은 17절)
   const g0 = R.gold, b0 = P.budgetLeft();
   ok(P.startBattle().ok, '건설 없이도 다음 주 진행 가능'); R.battling = false; R.bsave = null;
   const pv = P.previewBuild('C2', 'trap');
@@ -643,11 +644,11 @@ startQ1();
 function snapUp() { return JSON.stringify({ b: R.site.budget, s: R.site.spent, u: R.site.ups, z: R.site.zones, d: R.site.doors, q: R.site.squads.length, g: R.site.denGifts, st: R.quest.stage }); }
 startQ1(); R.seed = 20261025; R.plan = null;   // 씨앗 고정 (전투 결과가 매번 같게)
 {
-  // 데이터: 단계 표 (기본 포함 3단계, 10 -> 20), q1 시작 마석 200 (시험)
+  // 데이터: 단계 표 (기본 포함 3단계, 10 -> 20), q1 시작 마석 = 데이터 값 (마석 경제는 17절)
   const T = BD.FAC_UP;
   ok(T.trap.levels.length === 3 && T.den.levels.length === 3 && same(T.trap.levels.map(l => l.cost), [0, 10, 20]) && same(T.den.levels.map(l => l.cost), [0, 10, 20]), '강화 3단계·비용 10/20');
   ok(same(T.trap.levels.map(l => 6 + l.dmgAdd), [6, 7, 8]) && same(T.den.levels.map(l => l.hpMul), [1, 1.05, 1.1]), '효과 피해 6·7·8 · 체력 ×1·1.05·1.10');
-  ok(BD.QUESTS[0].budget === 200 && P.budgetLeft() === 200, 'q1 시작 마석 200');
+  ok(BD.QUESTS[0].budget > 0 && P.budgetLeft() === BD.QUESTS[0].budget, 'q1 시작 마석 = 데이터 값 ' + BD.QUESTS[0].budget);
   ok(R.site.ups && Object.keys(R.site.ups).length === 0 && P.upgradeLevel('C6') === 1, '새 현장 = 강화 없음');
   R.site.budget = 999;
   ok(P.buildZone('C6', 'trap').ok && P.buildZone('B7', 'den').ok && P.buildZone('D7', 'trap').ok && P.buildZone('A2', 'lure').ok, '시설 짓기');
@@ -855,10 +856,12 @@ FLOW_ON = true;
   ok(P.challengeBoss().ok && R.flow.tries === 2 && !R.flow.show && R.plan.seed === BD.BOSSES.q1[0].seed, '다시 도전 = 같은 보스·같은 시드');
   const rW = W.BSIM.result(runSim(W, P.battleInput())), win = P.applyBattle(rW);
   ok(rW.reached === 0 && win.boss.success && R.quest.stage === 1 && win.stages[0] === 1, '문을 고친 배치 = 보스 1단계 성공 -> 단계 1');
-  ok(R.site.budget === b0 + BD.FLOW.bossReward && win.boss.reward === BD.FLOW.bossReward && same(R.flow.cleared, [1]), '첫 성공 보상 마석 +' + BD.FLOW.bossReward);
+  const gain1 = (BD.QUESTS[0].stages[0].budget | 0) + BD.FLOW.bossReward;
+  ok(R.site.budget === b0 + gain1 && win.boss.reward === BD.FLOW.bossReward && win.boss.supply === (BD.QUESTS[0].stages[0].budget | 0) && win.budgetGain === gain1 && same(R.flow.cleared, [1]),
+    '첫 성공 마석 +' + gain1 + ' (보급 + 첫 성공 보상): ' + JSON.stringify([win.boss.supply, win.boss.reward, win.budgetGain]));
   sample.bossWin = { time: Math.round(rW.time), den: rW.denRepels, trap: rW.trapRetreats, timeouts: rW.timeouts };
   W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
-  ok(P.load() && R.quest.stage === 1 && R.site.budget === b0 + BD.FLOW.bossReward && R.flow.show.success, '성공 직후 새로고침: 보상 한 번만');
+  ok(P.load() && R.quest.stage === 1 && R.site.budget === b0 + gain1 && R.flow.show.success, '성공 직후 새로고침: 보상 한 번만');
   ok(P.bossInfo().stage === 2 && P.questProgress().line.indexOf('보스 검증 1/5') === 0, '다음 보스 = 2단계');
   // 마지막 단계 성공 -> 납품 (가치·전투력과 상관없이). 일반 판 중이면 끊고 납품
   R.quest.stage = 4; P.save();
@@ -877,6 +880,54 @@ FLOW_ON = true;
   R.quest.stage = 3; P.startBattle(); delete R.flow; P.save();
   W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
   ok(P.load() && R.flow && R.flow.no === 0 && R.quest.stage === 0 && !R.battling && !R.plan, '흐름 칸 없는 옛 v7 저장 -> 단계 0, 전투 버림');
+}
+
+// ===================== 17) 마석 경제 (refs/brief_ui_restructure_core.md, API.md 16절): 시작 마석 + 단계 보급 + 보스 첫 성공 =====================
+{
+  const reload = () => { W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES; ok(P.load(), '새로고침'); };
+  // 보스 판 하나를 끝까지 돌려 결과를 넣는다 (win이면 결과만 성공으로 꾸밈: 판정 = 보물방 도달 0)
+  const bossRun = win => { const c = P.challengeBoss(); ok(c.ok, '보스 도전: ' + c.msg); const r = W.BSIM.result(runSim(W, P.battleInput())); if (win) r.reached = 0; return { r, rep: P.applyBattle(r) }; };
+  startQ1();
+  const Q = BD.QUESTS[0], RW = BD.FLOW.bossReward, sup = i => Q.stages[i].budget | 0;
+  ok(P.budgetLeft() === Q.budget && R.site.budgetStart === Q.budget && R.site.budgetAdded === 0 && P.questProgress().budgetStart === Q.budget, '시작 마석 = 의뢰 budget ' + Q.budget);
+  ok(P.weeklyBudget() === 0 && P.questProgress().weeklyBudget === 0, '주마다 보급 없음');
+  // 데이터 모양: 보급은 단계마다 정수, 합계가 유한
+  ok(Q.stages.every(s => (s.budget | 0) >= 0) && RW >= 0 && BD.BOSSES.q1.length === Q.stages.length, '단계 보급·첫 성공 보상 숫자');
+  const bi = P.bossInfo();
+  ok(bi.supply === sup(0) && bi.reward === RW && bi.gain === sup(0) + RW, 'bossInfo 이기면 받을 마석: ' + JSON.stringify([bi.supply, bi.reward, bi.gain]));
+  // 일반 판 여러 번 = 마석 그대로
+  for (let i = 0; i < 2; i++) { P.startBattle(); P.applyBattle(W.BSIM.result(runSim(W, P.battleInput()))); }
+  ok(P.budgetLeft() === Q.budget && R.flow.no === 2, '일반 판 2번: 마석 그대로');
+  // 실패 두 번 = 마석 그대로, 단계 그대로
+  bossRun(false); P.closeBossResult();
+  const f2 = bossRun(false);
+  ok(!f2.rep.boss.success && f2.rep.budgetGain === 0 && P.budgetLeft() === Q.budget && R.quest.stage === 0 && R.flow.cleared.length === 0 && R.flow.tries === 2, '실패·재도전: 마석 0');
+  // 성공: 보급 + 첫 성공 보상 한 번
+  const w1 = bossRun(true);
+  ok(w1.rep.boss.success && w1.rep.budgetGain === sup(0) + RW && w1.rep.boss.supply === sup(0) && w1.rep.boss.reward === RW && P.budgetLeft() === Q.budget + sup(0) + RW && same(R.flow.cleared, [1]),
+    '1단계 성공: 마석 +' + (sup(0) + RW));
+  ok(P.applyBattle(w1.r) === null && P.budgetLeft() === Q.budget + sup(0) + RW, '같은 결과 다시 넣어도 그대로');
+  reload();
+  ok(R.quest.stage === 1 && P.budgetLeft() === Q.budget + sup(0) + RW && R.flow.show && R.flow.show.supply === sup(0), '성공 뒤 새로고침: 한 번만');
+  // 진행 중 보스를 저장하고 새로고침 -> 이어서 끝내도 한 번만
+  P.challengeBoss();
+  { const S = W.BSIM.create(P.battleInput()); for (let i = 0; i < 50; i++) W.BSIM.step(S, 0.1); P.saveBattle({ snap: W.BSIM.snapshot(S), ui: {} }); }
+  reload();
+  { const S = W.BSIM.restore(P.battleInput(), R.bsave.snap); for (let i = 0; i < 6000 && !S.done; i++) W.BSIM.step(S, 0.1); const r = W.BSIM.result(S); r.reached = 0; P.applyBattle(r); }
+  const after2 = Q.budget + sup(0) + RW + sup(1) + RW;
+  ok(R.quest.stage === 2 && P.budgetLeft() === after2 && same(R.flow.cleared, [1, 2]), '2단계 (중간 저장 이어하기) 성공: 마석 ' + P.budgetLeft() + ' = ' + after2);
+  reload();
+  ok(P.budgetLeft() === after2, '2단계 성공 뒤 새로고침 그대로');
+  // 이미 받은 단계 번호가 cleared에 있으면 (깨진·옛 저장) 단계는 오르지만 마석은 다시 안 줌
+  R.flow.cleared.push(3); P.save();
+  ok(P.bossInfo().gain === 0, '받은 단계는 gain 0');
+  const w3 = bossRun(true);
+  ok(w3.rep.boss.success && R.quest.stage === 3 && w3.rep.budgetGain === 0 && P.budgetLeft() === after2, '이미 받은 단계: 마석 그대로');
+  // 끝까지: 4·5단계 성공 -> 합계 = 시작 + 받은 단계들의 (보급 + 보상)
+  bossRun(true); bossRun(true);
+  const total = Q.budget + [0, 1, 3, 4].reduce((a, i) => a + sup(i) + RW, 0);
+  ok(R.quest.stage === 5 && P.budgetLeft() === total && R.site.budgetAdded === total - Q.budget && P.bossInfo().gain === 0 && P.bossInfo().done, '5단계까지 마석 합계 ' + total);
+  sample.economy = { start: Q.budget, supply: Q.stages.map(s => s.budget | 0), reward: RW, power: BD.BOSSES.q1.map(b => b.power) };
 }
 console.log(JSON.stringify({ problems, sample }));
 """
