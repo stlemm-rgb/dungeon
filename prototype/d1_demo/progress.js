@@ -1329,7 +1329,7 @@
   }
 
   // ---------- 전투 결과 반영 ----------
-  // res = battle_sim.js result { kills, porterKills, total, squads, gold, gems(소수), exp, reached, retreated, timeout, loot, damage, deployed, fought, monRetreat, crises }
+  // res = battle_sim.js result { kills, porterKills, total, squads, gold, gems(소수), exp, reached, retreated, safety(안전장치), loot, damage, deployed, fought, monRetreat, crises }
   //  회사 금 += 이번 전투 금 - 약탈(이번 전투 금 안에서만). 수리비 없음(D1). 경험치 = 출진 deploy + 실제로 싸웠으면 fight (현장 부대는 작품집 효과 +%)
   //  퇴각(monRetreat): 다음 주 쉼. 큰 피해로 퇴각한 부대만 쓰러진 인원마다 사망 확률 (첫 의뢰 noDeath는 없음, 친위대 불사). 숙련도·레벨은 그대로.
   //  인원이 0이 된 부대(전멸)는 다음 주에 기본 인원 무료 보충
@@ -1389,7 +1389,7 @@
     var rep = {
       budgetGain: budgetGain, budgetAfter: budgetLeft(),
       week: RUN.week - 1, surge: p.surge, ad: p.ad, kills: res.kills, porterKills: res.porterKills, total: res.total,
-      gold: gold, gems: gems, exp: res.exp | 0, reached: res.reached, squads: res.squads, retreated: res.retreated, timeout: !!res.timeout,
+      gold: gold, gems: gems, exp: res.exp | 0, reached: res.reached, squads: res.squads, retreated: res.retreated,
       loot: loot, repair: 0, goldBefore: goldBefore, goldAfter: RUN.gold, gemsBefore: gemsBefore, gemsAfter: RUN.gems,
       defended: defended, levelMsgs: msgs.slice(0, 4), expGains: gains, stages: stages,
       retreats: retreats, deaths: deaths, noDeath: safe, crises: res.crises | 0,
@@ -1464,7 +1464,8 @@
       boss: bossInfo(), rest: typeof F.rest === 'number' ? F.rest : 1.5, saveEvery: typeof F.saveEvery === 'number' ? F.saveEvery : 2 };
   }
   // 보스 결과 자세히: 분대마다 어디까지 갔나(지난 방 수·끝난 방·보물방 도달)·함정 피해·퇴각 원인
-  var CAUSE_NAME = { trap: '함정', den: '대기실', clash: '조우 피해', card: '카드', timeout: '시간 초과', treasure: '보물방 도달' };
+  //  timeout = 옛 저장 지점의 원인 (시간 제한은 없앰, API.md 17절). '시간 초과' 글은 안 씀
+  var CAUSE_NAME = { trap: '함정', den: '대기실', clash: '조우 피해', card: '카드', timeout: '퇴각', treasure: '보물방 도달' };
   function bossReport(res, p) {
     var rows = (Array.isArray(res.squadResults) ? res.squadResults : []).map(function (r) {
       return { id: r.id, grade: r.grade || '', state: r.state, cause: r.cause || '', causeText: r.state === 'reached' ? '보물방 도달' : (CAUSE_NAME[r.cause] || r.cause || ''),
@@ -1484,7 +1485,7 @@
     RUN.gold += gold - loot; RUN.gems += gems;
     RUN.stats.battles++;
     var rep = { mode: boss ? 'boss' : 'normal', no: p.no || 0, kills: res.kills | 0, porterKills: res.porterKills | 0, total: res.total | 0,
-      gold: gold, gems: gems, loot: loot, reached: res.reached | 0, squads: res.squads | 0, retreated: res.retreated | 0, timeout: !!res.timeout,
+      gold: gold, gems: gems, loot: loot, reached: res.reached | 0, squads: res.squads | 0, retreated: res.retreated | 0,
       defended: (res.reached | 0) === 0, goldBefore: goldBefore, goldAfter: RUN.gold, gemsBefore: gemsBefore, gemsAfter: RUN.gems,
       trapRetreats: res.trapRetreats | 0, denRepels: res.denRepels | 0, clashes: res.clashes | 0, stages: [], budgetGain: 0, boss: null };
     rep.summary = String(BD.SUMMARY_TEXT || '').replace('{trap}', rep.trapRetreats).replace('{den}', rep.denRepels);

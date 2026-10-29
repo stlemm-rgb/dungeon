@@ -330,7 +330,7 @@ async function d1drive_flow() {
     // 8) [일반 침입 재개] -> 운영 (큰 버튼 = 다음 보스 2단계)
     await b.click('[data-fresume]'); await b.sleep(500);
     need((await scr()) === 'field' && (await b.ev('PROGRESS.flowInfo().mode')) === 'normal' && !(await b.ev('PROGRESS.flowInfo().show')) && (await has('.hud.op')) && (await b.ev('document.querySelector("[data-fboss]").innerText.indexOf("2") >= 0')), '[일반 침입 재개]가 일반 판 운영(보스 2단계 예고)을 안 엶');
-    // 9) API로 빨리 감기: 회사 탭으로 나가(전투 화면 정리) 대기실 2 + 함정 4(마석 60) + 문 여럿(core-dev 측정 10-29: C6 대기실과 함께 2~5단계 막음)을 짓고 보스 2~5단계 (실제 전투 계산). 마지막 결과는 안 닫아 둠
+    // 9) API로 빨리 감기: 회사 탭으로 나가(전투 화면 정리) 대기실 2 + 함정 4(마석 60) + 문 여럿을 짓고 보스 2~5단계 (전투는 실제로 돌리되 승패는 방어 성공으로 고정 = 숫자와 무관, 2026-10-29 시간 제한 없앤 뒤). 마지막 결과는 안 닫아 둠
     await b.click('#tabs [data-go="company"]'); await b.sleep(400);
     need((await scr()) === 'company', '회사 탭으로 못 감');
     const ff = await b.ev(`(function () {
@@ -343,7 +343,11 @@ async function d1drive_flow() {
         var b = P.challengeBoss(); if (!b.ok) return { ok: false, why: '보스 도전 실패: ' + b.msg };
         var S = BSIM.create(P.battleInput());
         for (var i = 0; i < 20000 && !S.done; i++) BSIM.step(S, 0.05);
-        var rep = P.applyBattle(BSIM.result(S));
+        // 시험용: 이 단계는 화면 동선 확인이라 승패를 숫자에 묶지 않음 (보스 판정 자체는 test_d1_core). 도달 분대를 대기실 격퇴로 바꿔 방어 성공으로 넘김
+        var res = BSIM.result(S);
+        res.reached = 0; res.loot = 0;
+        res.squadResults.forEach(function (q) { if (q.state === 'reached') { q.state = 'retreat'; q.cause = 'den'; } });
+        var rep = P.applyBattle(res);
         out.push(rep.boss.stage + (rep.boss.success ? '성공' : '실패'));
         if (R.quest.stage < 5) P.closeBossResult();
       }

@@ -12,12 +12,14 @@
  *    · 대기실: 산 몬스터가 있는 대기실 가운데에 닿는 순간 승패를 바로 정함 (CLASH. 공방 주고받기 없음). 그 분대만 encounter + outcome초 멈춤 (사건 clash).
  *      몬스터 승 = 침입자 분대 퇴각 (격퇴) · 몬스터 패 = 그 대기실 부대 모두 퇴각(사건 mretreat, 다음 주 쉼), 침입자는 피해를 입고 계속 탐험.
  *      이긴 쪽 피해 = 지금 체력 × min(damageCap, damageK × 진 쪽 힘 ÷ 이긴 쪽 힘). 같은 대기실에 동시에 오면 분대 번호 순 (앞 분대 결과가 바로 반영)
- *    · 침입자 분대 체력 합이 처음의 CLASH.invaderRetreat 아래면 퇴각 (함정만으로도. 사건 iretreat { cause: 'trap'|'den'|'clash'|'card'|'timeout' })
- *    · 퇴각·시간 초과는 방어 성공 (보물방 도달만 실패). 사망 판정 없음 (몬스터 퇴각은 늘 big: false)
+ *    · 침입자 분대 체력 합이 처음의 CLASH.invaderRetreat 아래면 퇴각 (함정만으로도. 사건 iretreat { cause: 'trap'|'den'|'clash'|'card' })
+ *    · 퇴각은 방어 성공 (보물방 도달만 실패). 사망 판정 없음 (몬스터 퇴각은 늘 big: false)
  *    · 위기 카드는 전투 수치 카드(monAtk 몬스터 공격·weak 침입자 받는 피해)만 승패 힘에 더함. 함정·이동 카드는 원래 뜻
- *    · 층별 차례 전투 (12절 9-4, 구조만): 분대는 계단(위층 B)에 닿으면 멈춤(state 'stairs'). 그 층 분대가 모두 퇴각·계단·시간 초과가 되면
- *      다음 층이 열려 있고 계단에 분대가 있을 때 사건 floorEnd { n, next, waiting } -> 화면이 알림 뒤 nextFloor(S)를 부르면 다음 층 전투 (시간 GRID.nextFloorTime)
- *  - 1층은 TIME_LIMIT초. 지나면 남은 분대는 퇴각 (보물방 침입으로 치지 않음)
+ *    · 층별 차례 전투 (12절 9-4, 구조만): 분대는 계단(위층 B)에 닿으면 멈춤(state 'stairs'). 그 층 분대가 모두 퇴각·계단·보물방 도달이 되면
+ *      다음 층이 열려 있고 계단에 분대가 있을 때 사건 floorEnd { n, next, waiting } -> 화면이 알림 뒤 nextFloor(S)를 부르면 다음 층 전투
+ *  - 전투 시간 제한 없음 (2026-10-29 결정 C, API.md 17절): 모든 분대가 끝나야 판이 끝난다. elapsed(S) = 지난 시간(초, 판 전체)
+ *    안전장치: 판 전체 시간이 BD.SAFETY_LIMIT(600초)를 넘으면 남은 분대는 보물방 도달로 침 (침입자 승, 노릴 수 없게). 걸린 수 = result().safety (정상이면 0)
+ *    옛 저장 지점의 S.timeout · tally.timeout · 원인 'timeout'은 읽어도 무시한다
  *  - 무작위는 plan.seed로 만든 시드 무작위만 (게임용, 상태 S.rs). 연출용 무작위는 쓰지 않는다
  *  - snapshot(S): 저장용 순수 데이터 (plan·zones·units·doors·icard·fx 참조는 뺌). restore(o, snap): create와 같은 o로 S를 되살림
  *  - 침입자 강함: 레벨(plan.groups[].lv) × 던전 가치 배율(plan.power). 던전 속성(plan.attr) fx는 침입자 카드 fx에 더함
@@ -46,7 +48,8 @@
     if (fx.trap) fx.trap = Math.min(0.95, fx.trap);
     return fx;
   }
-  function grid() { return BD.GRID || { inspect: 0.6, speedBoost: 1.5, trapMax: 2, nextFloorTime: 30 }; }
+  function grid() { return BD.GRID || { inspect: 0.6, speedBoost: 1.5, trapMax: 2 }; }
+  function safetyLimit() { return typeof BD.SAFETY_LIMIT === 'number' && BD.SAFETY_LIMIT > 0 ? BD.SAFETY_LIMIT : 600; }
   function clashRule() { return BD.CLASH || { encounter: 1, outcome: 1, jitter: 0.2, damageK: 0.5, damageCap: 0.4, invaderRetreat: 0.5 }; }
   function kindOf(S, z) { var f = z === 'Y' ? null : Z.FAC[S.zones[z]]; return f ? f.kind : 'none'; }
   function fixedDef(S, z) { var f = z === 'Y' ? null : Z.FAC[S.zones[z]]; return f && f.fixedId ? (BD.FIXED_ZONES || {})[f.fixedId] || null : null; }
@@ -68,11 +71,11 @@
     var plan = o.plan, zones = o.zones, units = o.units, doors = doorsOf(o);
     var S = {
       plan: plan, zones: zones, units: units, doors: doors, rs: plan.seed | 0, t: 0, released: 0, releaseT: 0,
-      icard: cardById(plan.card), fx: mergeFx(plan), squads: [], dens: {}, fought: {}, guard: 0, freeze: 0, done: false, timeout: false, maxProg: 0,
+      icard: cardById(plan.card), fx: mergeFx(plan), squads: [], dens: {}, fought: {}, guard: 0, freeze: 0, done: false, safety: 0, maxProg: 0,
       mod: { trapDmg: 0, trapRate: 0, monAtk: 0, slow: 0, weak: 0 },
       gain: { gold: 0, gems: 0, exp: 0, kills: 0, porterKills: 0 }, reached: 0, retreated: 0, loot: 0, total: 0,
       goal: o.goal || (Z.goal ? Z.goal() : 'B'), front: [], mu: {}, crisis: { n: 0, kinds: {}, sq: {} },
-      floor: 1, floorT: 0, pending: 0, open: Z.OPEN || 1, tally: { trap: 0, den: 0, clash: 0, card: 0, timeout: 0 }, clashes: 0,
+      floor: 1, floorT: 0, pending: 0, open: Z.OPEN || 1, tally: { trap: 0, den: 0, clash: 0, card: 0 }, clashes: 0,
       up: upOf(o)
     };
     S.front = Z.bossFront ? Z.bossFront(doors) : [];
@@ -295,15 +298,25 @@
       if (trapLive(S, q)) { q.trapT = BD.TRAP_EVERY; trapRoll(S, q, ev); }
     }
   }
+  // 보물방 도달 (약탈). 안전장치도 이 길로 (분대 state 'reached', cause 'treasure')
+  function reachSquad(S, q, ev) {
+    q.state = 'reached'; q.cause = 'treasure'; q.endT = S.t; q.clash = null; S.reached++;
+    var porters = aliveMem(q).filter(function (m) { return m.porter; }).length;
+    var loot = BD.LOOT_BASE + porters * BD.LOOT_PER_PORTER;
+    S.loot += loot;
+    ev.push({ type: 'reach', id: q.id, x: q.x, y: q.y, loot: loot, porters: porters });
+  }
+  // 안전장치: 끝나지 않는 판(버그)을 끝냄. 남은 분대(계단 대기 포함) = 보물방 도달. 화면 사건은 reach만 (따로 알리지 않음)
+  function safetyEnd(S, list, ev) {
+    if (!list.length) return;
+    S.safety = (S.safety | 0) + list.length;
+    list.forEach(function (q) { reachSquad(S, q, ev); });
+  }
   // 방 가운데 도착: 보물방 · 계단 · 대기실 조우 · 처음 방 조사
   function arriveAnchor(S, q, t, ev) {
     if (t.z === S.goal) {
       if (S.guard > 0) { S.guard--; endSquad(S, q, 'retreat', 'card', ev); ev.push({ type: 'guarded', id: q.id, x: q.x, y: q.y }); return; }
-      q.state = 'reached'; q.cause = 'treasure'; q.endT = S.t; S.reached++;
-      var porters = aliveMem(q).filter(function (m) { return m.porter; }).length;
-      var loot = BD.LOOT_BASE + porters * BD.LOOT_PER_PORTER;
-      S.loot += loot;
-      ev.push({ type: 'reach', id: q.id, x: q.x, y: q.y, loot: loot, porters: porters });
+      reachSquad(S, q, ev);
       return;
     }
     if (Z.isStairs && Z.isStairs(t.z) && q.wps[q.wp] && q.wps[q.wp].stairs) { q.state = 'stairs'; ev.push({ type: 'stairs', id: q.id, z: t.z, x: q.x, y: q.y }); return; }
@@ -366,19 +379,13 @@
     });
     if (cr.massSquads && inside >= cr.massSquads) crisis(S, 'surge', null, ev);
     var active = S.squads.filter(isActive);
-    var limit = S.floor === 1 ? BD.TIME_LIMIT : (grid().nextFloorTime || BD.TIME_LIMIT);
-    if (S.floorT >= limit - 1e-9 && active.length) {
-      // 이미 몬스터에게 진 분대(조우 말풍선 중)는 격퇴로 침
-      active.forEach(function (q) { endSquad(S, q, 'retreat', q.clash && q.clash.win ? 'den' : 'timeout', ev); });
-      S.timeout = true;
-      ev.push({ type: 'timeout', n: active.length, floor: S.floor });
-      active = [];
-    }
+    // 시간 제한 없음. 안전장치(판 전체 SAFETY_LIMIT초)만: 남은 분대 = 보물방 도달
+    if (S.t >= safetyLimit() - 1e-9 && active.length) { safetyEnd(S, active, ev); active = []; }
     if (!active.length) {
       var waiting = S.squads.filter(function (q) { return q.state === 'stairs'; });
       if (waiting.length && S.floor < S.open) { S.pending = S.floor + 1; ev.push({ type: 'floorEnd', n: S.floor, next: S.pending, waiting: waiting.length }); }
       else {
-        waiting.forEach(function (q) { endSquad(S, q, 'retreat', 'timeout', ev); });
+        safetyEnd(S, waiting, ev);   // 열리지 않은 층 계단에서 기다림 = 정상 길에서는 안 생김 (안전장치로 셈)
         S.done = true; ev.push({ type: 'end' });
       }
     }
@@ -393,8 +400,8 @@
     ev.push({ type: 'floorStart', n: S.floor });
     return ev;
   }
-  // 이번 층 남은 시간(초)
-  function timeLeft(S) { var limit = S.floor === 1 ? BD.TIME_LIMIT : (grid().nextFloorTime || BD.TIME_LIMIT); return Math.max(0, limit - S.floorT); }
+  // 지난 시간(초, 판 전체). 화면 시간 표시용 (제한 없음)
+  function elapsed(S) { return Math.max(0, S.t || 0); }
 
   function applyCard(S, side) {
     var ev = [];
@@ -439,10 +446,10 @@
     return {
       kills: S.gain.kills, porterKills: S.gain.porterKills, total: S.total, squads: S.squads.length,
       gold: S.gain.gold, gems: S.gain.gems, exp: S.gain.exp, reached: S.reached, retreated: S.retreated,
-      timeout: S.timeout, loot: S.loot, damage: damage, time: S.t, deployed: deployed, fought: fought,
+      safety: S.safety | 0, loot: S.loot, damage: damage, time: S.t, deployed: deployed, fought: fought,
       monRetreat: monRetreat, monDown: monDown, crises: S.crisis ? S.crisis.n : 0,
       // 3차: 결과 요약 한 줄용 (함정으로 퇴각·전멸한 분대, 대기실에서 격퇴한 분대 ...) · 분대별 결과
-      trapRetreats: tl.trap || 0, denRepels: tl.den || 0, clashRetreats: tl.clash || 0, timeouts: tl.timeout || 0, clashes: S.clashes || 0,
+      trapRetreats: tl.trap || 0, denRepels: tl.den || 0, clashRetreats: tl.clash || 0, clashes: S.clashes || 0,
       squadResults: S.squads.map(function (q) { return { id: q.id, habit: q.habit, state: q.state, cause: q.cause, passes: q.passes, time: Math.round((q.endT || S.t) * 100) / 100,
         grade: q.grade, rooms: Object.keys(q.seen || {}).length, last: q.zone, trapDmg: Math.round(q.trapDmg || 0), hpLeft: Math.round(hpOf(q) / (q.maxHp || 1) * 100) }; }),
       trapDmg: Math.round(trapDmg)   // 흐름 시험: 함정이 침입자에게 준 피해 합 · squadResults[].rooms(지난 방 수)·last(끝난 방)·trapDmg·hpLeft(남은 체력 %)
@@ -461,7 +468,10 @@
     if (!S.fought || typeof S.fought !== 'object') S.fought = {};
     if (!S.mu || typeof S.mu !== 'object') S.mu = {};
     if (!S.crisis || typeof S.crisis !== 'object') S.crisis = { n: 0, kinds: {}, sq: {} };
-    if (!S.tally || typeof S.tally !== 'object') S.tally = { trap: 0, den: 0, clash: 0, card: 0, timeout: 0 };
+    if (!S.tally || typeof S.tally !== 'object') S.tally = { trap: 0, den: 0, clash: 0, card: 0 };
+    // 옛 시간 제한 칸 (결정 C 전 저장 지점): 읽고 버림. 이미 끝난 분대의 cause 'timeout'은 그대로 둠 (퇴각으로 셈)
+    delete S.timeout; delete S.tally.timeout;
+    if (typeof S.safety !== 'number') S.safety = 0;
     if (typeof S.floor !== 'number') S.floor = 1;
     if (typeof S.floorT !== 'number') S.floorT = S.t;
     if (typeof S.pending !== 'number') S.pending = 0;
@@ -476,5 +486,5 @@
   function squadInfo(q) { var a = aliveMem(q); return { alive: a.length, porters: a.filter(function (m) { return m.porter; }).length }; }
 
   window.BSIM = { create: create, snapshot: snapshot, restore: restore, step: step, applyCard: applyCard, progress: progress, result: result, squadInfo: squadInfo, cardById: cardById, attrById: attrById, livingMon: livingMon,
-    crisisLeft: crisisLeft, nextFloor: nextFloor, timeLeft: timeLeft };
+    crisisLeft: crisisLeft, nextFloor: nextFloor, elapsed: elapsed };
 })();

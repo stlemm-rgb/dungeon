@@ -189,7 +189,7 @@
           bigBtn;
       el.insertAdjacentHTML('beforeend',
         '<div class="bt-top"><span class="bt-surgechip' + (boss ? '' : ' normal') + '">' + (boss ? '보스 ' + plan.stage : '일반 ' + (plan.no || '')) + '</span>' +
-        '<span class="bt-time">1:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
+        '<span class="bt-time">0:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
         stat('kill', '처치') + stat('gold', '금') + stat('gem', '신석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
         '<div class="zboard bt-board"></div>' +
         ((Z.FLOORS || 1) > (Z.OPEN || 1) ? '<div class="bt-locked">🔒 지하 ' + (Z.OPEN + 1) + '층 · ' + lockWhy(Z.OPEN + 1) + '</div>' : '') +
@@ -266,9 +266,8 @@
         var r = SIM.result(S);
         killEl.textContent = r.kills + '/' + r.total; goldEl.textContent = '+' + money(r.gold); gemEl.textContent = '+' + Math.floor(r.gems);
         reachEl.textContent = r.reached; fleeEl.textContent = r.retreated;
-        var left = SIM.timeLeft(S), sec = Math.ceil(left);   // 이번 층 남은 시간 (층마다 따로)
+        var sec = Math.floor(SIM.elapsed(S));   // 지난 시간 (판 전체, 시간 제한 없음 = 결정 C)
         timeEl.textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
-        timeEl.classList.toggle('low', U.phase === 'fight' && left < 10);
         var p = SIM.progress(S);
         progEl.style.width = p + '%'; pctEl.textContent = Math.floor(p) + '%';
       }
@@ -382,12 +381,11 @@
             case 'clash': log('분대 ' + (e.id + 1) + ' · ' + (Z.NAMES[e.z] || e.z) + ' 대기실 조우', ''); break;
             case 'iretreat':
               floatText(e.x, e.y - 0.25, '퇴각', 'flee');
-              if (e.cause !== 'timeout') log('분대 ' + (e.id + 1) + ' 퇴각 (' + (CAUSE_TEXT[e.cause] || '') + ')', 'good');
+              log('분대 ' + (e.id + 1) + ' 퇴각 (' + (CAUSE_TEXT[e.cause] || '') + ')', 'good');
               break;
             case 'stairs': floatText(e.x, e.y - 0.25, '▼ 계단', 'chill'); log('분대 ' + (e.id + 1) + '가 계단에 닿았어요', ''); break;
             case 'floorEnd': U.floorNotice = e; checkpoint(); break;   // 이 층 전투 끝: 알림은 프레임 루프가 띄움 (눌러야 다음 층)
-            case 'floorStart': drawFloor(e.n); log(e.n + '층 전투 시작! 남은 시간 ' + Math.round(SIM.timeLeft(S)) + '초', 'good'); break;
-            case 'timeout': log('시간이 지났어요. 남은 ' + e.n + '분대가 퇴각합니다', 'good'); break;
+            case 'floorStart': drawFloor(e.n); log(e.n + '층 전투 시작!', 'good'); break;
           }
         });
       }

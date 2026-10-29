@@ -2,13 +2,14 @@
 
 자세히: 판 데이터(g1 5×7·고정 구역·문 토큰 수·처음 배치 유효·옮길 수 있는 문 여러 개), 탐험 규칙(미끼·습관·맵핑·같은 시드 = 같은 길),
 미리보기 경로 = 실제 전투 경로, 문 옮기기 미리보기·확정(tokens·target·disconnected·limit·budget·locked), 조사·가 본 방 빠르게·함정 같은 분대 2회,
-조우 즉시 승패(힘 비교 ±20%·진 쪽 퇴각·이긴 쪽 피해 상한·2초 멈춤·침입자 절반 퇴각·시간 초과 = 방어 성공·사망 없음), 결과 요약 한 줄,
+조우 즉시 승패(힘 비교 ±20%·진 쪽 퇴각·이긴 쪽 피해 상한·2초 멈춤·침입자 절반 퇴각·퇴각 = 방어 성공·사망 없음), 결과 요약 한 줄,
 의뢰 예산·회사 금 분리, 던전 가치/전투력(B안), 납품 기준 5단계·수동 납품·q1 뒤 데모 끝(q2 숨김), 층(시험용 2층 의뢰: 층별 차례 전투),
 층별 출진·퇴각·쉼, 카드 위기 최대 2장(배속·복원 같음), 대기실 기본 부대, 끈 기능, 저장 v7·깨진 문 보완, ?seed=,
 시설 강화(단계·비용·거절·실제 전투 피해·체력·전투력 일치·문만 옮기면 유지·교체 환급 1번·무료 부대 중복 없음·저장·전투 이어하기·옛 v7·납품 인계).
 1~15절은 예전 주 단위 규칙이라 BATTLE_DATA.FLOW.on을 끄고 불러온다. 16절 = 흐름 시험(켬): 일반 판 번호·씨앗, 금만 받음, 판 중 건설 = 그 판 버림,
 보스 도전·고정 시드·결정론·보스 중 잠김·새로고침 이어하기·실패(잃는 것 없음)·문 고쳐 성공·첫 성공 보상 한 번·납품·흐름 칸 없는 옛 v7.
 17절 = 마석 경제(켬): 시작 마석·일반 판/실패/재도전 0·단계 보급 + 첫 성공 보상 한 번·새로고침/중간 저장 이어하기 중복 없음·받은 단계 다시 안 줌·5단계 합계.
+18절 = 시간 제한 없음: 60초 넘는 판도 끝까지·안전장치(걸리면 보물방 도달 = 방어 실패)·옛 저장 지점의 timeout 칸·보스 결과에 시간 초과 글 없음·검사 판 전체 안전장치 0.
 옛 v6 저장 바꾸기(B안)는 tools/test_oldsaves.py가 tools/oldsaves/d1/로 검사한다.
 
 화면 없이 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다 (test_c1_core.py와 같은 방식).
@@ -46,9 +47,13 @@ function boot(search) {
   });
   return sb;
 }
+// 시간 제한 없음(결정 C): 안전장치 SAFETY_LIMIT(600초)보다 넉넉히 돌린다. 안전장치가 걸린 횟수·판 시간을 모아 sample.noTimeout에 남김 (걸린 수는 0이어야 함)
+const RUNS = { safety: 0, n: 0, boss: [], normal: [] };
 function runSim(W, inp, dt, onEv) {
-  const S = W.BSIM.create(inp);
-  for (let i = 0; i < 6000 && !S.done; i++) { const ev = W.BSIM.step(S, dt || 0.1); if (onEv) onEv(ev, S); if (S.pending) W.BSIM.nextFloor(S); }
+  const S = W.BSIM.create(inp), d = dt || 0.1, max = Math.ceil(((W.BATTLE_DATA.SAFETY_LIMIT || 600) + 60) / d);
+  for (let i = 0; i < max && !S.done; i++) { const ev = W.BSIM.step(S, d); if (onEv) onEv(ev, S); if (S.pending) W.BSIM.nextFloor(S); }
+  RUNS.n++; RUNS.safety += S.safety | 0;
+  if (S.done) (inp.plan && inp.plan.mode === 'boss' ? RUNS.boss : RUNS.normal).push(S.t);
   return S;
 }
 function runBattle(W, P) {
@@ -277,7 +282,7 @@ startQ1();
   ok(cl.length >= 1 && cl.every(e => e.win), '센 몬스터 = 몬스터 승: ' + cl.length);
   cl.forEach(e => {
     const rt = a.log.filter(x => x.type === 'iretreat' && x.id === e.id)[0];
-    ok(rt && rt.cause === 'den' && (Math.abs(rt.T - e.T - (BD.CLASH.encounter + BD.CLASH.outcome)) < 0.051 || rt.T >= BD.TIME_LIMIT - 1e-6), '격퇴는 조우 뒤 2초 (말풍선 1초 + 1초): ' + (rt && (rt.T - e.T)));
+    ok(rt && rt.cause === 'den' && (Math.abs(rt.T - e.T - (BD.CLASH.encounter + BD.CLASH.outcome)) < 0.051), '격퇴는 조우 뒤 2초 (말풍선 1초 + 1초): ' + (rt && (rt.T - e.T)));
   });
   ok(a.S.reached === 0 && W.BSIM.result(a.S).denRepels === cl.length, '격퇴 수 = 몬스터 승 수');
   ok(Object.values(a.S.dens).every(l => l.every(m => m.hp >= 5000 * (1 - BD.CLASH.damageCap) ** 2 - 1e-6)), '이긴 쪽 피해 상한 (한 번에 체력의 ' + BD.CLASH.damageCap + ' 이하)');
@@ -334,7 +339,7 @@ startQ1();
     R.battling = false; R.bsave = null;
   }
   ok(trapRet > 0 && badHp === 0, '함정으로 체력 절반 아래 -> 퇴각 (' + trapRet + '번), 절반 아래로 계속 걷는 분대 없음 (' + badHp + ')');
-  // e) 시간 초과 = 방어 성공, 결과 요약 한 줄
+  // e) 퇴각만(보물방 도달 0) = 방어 성공, 결과 요약 한 줄
   startQ1();
   P.startBattle();
   const S = runSim(W, P.battleInput());
@@ -344,7 +349,7 @@ startQ1();
   sample.summary = rp.summary;
   P.startBattle();
   const tr = P.applyBattle({ gold: 0, gems: 0, loot: 0, reached: 0, retreated: 2, timeout: true, kills: 0, total: 20, squads: 2, deployed: [], fought: [], monRetreat: [] });
-  ok(tr.defended === true && tr.timeout === true, '시간 초과(보물방 도달 0) = 방어 성공');
+  ok(tr.defended === true && tr.timeout === undefined, '보물방 도달 0 = 방어 성공 (옛 timeout 칸은 무시)');
 }
 
 // ===================== 7) 저장 지점 복원 = 끊김 없는 전투, 배속 =====================
@@ -492,7 +497,7 @@ freshQ2();
       const t0 = S.t; W.BSIM.step(S, 0.1); ok(S.t === t0, '알림 동안(pending) 전투 멈춤');
       beforeNext = S.squads.filter(q => q.state === 'stairs').length;
       W.BSIM.nextFloor(S); during2 = true;
-      ok(S.floor === 2 && S.floorT === 0 && W.BSIM.timeLeft(S) === BD.GRID.nextFloorTime, '2층 전투 시간 ' + BD.GRID.nextFloorTime + '초');
+      ok(S.floor === 2 && S.floorT === 0 && W.BSIM.elapsed(S) === S.t && S.t > 0, '2층 시작: 층 시간 0, 지난 시간은 판 전체로 이어짐');
     }
     if (during2) S.squads.forEach(q => { if (q.state === 'move') ok(W.ZONES.floorOf(q.zone) === 2 || q.zone === 'B', '2층 전투 중에는 2층에서만'); });
   }
@@ -859,7 +864,7 @@ FLOW_ON = true;
   const gain1 = (BD.QUESTS[0].stages[0].budget | 0) + BD.FLOW.bossReward;
   ok(R.site.budget === b0 + gain1 && win.boss.reward === BD.FLOW.bossReward && win.boss.supply === (BD.QUESTS[0].stages[0].budget | 0) && win.budgetGain === gain1 && same(R.flow.cleared, [1]),
     '첫 성공 마석 +' + gain1 + ' (보급 + 첫 성공 보상): ' + JSON.stringify([win.boss.supply, win.boss.reward, win.budgetGain]));
-  sample.bossWin = { time: Math.round(rW.time), den: rW.denRepels, trap: rW.trapRetreats, timeouts: rW.timeouts };
+  sample.bossWin = { time: Math.round(rW.time), den: rW.denRepels, trap: rW.trapRetreats, safety: rW.safety };
   W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES;
   ok(P.load() && R.quest.stage === 1 && R.site.budget === b0 + gain1 && R.flow.show.success, '성공 직후 새로고침: 보상 한 번만');
   ok(P.bossInfo().stage === 2 && P.questProgress().line.indexOf('보스 검증 1/5') === 0, '다음 보스 = 2단계');
@@ -929,6 +934,50 @@ FLOW_ON = true;
   ok(R.quest.stage === 5 && P.budgetLeft() === total && R.site.budgetAdded === total - Q.budget && P.bossInfo().gain === 0 && P.bossInfo().done, '5단계까지 마석 합계 ' + total);
   sample.economy = { start: Q.budget, supply: Q.stages.map(s => s.budget | 0), reward: RW, power: BD.BOSSES.q1.map(b => b.power) };
 }
+
+// ===================== 18) 시간 제한 없음 (refs/brief_no_timeout.md, API.md 17절): 판은 모두 끝나야 끝남 + 안 보이는 안전장치 =====================
+{
+  FLOW_ON = false;
+  const loop = (W, S, max) => { for (let i = 0; i < (max || 9000) && !S.done; i++) { W.BSIM.step(S, 0.1); if (S.pending) W.BSIM.nextFloor(S); } return S; };
+  // a) 아주 느린 분대: 옛 60초 제한보다 훨씬 오래 걸려도 퇴각시키지 않고 끝까지 감 (안전장치 안 걸림)
+  startQ1(); P.startBattle();
+  const ms = BD.MOVE_SPEED; BD.MOVE_SPEED = ms / 4;
+  const S1 = loop(W, W.BSIM.create(P.battleInput()));
+  BD.MOVE_SPEED = ms;
+  const r1 = W.BSIM.result(S1);
+  ok(BD.TIME_LIMIT === undefined && BD.GRID.nextFloorTime === undefined && typeof BD.SAFETY_LIMIT === 'number' && BD.SAFETY_LIMIT >= 600, '시간 제한 칸 없음, 안전장치 ' + BD.SAFETY_LIMIT + '초');
+  ok(S1.done && S1.t > 60 && r1.safety === 0 && S1.squads.every(q => ['reached', 'retreat', 'dead'].indexOf(q.state) >= 0 && q.cause !== 'timeout'),
+    '느린 판: 60초 넘어도 끝까지 (시간 ' + Math.round(S1.t) + '초, 안전장치 ' + r1.safety + ')');
+  ok(r1.timeout === undefined && r1.timeouts === undefined && W.BSIM.elapsed(S1) === S1.t, '결과에 timeout 없음, 지난 시간 = S.t');
+  // b) 안전장치: 한도를 줄여 일부러 걸면 남은 분대 = 보물방 도달 (침입자 승) -> 방어 실패
+  startQ1(); P.startBattle();
+  const sl = BD.SAFETY_LIMIT; BD.SAFETY_LIMIT = 3;
+  const S2 = loop(W, W.BSIM.create(P.battleInput()));
+  BD.SAFETY_LIMIT = sl;
+  const r2 = W.BSIM.result(S2), rp2 = P.applyBattle(r2);
+  ok(S2.done && r2.safety > 0 && r2.reached >= r2.safety && S2.t < 4 && S2.squads.every(q => q.state === 'reached' || q.state === 'retreat' || q.state === 'dead'),
+    '안전장치: 남은 분대 ' + r2.safety + ' = 보물방 도달 ' + r2.reached);
+  ok(rp2 && rp2.defended === false, '안전장치가 걸린 판 = 방어 실패 (노릴 수 없음)');
+  // c) 옛 저장 지점 (timeout·tally.timeout·원인 'timeout'): 읽어도 안 깨지고 끝까지 진행
+  startQ1(); P.startBattle();
+  const inp3 = P.battleInput(), S3 = W.BSIM.create(inp3);
+  for (let i = 0; i < 80; i++) W.BSIM.step(S3, 0.1);
+  const snap = W.BSIM.snapshot(S3); snap.timeout = false; snap.tally.timeout = 0; delete snap.safety;
+  const S3b = W.BSIM.restore(inp3, JSON.parse(JSON.stringify(snap)));
+  ok(S3b && S3b.timeout === undefined && S3b.tally.timeout === undefined && S3b.safety === 0, '옛 저장 지점 복원: 옛 시간 칸 버림');
+  loop(W, S3b);
+  ok(S3b.done && W.BSIM.result(S3b).safety === 0, '옛 저장 지점에서 이어서 끝까지');
+  // d) 보스 결과 원인 글에 '시간 초과' 없음 (옛 원인 'timeout'은 '퇴각')
+  FLOW_ON = true; startQ1(); FLOW_ON = false;
+  ok(P.challengeBoss().ok, '보스 도전');
+  const rb = W.BSIM.result(runSim(W, P.battleInput()));
+  rb.squadResults = rb.squadResults.concat([{ id: 99, state: 'retreat', cause: 'timeout', rooms: 1, last: 'A1' }]); rb.squads++;
+  const fb = P.applyBattle(rb);
+  ok(fb && fb.boss && fb.boss.rows.every(r => r.causeText !== '시간 초과') && Object.keys(fb.boss.causes).indexOf('시간 초과') < 0, '보스 결과에 시간 초과 글 없음: ' + JSON.stringify(fb && fb.boss.causes));
+  const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : 0, mx = a => a.length ? Math.round(Math.max.apply(null, a)) : 0;
+  sample.noTimeout = { runs: RUNS.n, safety: RUNS.safety, normalAvg: avg(RUNS.normal), normalMax: mx(RUNS.normal), bossAvg: avg(RUNS.boss), bossMax: mx(RUNS.boss), slow: Math.round(S1.t) };
+  ok(RUNS.safety === 0, '검사 판 전체에서 안전장치 걸린 수 0: ' + RUNS.safety);
+}
 console.log(JSON.stringify({ problems, sample }));
 """
 
@@ -957,7 +1006,7 @@ def main():
         for p in r["problems"][:60]:
             print("  - " + p)
         return 1
-    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화 -> 흐름 시험(일반 판 반복·보스 도전)")
+    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화 -> 흐름 시험(일반 판 반복·보스 도전) -> 시간 제한 없음·안전장치")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 
