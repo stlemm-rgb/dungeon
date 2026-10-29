@@ -1,19 +1,18 @@
-/* D1 현장 화면 (UI 개편 2026-10-29, 기획서 docs/specs/ui_restructure.md 3절): 같은 5x7 판의 4상태 중 운영 · 보스 도전 · 보스 결과. 건설 상태는 build.js.
- * 계산은 battle_sim.js, 숫자는 battle_data.js, 판 그리기는 build.js의 ZONEVIEW.boardHtml, 상태·규칙은 progress.js (API.md 13~15절).
+/* D1 홈 화면 (DS 구조 UI 다시 만들기 2026-10-29, 시안 refs/mockup_ds_ui_2026-10-29 Main·Boss, 지시서 refs/brief_ds_ui.md): 던전에서 자동 전투가 늘 보이는 화면.
+ * 계산은 battle_sim.js, 숫자는 battle_data.js, 판 그리기는 build.js의 ZONEVIEW.boardHtml, 상태·규칙은 progress.js (API.md 13~18절).
  *
- *  - 상태는 progress.js를 보고 정한다 (화면이 따로 기억하지 않음): 진행 중 전투가 보스면 [보스 도전], 없고 닫지 않은 보스 결과(P.flowInfo().show)가 있으면 [보스 결과], 그 밖엔 [운영]
- *    (운영에 들어오면 다음 일반 판이 바로 시작: P.startBattle). 의뢰가 없으면 회사의 의뢰 게시판으로 가는 안내만.
- *  - 운영: 일반 판 한 판씩 자동 반복(판 끝 -> FLOW.rest초 -> 다음 판). 위 = 시간·진행·처치·금·신석·보물방·퇴각, 가운데 = 판, 아래 = 최근 정산 한 줄 · 다음 보스 예고 ·
- *    [배속][일시정지] / [출진][건설] / 큰 [보스 도전 n] (5/5면 큰 [납품]). 카드 없음. 현장 밖에 나가면 저장하고 멈춤, 돌아오면 그 지점부터 이어 간다 (flowSave).
- *    판의 지은 시설(함정·대기실)을 누르면 아래 강화 창, [출진]은 아래 출진 창 (둘 다 열려 있는 동안 전투를 멈추고, 하나라도 바꾸면 진행 중 일반 판은 버린 채 창을 닫을 때 새 판).
- *  - 보스 도전: 같은 화면, 아래 = [배속][일시정지] + 안내. 탭 이동은 shell.js가 막는다. 끝나면 잠깐 뒤 보스 결과로 자동 전환.
- *  - 보스 결과: 판(끝 방 강조) + 요약 + 분대별 펼침 + 버튼. 실패 [배치 고치기][다시 도전][일반 침입 재개], 성공 [다음 보스 도전][일반 침입 재개], 5/5 [납품](shell.js가 data-deliver를 받음).
- *    결과는 닫기 전까지 새로고침·탭 이동 뒤에도 복원된다 (P.flowInfo().show). 보상은 applyBattle 때 한 번만.
- *  - 보스 카드 3종 (2026-10-29, API.md 18절): 보스 판만 P.battleInput(plan, { cards: true }). 기회가 오면 S.pick -> 전투가 완전히 멈추고 아래에 카드 창(후보·위기 위치·n/2·[넘기기]).
- *    방을 고르는 카드(임시 수비대·긴급 작동) = SIM.pickSelect -> 창이 접히고 판에서 가능한 방만 강조 -> 방 누름 -> [사용] pickUse / [취소] pickCancel. 연막 = 바로 [사용].
- *    창이 열릴 때·고르기·취소·사용·넘기기 직후마다 checkpoint(): 새로고침해도 같은 창(대상 고르는 중 포함). 효과는 실제 사건만 그림 (연막 = 분대 위 ☁ 남은 초, 임시 수비대 = 새 부대 점 + 임시, 긴급 작동 = 함정 번쩍 + 피해 숫자).
- *  - 옛 위기 카드(spawnCard) 코드와 층 넘어가기 알림 코드는 옛 규칙용으로 남아 있다. 새 흐름은 위기 사건(crisis)을 무시하고 위 카드 창만 쓴다.
- *  - 판 = ZONEVIEW.boardHtml: 싸우는 층 하나. 분대는 q.x·q.y 그대로, 좌표 = 칸 단위. 말풍선: 조사 중 ?, 조우 ⚔ -> ✔/💨, 침입자 퇴각 "퇴각". ?debug 면 분대 색 경로 선 + 문 통과 수.
+ *  - 한 화면 = 상단 바(shell.js hud) · 스테이지 막대 · 전투장(판 + 좌우 아이콘 + 다음 목표) · 카드 6칸 · 시설 성장판. 상태는 progress.js를 보고 정한다 (화면이 따로 기억하지 않음):
+ *    의뢰 없음(첫 시작·정산·데모 끝) = 판 자리에 안내 / 닫지 않은 보스 결과(P.flowInfo().show)가 있으면 [보스 결과] / 진행 중 전투가 보스면 [보스 도전] / 그 밖엔 일반 침입 (홈에 들어오면 다음 일반 판이 바로 시작: P.startBattle).
+ *  - 일반 침입: 판 한 판씩 자동 반복 (판 끝 -> FLOW.rest초 -> 다음 판). 스테이지 막대 = "단계-판" · 점 5개(5판마다 한 바퀴) · 지난 시간 · [보스 도전] (5/5면 [납품]). 판 모서리 = [배속][일시정지].
+ *    판 위에 잠깐 뜨는 한 줄 = 방금 끝난 판 결과. 탭·패널이 열려도 전투는 계속 돈다 (shell.js 패널은 홈 위에 얹힌 별도 창, 판은 위쪽 150px 띠로 줄고 싸우는 분대 쪽을 보여 줌).
+ *    성장판 칸(함정·대기실·미끼·문)을 누르면 건설 모드(build.js, 그 시설이 골라진 채). [부대 모집]은 아래 출진 창, 지은 시설(판)을 누르면 아래 강화 창 (둘 다 열려 있는 동안 전투를 멈추고,
+ *    하나라도 바꾸면 진행 중 일반 판은 버린 채 창을 닫을 때 새 판).
+ *  - 보스 도전: 스테이지 막대가 빨간 보스 막대(이름 · 남은 분대)로 바뀜. 카드 기회(S.pick)가 오면 전투가 완전히 멈추고 카드 6칸 중 후보만 밝아진다. 판 아래 겹친 상자 = 고른 카드 설명 + [사용]
+ *    ([방 고르기] -> 판에서 방 누르기 -> 줄이 [취소][사용]), 판 아래 줄 = "카드 n/2 · 이유" + [넘기기]. 시설 성장판은 "보스전 중 잠김" 한 줄, 탭 이동은 shell.js가 막는다. 끝나면 잠깐 뒤 보스 결과로 자동 전환.
+ *  - 보스 결과: 위쪽에 작은 판 + 아래에서 올라온 창 (결론 · 분대별 펼침 · 카드 기록 · 버튼). 실패 [배치 고치기][다시 도전][일반 침입 재개], 성공 [다음 보스 도전][일반 침입 재개], 5/5 [납품](shell.js가 data-deliver를 받음).
+ *    결과는 닫기 전까지 새로고침·패널 열기 뒤에도 복원된다 (P.flowInfo().show). 보상은 applyBattle 때 한 번만.
+ *  - 옛 위기 카드(spawnCard) 코드와 층 넘어가기 알림 코드는 옛 규칙용으로 남아 있다. 새 흐름은 위기 사건(crisis)을 무시하고 위 카드 UI만 쓴다.
+ *  - 판 = ZONEVIEW.boardHtml: 싸우는 층 하나. 분대는 q.x·q.y 그대로, 좌표 = 칸 단위. 방 이름표는 안 보인다(CSS), 입구·보물방·고정 구역·지은 시설만. 말풍선: 조사 중 ?, 조우 ⚔ -> ✔/💨, 퇴각 "퇴각". ?debug 면 분대 색 경로 선 + 문 통과 수.
  *  - 배속 1·2·3·5는 RUN.prefs에 저장 (P.setBattleSpeed). 진행 중 전투는 FLOW.saveEvery초마다·화면을 떠날 때 저장 -> 새로고침하면 이어서 (멈춤 상태도 그대로).
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드). 색은 shell.css 맨 위 변수만.
  */
@@ -64,22 +63,108 @@
       return { text: '아직 정산 없음 · 첫 판이 진행 중이에요', cls: '' };
     }
 
-    // ---------- 의뢰가 없을 때: 회사의 의뢰 게시판으로 가는 안내만 ----------
-    function noQuest(el) {
-      el.appendChild(api.hud({ tab: 'field', label: '현장', state: 'op' }));
-      el.appendChild(div('card', '<h3>진행 중인 의뢰가 없어요</h3><div class="small-text dim" style="margin-bottom:8px">회사의 의뢰 게시판에서 의뢰를 받으면 현장이 열려요.</div>' +
-        '<button class="btn primary" type="button" data-go="company">회사의 의뢰 게시판으로</button>'));
+    var ic = api.icon;
+    var CARD_SHORT = { smoke: '연막', reserve: '수비대', trigger: '긴급' };
+    var CARD_LOOK = { smoke: ['smoke', 'c-grey'], reserve: ['shield', 'c-blue'], trigger: ['spikes', 'c-red'] };
+
+    // ---------- 홈 조각 (시안 ①②): 스테이지 막대 · 좌우 아이콘 · 다음 목표 · 카드 6칸 · 시설 성장판 ----------
+    // 일반 판 점 5개 + 보스 표시. n번째 판이면 n-1개 초록, n번째 노랑 (5판마다 한 바퀴. 보스는 언제든 도전할 수 있다)
+    function stageBarHtml(no, bi, pr, canBoss) {
+      var k = no ? ((no - 1) % 5) : -1, dots = '', i;
+      for (i = 0; i < 5; i++) dots += '<i class="' + (i < k ? 'done' : i === k ? 'now' : '') + '"></i>';
+      var st = pr && pr.complete ? pr.total : bi && !bi.done ? bi.stage : pr ? pr.total : 0;
+      var btn = pr && pr.complete ? '<button class="sb-boss" type="button" data-deliver>납품</button>'
+        : '<button class="sb-boss" type="button" data-fboss' + (canBoss && bi && bi.canChallenge ? '' : ' aria-disabled="true"') + '>보스 도전</button>';
+      return '<div class="sbar op"><b class="sb-no">' + (no ? st + '-' + (k + 1) : '—') + '</b><span class="sb-dots">' + dots + ic('crown', 'c-danger', 16) + '</span>' +
+        '<span class="sb-time bt-time">0:00</span><span class="grow"></span>' + btn + '</div>';
+    }
+    function bossBarHtml(plan, left, tot) {
+      return '<div class="sbar boss"><div class="sb-row">' + ic('crown', '', 15) + '<span class="sb-name">보스 ' + plan.stage + ' · ' + esc(plan.name) + '</span><span class="grow"></span>' +
+        '<span class="sb-left">남은 분대 ' + left + '/' + tot + '</span></div><span class="sb-meter"><i style="width:' + (tot ? left / tot * 100 : 0) + '%"></i></span></div>';
+    }
+    // 판 옆 아이콘: 왼쪽 의뢰·작품집·랭킹 / 오른쪽 임무·출석·설정. 기능 없는 것은 점선 칸 + 자물쇠
+    function ibtn(icon, label, attr, locked) {
+      return '<button type="button" class="ibtn' + (locked ? ' locked' : '') + '" ' + attr + ' aria-label="' + label + '">' + ic(icon, '', 18) + label + (locked ? ic('lock', 'lk', 10) : '') + '</button>';
+    }
+    function asideHtml() {
+      var gal = api.galleryOpen();
+      return '<div class="aside l">' + ibtn('doc', '의뢰', 'data-go="board"') +
+        (gal ? ibtn('gallery', '작품집', 'data-go="gallery"') : ibtn('gallery', '작품집', 'data-toast="' + esc('🔒 작품집: ' + api.condText('gallery')) + '"', true)) +
+        ibtn('rank', '랭킹', 'data-toast="' + esc(api.soonText('랭킹')) + '"', true) + '</div>' +
+        '<div class="aside r">' + ibtn('task', '임무', 'data-toast="' + esc(api.soonText('임무')) + '"', true) +
+        ibtn('cal', '출석', 'data-toast="' + esc(api.soonText('출석')) + '"', true) +
+        '<button type="button" class="ibtn gear" data-go="settings" aria-label="설정">' + ic('gear', '', 18) + '</button></div>';
+    }
+    function goalHtml(bi, pr, q) {
+      var done = pr && pr.complete;
+      return '<div class="goalbox"><small>다음 목표</small><b>' + (done ? '납품하기' : bi && !bi.done ? '보스 ' + bi.stage + ' 막기' : '—') + '</b>' +
+        '<span>' + (done ? '회사 금 +' + money(q.reward.gold) : bi && bi.gain ? '마석 +' + bi.gain : '첫 성공 보상 받음') + '</span></div>';
+    }
+    // 카드 6칸: 1~3 = 보스전 카드 (홈에서는 설명만), 4~6 = 잠김
+    function cardRowHtml() {
+      var h = '', i;
+      Object.keys(CARD_SHORT).forEach(function (id) {
+        h += '<button type="button" class="cslot" data-card="' + id + '">' + ic(CARD_LOOK[id][0], CARD_LOOK[id][1], 20) + CARD_SHORT[id] + '</button>';
+      });
+      for (i = 4; i <= 6; i++) h += '<button type="button" class="cslot lock" data-toast="' + esc(api.soonText('카드 칸 ' + i)) + '" aria-label="카드 칸 ' + i + ' 잠김">' + ic('lock', '', 16) + '</button>';
+      return '<div class="cardrow">' + h + '</div>';
+    }
+    // 시설 성장판: 지은 함정·대기실·미끼 수와 단계, 문 수. 칸을 누르면 그 시설이 골라진 채 건설 모드. 오른쪽 = 부대 모집 (출진 창)
+    function growthData() {
+      var d = { trap: [0, 1], den: [0, 1], lure: [0, 1], doors: 0, cost: 0 }, z = RUN.site ? RUN.site.zones : {}, n, tr;
+      Object.keys(z).forEach(function (id) {
+        var f = Z.FAC[z[id]];
+        if (!f || !d[f.kind] || id === 'Y') return;
+        d[f.kind][0]++;
+        if (f.kind !== 'lure') d[f.kind][1] = Math.max(d[f.kind][1], P.upgradeLevel ? P.upgradeLevel(id) : 1);
+      });
+      if (RUN.site) for (n = 1; n <= RUN.site.floorsOpen; n++) { var di = P.doorInfo(n); if (di) d.doors += di.count; }
+      (P.TRIBES || []).forEach(function (t) { var pc = P.procureInfo(t.id); if (pc && (!d.cost || pc.cost < d.cost)) d.cost = pc.cost; });
+      return d;
+    }
+    function growthHtml(on) {
+      var d = on ? growthData() : { trap: [0, 1], den: [0, 1], lure: [0, 1], doors: 0, cost: 0 };
+      function cell(kind, cls, icon, fill, name, sub, subCls) {
+        return '<button type="button" class="gcell ' + cls + '" data-gcell="' + kind + '">' + ic(icon, 'c-' + cls, 18, fill) + name + '<span class="' + subCls + '">' + sub + '</span></button>';
+      }
+      return '<div class="growth' + (on ? '' : ' off') + '"><div class="gcells">' +
+        cell('trap', 'trap', 'spikes2', true, '함정 ×' + d.trap[0], 'Lv' + d.trap[1], 'lv') +
+        cell('den', 'den', 'dens', true, '대기실 ×' + d.den[0], 'Lv' + d.den[1], 'lv') +
+        cell('lure', 'lure', 'lure', false, '미끼', d.lure[0], 'dim') +
+        cell('door', 'door', 'door', false, '문 ' + d.doors, '옮기기', 'dim') + '</div>' +
+        '<button type="button" class="gmember" data-fsortie>' + ic('recruit', 'c-green', 26) + '부대 모집<span>마석 ' + d.cost + '</span></button></div>';
     }
 
-    // ---------- 보스 결과 (b = RUN.flow.show): 마지막 판 + 요약 + 분대별 펼침 + 버튼 ----------
+    // ---------- 의뢰가 없을 때(첫 시작·정산 중·데모 끝): 같은 홈 틀 + 판 자리에 안내 ----------
+    function idleHome(el) {
+      el.className = 'screen home idle';
+      el.appendChild(api.hud({ tab: 'field', state: 'op' }));
+      var ph = RUN.phase, msg = ph === 'settle' ? ['납품 정산이 기다려요', '정산을 마치면 새 의뢰를 고를 수 있어요.', 'result', '정산 보기']
+        : ph === 'demoEnd' ? ['데모는 여기까지예요', '의뢰 칸에서 지금까지의 기록을 볼 수 있어요.', 'board', '의뢰 보기']
+        : ['의뢰를 골라 시작하세요', '의뢰 한 장을 받으면 이곳에서 침입자가 자동으로 몰려와요.', 'board', '의뢰 보기'];
+      el.insertAdjacentHTML('beforeend', stageBarHtml(0, null, null, false) +
+        '<div class="arena">' + asideHtml() + '<div class="bbox idle"><div class="idlecard"><b>' + msg[0] + '</b><small>' + msg[1] + '</small>' +
+        '<button class="btn primary" type="button" data-go="' + msg[2] + '">' + msg[3] + '</button></div></div><div class="arena-tag">의뢰 없음</div></div>' +
+        cardRowHtml() + growthHtml(false));
+      el.querySelector('[data-fboss]').setAttribute('data-toast', '의뢰를 받으면 보스에 도전할 수 있어요');
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('[data-gcell],[data-fsortie],[data-card]') : null;
+        if (!b) return;
+        api.toast(b.hasAttribute('data-card') ? '보스전 카드는 의뢰를 받은 뒤 보스전에서 써요' : '의뢰를 받으면 열려요'); buzz('tap');
+      });
+    }
+
+    // ---------- 보스 결과 (b = RUN.flow.show): 위쪽에 작은 판 + 아래에서 올라온 창 (결론 · 분대별 펼침 · 카드 기록 · 버튼) ----------
     function resultView(el, b) {
       var pr = P.questProgress(), ok = b.success, complete = !!(pr && pr.complete), rows = b.rows || [];
-      el.classList.add('fld-result');
-      var hudEl = api.hud({ tab: 'field', label: '결과', state: 'res' });
-      el.appendChild(hudEl);
-      var board = div('zboard bt-board');
+      el.className = 'screen home res';
+      el.appendChild(api.hud({ tab: 'field', state: 'res' }));
+      el.insertAdjacentHTML('beforeend', '<div class="sbar boss res"><div class="sb-row">' + ic('crown', '', 15) + '<span class="sb-name">보스 ' + b.stage + ' · ' + esc(b.name) + '</span><span class="grow"></span>' +
+        '<span class="sb-left ' + (ok ? 'ok' : 'bad') + '">' + (ok ? '격퇴' : b.reached + '/' + b.squads + ' 도달') + '</span></div>' +
+        '<span class="sb-meter"><i style="width:' + (b.squads ? (ok ? 0 : b.reached / b.squads * 100) : 0) + '%"></i></span></div>' +
+        '<div class="arena small"><div class="bbox"><div class="bt-board zboard"></div></div><div class="arena-tag">보스 ' + b.stage + ' 결과</div></div>');
+      var board = el.querySelector('.bt-board');
       board.innerHTML = plainBoard(1);
-      el.appendChild(board);
       function selRoom(z) {
         board.querySelectorAll('.zc.sel').forEach(function (c) { c.classList.remove('sel'); });
         if (z) board.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.add('sel'); });
@@ -91,7 +176,7 @@
           '<span class="' + (r.state === 'reached' ? 'bad' : 'ok') + '">' + esc(what) + '</span><i class="tgarrow">▾</i></button>' +
           '<div class="rdet" hidden><div>지난 방 ' + r.rooms + '곳 · 끝: <b>' + esc(r.lastName || '—') + '</b></div><div>함정 피해 ' + r.trapDmg + (r.state === 'reached' ? ' · 남은 체력 ' + r.hpLeft + '%' : '') + '</div></div></div>';
       }).join('');
-      var panel = div('fld-panel',
+      var panel = div('rbody',
         '<h3 class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '보스 격퇴! 보스 검증 ' + b.stageAfter + '/' + b.total : '보스 실패: ' + b.reached + '/' + b.squads + '분대가 보물방 도달') + '</h3>' +
         '<div class="dim small-text bt-ressub">보스 ' + b.stage + '단계 · ' + esc(b.name) + ' · ' + b.tries + '번째 도전 · ' + b.time + '초</div>' +
         (b.reward || b.supply ? '<div class="bt-lv">마석 +' + ((b.supply || 0) + (b.reward || 0)) + ' (의뢰인 보급 ' + (b.supply || 0) + ' · 첫 성공 ' + (b.reward || 0) + ')</div>' : '') +
@@ -101,15 +186,15 @@
         }).join('') + '</div>' : '') +
         (ok ? '' : '<div class="small-text dim">잃는 것은 없어요. 문·시설을 바꾸고 다시 도전해 보세요 (같은 배치 = 같은 결과)</div>') +
         '<div class="bt-sub">분대별 기록 (눌러서 펼치기 · 판에 끝 방 표시)</div>' + rowsHtml);
-      el.appendChild(panel);
       var btns = ok
-        ? (complete ? '<button class="fbtn main bigbtn" type="button" data-deliver>납품<small>보스 검증 ' + pr.total + '/' + pr.total + ' 완료 · 정산은 회사에서</small></button>'
+        ? (complete ? '<button class="fbtn main bigbtn" type="button" data-deliver>납품<small>보스 검증 ' + pr.total + '/' + pr.total + ' 완료 · 정산은 의뢰 창에서</small></button>'
             : '<button class="fbtn main bigbtn" type="button" data-fretry>다음 보스 도전 ▶<small>' + esc(pr && pr.boss ? pr.boss.name : '') + '</small></button>') +
           '<button class="fbtn slim" type="button" data-fresume>일반 침입 재개</button>'
         : '<div class="factions"><button class="fbtn main" type="button" data-ffix>배치 고치기</button><button class="fbtn" type="button" data-fretry>다시 도전</button></div>' +
           '<button class="fbtn slim" type="button" data-fresume>일반 침입 재개</button>';
-      var dock = div('fld-dock', btns);
-      el.appendChild(dock);
+      var sheet = div('rsheet'), dock = div('rfoot', btns);
+      sheet.appendChild(panel); sheet.appendChild(dock);
+      el.appendChild(sheet);
       panel.addEventListener('click', function (e) {
         var t = e.target.closest ? e.target.closest('[data-sq]') : null;
         if (!t) return;
@@ -130,21 +215,21 @@
       var first = panel.querySelector('.rrow2');
       if (first) { first.classList.add('open'); first.querySelector('.rdet').hidden = false; }
       buzz(ok ? 'stamp' : 'warn');
-      tutStart('result', '.fld-dock .main');
+      tutStart('result', '.rsheet .main');
     }
 
     return function (el) {
       Z = window.ZONES || Z; // 판이 바뀌었을 수 있으니 화면을 만들 때마다 다시 잡는다
       var FL = P.flowInfo();
-      el.className = 'screen bt-screen fld';
+      el.className = 'screen home fld';
       if (!FL.on) { el.appendChild(div('card dim', '흐름 시험이 꺼져 있어요 (BATTLE_DATA.FLOW.on). 이 화면은 흐름 시험이 켜진 경우만 지원해요.')); return; }
-      if (RUN.phase !== 'play' || !RUN.quest) { noQuest(el); return; }
+      if (RUN.phase !== 'play' || !RUN.quest) { idleHome(el); return; }
       var plan = P.battlePlan();
       if (!plan && FL.show) { resultView(el, FL.show); return; }
-      if (!plan) { P.startBattle(); plan = P.battlePlan(); }   // 현장 운영: 들어오면 다음 일반 판
-      if (!plan) { noQuest(el); return; }
-      var boss = plan.mode === 'boss', restTimer = 0, endTimer = 0, saveT = 0;
-      api.onLeave(function () { clearTimeout(restTimer); clearTimeout(endTimer); clearTimeout(upTimer); flowSave(); });
+      if (!plan) { P.startBattle(); plan = P.battlePlan(); }   // 홈: 들어오면 다음 일반 판
+      if (!plan) { idleHome(el); return; }
+      var boss = plan.mode === 'boss', restTimer = 0, endTimer = 0, saveT = 0, noteT = 0;
+      api.onLeave(function () { clearTimeout(restTimer); clearTimeout(endTimer); clearTimeout(upTimer); clearTimeout(noteT); flowSave(); });
       var run = { alive: true, raf: 0 };
       api.onLeave(function () { run.alive = false; cancelAnimationFrame(run.raf); });
 
@@ -169,51 +254,54 @@
       }
       // 진행 중 전투 저장 (이 화면의 전투가 아직 진행 중일 때만. 보스 도전·배치 변경으로 바뀌었으면 안 함)
       function flowSave() { if (!U.dead && !S.done && P.battlePlan() === plan) checkpoint(); }
-      var cr = P.cardRule(), cardMax = cr.maxPerBattle;   // 카드는 후속 보스전용 (지금은 위기 사건을 무시)
+      var cr = P.cardRule(), cardMax = cr.maxPerBattle;   // 옛 위기 카드 규칙 (새 흐름은 보스 카드 창만 씀)
       function crisisInfo(kind) { return (cr.kinds || []).filter(function (k) { return k.id === kind; })[0] || { id: kind, label: '위기', text: '위기가 닥쳤어요!' }; }
       function lockWhy(n) { var f = P.floorInfo(n); return f && f.lockAt ? '보스 검증 ' + f.lockAt + '단계 달성 시 열림' : '이 의뢰에서는 열리지 않아요'; }
 
-      // ---------- 화면 틀: 상단 바 / 전투 한 줄 / 판 / 정보 줄 / 버튼 ----------
-      var hudEl = api.hud({ tab: 'field', label: boss ? '보스' : '운영', state: boss ? 'boss' : 'op' });
+      // ---------- 화면 틀 (시안 ①②): 상단 바 / 스테이지 막대(보스면 빨간 보스 막대) / 전투장 / (보스) 카드 줄 / 카드 6칸 / 시설 성장판(보스면 잠김 한 줄) ----------
+      var hudEl = api.hud({ tab: 'field', state: boss ? 'boss' : 'op' });
       el.appendChild(hudEl);
-      function stat(cls, label) { return '<span class="bt-st ' + cls + '"><small>' + label + '</small><b></b></span>'; }
-      var rc = recentInfo(), bi0 = P.bossInfo();
-      var infoHtml = boss
-        ? '<div class="fld-line boss"><b>보스 ' + plan.stage + '단계 · ' + esc(plan.name) + '</b> · ' + plan.groups.map(function (g) { return g.grade + '급 ' + esc(g.name) + ' ' + (g.count / BD.SQUAD) + '분대'; }).join(' · ') + '</div>'
-        : '<div class="fld-line fld-recent ' + rc.cls + '">최근: ' + esc(rc.text) + '</div><div class="fld-line dim">' +
-          (bi0 && !bi0.done ? '다음 보스 ' + bi0.stage + '단계: ' + esc(bi0.name) + ' · ' + bi0.squads + '분대' : '보스 검증을 모두 마쳤어요') + '</div>';
-      var pr0 = P.questProgress();
-      var bigBtn = pr0 && pr0.complete
-        ? '<button class="fbtn main bigbtn" type="button" data-deliver>납품<small>보스 검증 완료 · 정산은 회사에서</small></button>'
-        : '<button class="fbtn main bigbtn" type="button" data-fboss' + (bi0 && bi0.canChallenge ? '' : ' aria-disabled="true"') + '>보스 도전 ' + (bi0 ? bi0.stage : '') + '<small>' + esc(bi0 ? bi0.name : '') + '</small></button>';
-      var dockHtml = boss
-        ? '<div class="factions"><button class="fbtn slim bt-speed" type="button">배속 ×1</button><button class="fbtn slim" type="button" data-fpause>일시정지</button></div>' +
-          '<div class="fld-note fld-cardnote" hidden></div>' +
-          '<div class="fld-note">보스전 중에는 배치를 바꾸거나 탭을 옮길 수 없어요 (보스전 종료 후 이동)</div>'
-        : '<div class="factions"><button class="fbtn slim bt-speed" type="button">배속 ×1</button><button class="fbtn slim" type="button" data-fpause>일시정지</button></div>' +
-          '<div class="factions"><button class="fbtn" type="button" data-fsortie>출진<small>' + (RUN.site.auto ? '자동 편성 켬' : '자동 편성 꺼짐') + '</small></button>' +
-          '<button class="fbtn" type="button" data-fbuild>건설<small>빈 구역 ' + emptyZoneCount() + '곳</small></button></div>' +
-          bigBtn;
+      var bi0 = P.bossInfo(), pr0 = P.questProgress(), q0 = RUN.quest;
       el.insertAdjacentHTML('beforeend',
-        '<div class="bt-top"><span class="bt-surgechip' + (boss ? '' : ' normal') + '">' + (boss ? '보스 ' + plan.stage : '일반 ' + (plan.no || '')) + '</span>' +
-        '<span class="bt-time">0:00</span><div class="bt-prog"><i></i><span class="bt-pct">0%</span></div>' +
-        stat('kill', '처치') + stat('gold', '금') + stat('gem', '신석') + stat('reach sub', '보물방') + stat('flee sub', '퇴각') + '</div>' +
-        '<div class="zboard bt-board"></div>' +
-        ((Z.FLOORS || 1) > (Z.OPEN || 1) ? '<div class="bt-locked">🔒 지하 ' + (Z.OPEN + 1) + '층 · ' + lockWhy(Z.OPEN + 1) + '</div>' : '') +
-        '<div class="fld-info">' + infoHtml + '<div class="bt-log"></div></div>' +
-        '<div class="fld-dock">' + dockHtml + '</div>');
+        (boss ? bossBarHtml(plan, S.squads.length, S.squads.length) : stageBarHtml(plan.no || 1, bi0, pr0, true)) +
+        '<div class="arena">' + (boss ? '' : asideHtml()) +
+        '<div class="bbox"><div class="bt-board zboard"></div>' +
+        '<div class="spdbtns"><button class="bt-speed" type="button" aria-label="배속">×1</button><button type="button" data-fpause aria-label="일시정지"></button></div><div class="arena-note"></div></div>' +
+        (boss ? '<div class="cardbox" hidden></div>' : goalHtml(bi0, pr0, q0)) +
+        '<div class="arena-tag">' + (boss ? '보스 ' + plan.stage + ' · 보스전 진행 중' : (bi0 && !bi0.done ? bi0.stage : pr0 ? pr0.total : 1) + '-' + ((((plan.no || 1) - 1) % 5) + 1) + ' · 일반 침입 진행 중') + '</div></div>' +
+        (boss ? '<div class="cardline"><span class="cl-text fld-cardnote"></span></div>' : '') +
+        cardRowHtml() +
+        (boss ? '<div class="bosslock">' + ic('lock', '', 14) + '보스전 중에는 시설·부대를 바꿀 수 없어요</div>' : growthHtml(true)) +
+        '<div class="bt-log" hidden></div>');
 
-      var board = el.querySelector('.bt-board'), wrap = null;
+      var board = el.querySelector('.bt-board'), boxEl = el.querySelector('.bbox'), wrap = null;
       var layer = div('bt-layer'), fxLayer = div('bt-layer');
-      var logEl = el.querySelector('.bt-log'), dock = el.querySelector('.fld-dock');
-      var timeEl = el.querySelector('.bt-time'), progEl = el.querySelector('.bt-prog i'), pctEl = el.querySelector('.bt-pct');
-      var killEl = el.querySelector('.bt-st.kill b'), goldEl = el.querySelector('.bt-st.gold b'), gemEl = el.querySelector('.bt-st.gem b');
-      var reachEl = el.querySelector('.bt-st.reach b'), fleeEl = el.querySelector('.bt-st.flee b');
+      var logEl = el.querySelector('.bt-log'), noteEl = el.querySelector('.arena-note');
+      var timeEl = el.querySelector('.bt-time'), leftEl = el.querySelector('.sb-left'), meterEl = el.querySelector('.sb-meter i');
       var speedBtn = el.querySelector('.bt-speed'), pauseBtn = el.querySelector('[data-fpause]'), bossBtn = el.querySelector('[data-fboss]');
+      var cardlineEl = el.querySelector('.cardline'), cardboxEl = el.querySelector('.cardbox'), cslots = Array.prototype.slice.call(el.querySelectorAll('.cslot[data-card]'));
       var sheetEl = div('upsheet fsheet');
       sheetEl.hidden = true;
       el.appendChild(sheetEl);
-
+      // 아래 이어지는 코드는 같은 이름을 쓴다 (pauseBtn 등)
+      function note(text) {   // 판 위에 잠깐 뜨는 한 줄 (일반 판 결과)
+        if (!noteEl) return;
+        noteEl.textContent = text; noteEl.classList.add('on');
+        clearTimeout(noteT); noteT = setTimeout(function () { noteEl.classList.remove('on'); }, 4000);
+      }
+      // 패널이 열려 판이 위쪽 150px 띠로 줄었을 때: 지금 싸우는 분대 쪽이 보이게 판을 옮겨 놓는다
+      var cropAt = null;
+      function crop() {
+        if (!document.body.classList.contains('paneled') || !boxEl || !wrap || run.alive === false) return;
+        var H = boxEl.offsetHeight, ys = [], fy;
+        S.squads.forEach(function (q) { if ((q.state === 'move' || q.state === 'fight') && (q.floor || 1) === V.floor) ys.push(q.y); });
+        fy = ys.length ? ys.reduce(function (a, b) { return a + b; }, 0) / ys.length : V.off + V.rows / 2;
+        var px = wrap.offsetTop + (fy - V.off) / V.rows * wrap.offsetHeight, top = Math.max(0, Math.min(H - 150, px - 75));
+        if (cropAt === null || Math.abs(cropAt - top) > 3) { cropAt = top; boxEl.style.setProperty('--crop', (-top) + 'px'); }
+      }
+      function onPanelChange() { cropAt = null; crop(); }
+      document.addEventListener('panelchange', onPanelChange);
+      api.onLeave(function () { document.removeEventListener('panelchange', onPanelChange); });
       // ---------- 카드 전용 화면 (이벤트 카드 · 침입자 카드 공통 바탕) ----------
       // 화면 전체(폭은 휴대폰 폭까지)를 덮는 어두운 화면. 튜토리얼 말풍선(#tut)은 이 화면보다 위에 있고, 그 높이(+하단 막대)만큼 아래를 비워 가리지 않는다
       var tutEl = document.getElementById('tut'), tabsEl = document.getElementById('tabs');
@@ -270,13 +358,16 @@
         board.querySelectorAll('.zc[data-z="' + z + '"]').forEach(function (c) { c.classList.remove(cls); void c.offsetWidth; c.classList.add(cls); });
       }
       function drawScore() {
-        var r = SIM.result(S);
-        killEl.textContent = r.kills + '/' + r.total; goldEl.textContent = '+' + money(r.gold); gemEl.textContent = '+' + Math.floor(r.gems);
-        reachEl.textContent = r.reached; fleeEl.textContent = r.retreated;
-        var sec = Math.floor(SIM.elapsed(S));   // 지난 시간 (판 전체, 시간 제한 없음 = 결정 C)
-        timeEl.textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
-        var p = SIM.progress(S);
-        progEl.style.width = p + '%'; pctEl.textContent = Math.floor(p) + '%';
+        if (timeEl) {
+          var sec = Math.floor(SIM.elapsed(S));   // 지난 시간 (판 전체, 시간 제한 없음 = 결정 C)
+          timeEl.textContent = Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2);
+        }
+        if (leftEl) {   // 보스 막대: 남은 분대 (끝난 분대 = 보물방 도달·퇴각·전멸)
+          var tot = S.squads.length, rem = 0;
+          S.squads.forEach(function (q) { if (q.state !== 'dead' && q.state !== 'reached' && q.state !== 'retreat') rem++; });
+          leftEl.textContent = '남은 분대 ' + rem + '/' + tot;
+          if (meterEl) meterEl.style.width = (tot ? rem / tot * 100 : 0) + '%';
+        }
       }
 
       // ---------- 분대·몬스터 도트 ----------
@@ -358,6 +449,7 @@
           o.el.classList.toggle('out', !!o.m.out);   // 퇴각한 부대 (흐리게)
         });
         drawScore();
+        crop();
       }
 
       // ---------- 일어난 일 연출 ----------
@@ -544,42 +636,28 @@
       }
 
 
-      // ---------- 보스 카드 창 (API.md 18절): S.pick이 있으면 전투가 멈추고 이 창이 아래에 뜬다 ----------
-      // 창 = 아래 시트(sheetEl 재사용, sheetKind 'card'). 판은 위에 그대로 보인다 (위기 방 = 빨간 테두리, 고를 수 있는 방 = 초록 점선). 상태는 전부 S.pick (후보·sel), 여기는 고른 방(cd.room)만 기억
-      var cd = { open: false, room: '' }, cardsOn = !!(S.cards && S.cards.on);
+      // ---------- 보스 카드 (API.md 18절, 시안 ②): S.pick이 있으면 전투가 멈추고, 카드 6칸 중 후보만 밝아진다 ----------
+      // 판 아래 겹친 작은 상자 = 고른 카드 설명 + [사용](방을 고르는 카드는 [방 고르기]), 판 아래 줄 = "카드 n/2 · 이유" + [넘기기].
+      // 방을 고르는 카드는 [방 고르기] -> 판에서 초록 점선 방 누르기 -> 줄이 [취소][사용]으로 바뀜. 상태는 전부 S.pick(후보·sel), 여기는 고른 방(cd.room)·미리 고른 카드(cd.pre)만 기억
+      var cd = { open: false, room: '', pre: '' }, cardsOn = !!(S.cards && S.cards.on);
       function cdMax() { var p = SIM.pickInfo(S); return p ? p.max : 2; }
       function cdWhy(inf) {   // 이 창이 뜬 이유 (위기 종류는 규칙 표의 라벨)
-        if (inf.slot === 'enter') return '첫 침입자가 던전에 들어섰어요';
+        if (inf.slot === 'enter') return '첫 침입자 진입! 전투 멈춤';
         var ks = (inf.kinds || []).map(function (k) { return crisisInfo(k).label; });
-        return '위기! ' + (ks.length ? ks.join(' · ') : '침입자가 보물방에 다가와요');
+        return '위기! ' + (ks.length ? ks.join(' · ') : '보물방에 다가와요') + ' · 전투 멈춤';
       }
       function cdTarget(c) {   // 대상 한 줄
-        if (c.id === 'smoke') return '자동 · 이 층에서 움직이는 ' + (c.ids || []).length + '분대 · ' + c.sec + '초';
+        if (c.id === 'smoke') return '자동 · 움직이는 ' + (c.ids || []).length + '분대 · ' + c.sec + '초';
         if (c.id === 'reserve') return '방 고르기 · 빈 대기실 ' + (c.rooms || []).length + '곳 · ' + esc(c.unitName) + ' ' + c.count + '명';
         if (c.id === 'trigger') return '방 고르기 · 침입자 있는 함정 ' + (c.rooms || []).length + '곳 · 피해 ' + (c.rooms || []).map(function (r) { return r.dmg; }).join('/');
         return c.target === 'room' ? '방 고르기' : '자동';
       }
       function cdCand(inf, id) { return (inf.cands || []).filter(function (c) { return c.id === id; })[0] || null; }
-      function cdListHtml(inf) {
-        var h = '<div class="upbody"><div class="uphead"><b>보스 카드 · ' + inf.n + '/' + inf.max + '번째</b><span class="uplv">남은 기회 ' + inf.left + '회</span></div>' +
-          '<div class="cdwhy">' + esc(cdWhy(inf)) + '</div>';
-        h += inf.cands.map(function (c) {
-          return '<button class="cdopt" type="button" data-cd="' + c.id + '"><span class="cdname"><b>' + esc(c.name) + '</b><span class="chip' + (c.target === 'room' ? ' accent' : '') + '">' + (c.target === 'room' ? '방 고르기' : '바로 사용') + '</span></span>' +
-            '<span class="cdtx">' + esc(c.text) + '</span><span class="cdtg">' + cdTarget(c) + '</span></button>';
-        }).join('');
-        return h + '</div><div class="upfoot"><span class="upwhy dim">전투가 멈춰 있어요. 이번 보스전에만 써요</span><button class="upbtn" type="button" data-cd-skip>넘기기</button></div>';
-      }
       function cdRoomInfo(c, z) {
         var r = (c.rooms || []).filter(function (x) { return x.z === z; })[0];
         if (!r) return '';
         if (c.id === 'reserve') return api.zoneName(z) + ' 대기실 · ' + esc(c.unitName) + ' ' + c.count + '명이 서요';
         return api.zoneName(z) + ' 함정 · 안에 ' + (r.ids || []).length + '분대 · 피해 ' + r.dmg;
-      }
-      function cdSelHtml(inf) {
-        var c = cdCand(inf, inf.sel), ok = !!(c && cd.room && (c.rooms || []).some(function (r) { return r.z === cd.room; }));
-        return '<div class="upbody"><div class="uphead"><b>' + esc(c ? c.name : '') + ' · 방을 골라요</b><span class="uplv">' + inf.n + '/' + inf.max + '번째</span></div>' +
-          '<div class="cdwhy ' + (ok ? 'ok' : '') + '">' + (ok ? '고른 방: ' + cdRoomInfo(c, cd.room) : '판에서 초록 점선 방 하나를 눌러요 (' + (c && c.rooms ? c.rooms.length : 0) + '곳)') + '</div></div>' +
-          '<div class="upfoot"><button class="upbtn" type="button" data-cd-cancel>취소</button><button class="upbtn main' + (ok ? '' : ' off') + '" type="button" data-cd-use aria-disabled="' + (ok ? 'false' : 'true') + '">사용' + (ok ? ' · ' + api.zoneName(cd.room) : '') + '</button></div>';
       }
       function cdMarks(inf) {   // 판 표시: 위기 방(빨강) · 고를 수 있는 방(초록 점선) · 고른 방(주황)
         board.querySelectorAll('.zc.cd-where, .zc.cd-ok, .zc.sel').forEach(function (c) { c.classList.remove('cd-where', 'cd-ok', 'sel'); });
@@ -594,13 +672,33 @@
         var inf = SIM.pickInfo(S);
         if (!inf) { closeCard(); return; }
         if (inf.sel && !cdCand(inf, inf.sel)) { SIM.pickCancel(S); inf = SIM.pickInfo(S); }
-        sheetEl.hidden = false;
-        sheetEl.innerHTML = inf.sel ? cdSelHtml(inf) : cdListHtml(inf);
+        var sel = inf.sel ? cdCand(inf, inf.sel) : null;
+        if (!sel && !cdCand(inf, cd.pre)) cd.pre = inf.cands.length ? inf.cands[0].id : '';
+        var cur = sel || cdCand(inf, cd.pre);
+        el.classList.add('picking');
+        cslots.forEach(function (b) {
+          var c = cdCand(inf, b.getAttribute('data-card'));
+          b.classList.toggle('cand', !!c); b.classList.toggle('sel', !!c && !!cur && cur.id === c.id);
+        });
+        if (sel) {
+          var ok = !!(cd.room && (sel.rooms || []).some(function (r) { return r.z === cd.room; }));
+          cardlineEl.innerHTML = '<span class="cl-text' + (ok ? ' ok' : '') + '">' + (ok ? '고른 방: ' + cdRoomInfo(sel, cd.room) : '초록 점선 방을 눌러요 (' + (sel.rooms ? sel.rooms.length : 0) + '곳)') + '</span>' +
+            '<button class="cl-btn" type="button" data-cd-cancel>취소</button><button class="cl-btn main' + (ok ? '' : ' off') + '" type="button" data-cd-use aria-disabled="' + (ok ? 'false' : 'true') + '">사용</button>';
+          cardboxEl.hidden = true; cardboxEl.innerHTML = '';
+        } else {
+          cardlineEl.innerHTML = '<span class="cl-text">카드 ' + inf.n + '/' + inf.max + ' · ' + esc(cdWhy(inf)) + '</span><button class="cl-btn" type="button" data-cd-skip>넘기기</button>';
+          if (cur) {
+            var lk = CARD_LOOK[cur.id] || ['doc', ''];
+            cardboxEl.hidden = false;
+            cardboxEl.innerHTML = ic(lk[0], lk[1], 30) + '<div class="cb-t"><b>' + esc(cur.name) + '</b><span>' + esc(cur.text) + '</span><small>' + cdTarget(cur) + '</small></div>' +
+              '<button class="cb-use" type="button" data-cd-go>' + (cur.target === 'room' ? '방 고르기' : '사용') + '</button>';
+          } else { cardboxEl.hidden = true; cardboxEl.innerHTML = ''; }
+        }
         cdMarks(inf);
       }
-      function openCardSheet() {   // 창이 열리는 순간이 저장 지점 (새로고침해도 같은 창)
+      function openCardUi() {   // 창이 열리는 순간이 저장 지점 (새로고침해도 같은 창)
         var inf = SIM.pickInfo(S); if (!inf) return;
-        cd.open = true; cd.room = ''; sheetKind = 'card'; el.classList.add('upopen');
+        cd.open = true; cd.room = ''; cd.pre = '';
         paint();
         drawCard();
         (inf.where || []).forEach(function (w) {
@@ -612,16 +710,17 @@
         checkpoint();
       }
       function closeCard() {
-        cd.open = false; cd.room = ''; sheetKind = null;
-        sheetEl.hidden = true; sheetEl.innerHTML = ''; el.classList.remove('upopen');
+        cd.open = false; cd.room = ''; cd.pre = '';
+        el.classList.remove('picking');
+        cslots.forEach(function (b) { b.classList.remove('cand', 'sel'); });
+        if (cardboxEl) { cardboxEl.hidden = true; cardboxEl.innerHTML = ''; }
         cdMarks(null);
         drawCardNote();
       }
       function drawCardNote() {
-        var n = el.querySelector('.fld-cardnote'); if (!n) return;
+        if (!cardlineEl || cd.open) return;
         var r = SIM.result(S).cards, last = r.log.length ? r.log[r.log.length - 1] : null;
-        n.hidden = !cardsOn;
-        n.textContent = '카드 기회 ' + SIM.cardsLeft(S) + '회 남음' + (last ? ' · 마지막: ' + last.name : '');
+        cardlineEl.innerHTML = '<span class="cl-text fld-cardnote">' + (cardsOn ? '카드 기회 ' + SIM.cardsLeft(S) + '회 남음' + (last ? ' · 마지막: ' + esc(last.name) : '') : '') + '</span>';
       }
       function cdSelect(id) {
         var r = SIM.pickSelect(S, id);
@@ -654,6 +753,16 @@
         if (!(c.rooms || []).some(function (r) { return r.z === z; })) { api.toast(api.zoneName(z) + '에는 쓸 수 없어요 (초록 점선 방만)'); buzz('warn'); return; }
         cd.room = z; buzz('tap'); drawCard();
       }
+      // 카드 칸을 누름: 카드 기회 중이면 그 카드를 고른다 (후보만). 아니면 카드 설명 한 줄
+      function slotClick(id) {
+        var inf = cd.open ? SIM.pickInfo(S) : null, list = (window.BATTLE_DATA.BOSS_CARDS || {}).list || [], card = list.filter(function (c) { return c.id === id; })[0];
+        if (!inf) { api.toast((card ? card.name + ': ' + card.text : CARD_SHORT[id]) + ' (보스전에서 카드 기회가 올 때 써요)'); buzz('tap'); return; }
+        var c = cdCand(inf, id);
+        if (!c) { api.toast((card ? card.name : CARD_SHORT[id]) + ': 지금은 쓸 수 없어요'); buzz('warn'); return; }
+        if (inf.sel && inf.sel !== id) SIM.pickCancel(S);
+        else if (inf.sel === id) return;
+        cd.pre = id; cd.room = ''; buzz('tap'); drawCard(); checkpoint();
+      }
       // 연막·임시 수비대·긴급 작동의 화면 연출 (사건 card): 일어난 일만 그린다. 연막 초는 분대 위 글(paint)이 보여 주고, 여기는 떠오르는 글
       function cardFx(e) {
         if (e.card === 'smoke') {
@@ -667,6 +776,7 @@
           flashZone(e.z, 'bt-trig'); floatText(t.x, t.y - 0.2, '긴급 작동 -' + e.lost, 'trap');
         }
       }
+
 
       // ---------- 아래 창: 시설 강화 · 출진 (기획서 3·5·6절) ----------
       // 열려 있는 동안 전투는 멈춘다(U.hold). 확정 배치를 하나라도 바꾸면(강화·출진·조달) progress.js가 진행 중 일반 판을 버리고, 창을 닫을 때 새 배치로 새 판이 시작된다.
@@ -804,17 +914,6 @@
       }
       sheetEl.addEventListener('click', function (e) {
         var q = function (a) { return e.target.closest ? e.target.closest('[' + a + ']') : null; }, b;
-        if (sheetKind === 'card') {   // 보스 카드 창
-          if ((b = q('data-cd'))) { var inf = SIM.pickInfo(S), c = inf && cdCand(inf, b.getAttribute('data-cd')); if (!c) return; if (c.target === 'room') cdSelect(c.id); else cdUse(c.id); return; }
-          if (q('data-cd-skip')) { cdSkip(); return; }
-          if (q('data-cd-cancel')) { cdCancel(); return; }
-          if ((b = q('data-cd-use'))) {
-            var pi = SIM.pickInfo(S);
-            if (b.getAttribute('aria-disabled') === 'true' || !pi || !pi.sel || !cd.room) { api.toast('먼저 판에서 방을 골라요'); buzz('warn'); return; }
-            cdUse(pi.sel, cd.room);
-          }
-          return;
-        }
         if (q('data-sheet-close')) { buzz('tap'); closeSheet(); return; }
         if (sheetKind === 'up') {
           if (q('data-up-do')) {
@@ -846,7 +945,7 @@
         var c = e.target.closest ? e.target.closest('.zc[data-z]') : null;
         if (!c) return;
         var z = c.getAttribute('data-z'), f = Z.FAC[RUN.site.zones[z]];
-        if (sheetKind === 'card') { cdBoardClick(z); return; }   // 카드 대상 고르기
+        if (cd.open) { cdBoardClick(z); return; }   // 카드 대상 고르기
         if (boss) { api.toast(api.zoneName(z) + ': 보스전 중에는 바꿀 수 없어요'); buzz('tap'); return; }
         if (sheetKind === 'sortie') { buzz('tap'); api.toast(api.zoneName(z) + (f ? ' — ' + f.name : '')); return; }
         var ui = f ? P.upgradeInfo(z) : null;
@@ -862,13 +961,14 @@
         closeSheet();
       });
 
-      // ---------- 버튼: 배속 · 일시정지 · 출진 · 건설 · 보스 도전 ----------
+      // ---------- 버튼: 배속 · 일시정지 (판 모서리) · 성장판 칸(건설 모드) · 부대 모집(출진 창) · 카드 칸 · 보스 도전 ----------
       function drawSpeed() {
         var sp = BD.SPEEDS[U.speedIdx];
-        speedBtn.textContent = '배속 ×' + sp; speedBtn.classList.toggle('on', sp > 1);
+        speedBtn.textContent = '×' + sp; speedBtn.classList.toggle('on', sp > 1);
       }
       function drawDock() {
-        pauseBtn.textContent = U.paused ? '계속 ▶' : '일시정지 ❚❚';
+        pauseBtn.innerHTML = U.paused ? ic('play', '', 14, true) : ic('pause', '', 14);
+        pauseBtn.setAttribute('aria-label', U.paused ? '계속' : '일시정지');
         pauseBtn.disabled = U.phase === 'result';
         speedBtn.disabled = U.phase === 'result';
       }
@@ -880,9 +980,27 @@
         buzz('tap');
       });
       pauseBtn.addEventListener('click', function () { if (U.phase !== 'fight') return; U.paused = !U.paused; flowSave(); drawDock(); buzz('tap'); });
-      var fsortie = el.querySelector('[data-fsortie]'), fbuild = el.querySelector('[data-fbuild]');
-      if (fsortie) fsortie.addEventListener('click', function () { buzz('tap'); openSheet('sortie'); });
-      if (fbuild) fbuild.addEventListener('click', function () { buzz('tap'); api.go('build', true); });   // 떠나면서 저장(멈춤). 확정하면 이 일반 판은 버리고 새 배치로 다음 판, 취소하면 이어서
+      el.addEventListener('click', function (e) {
+        var q = function (a) { return e.target.closest ? e.target.closest('[' + a + ']') : null; }, b;
+        if ((b = q('data-gcell'))) {   // 성장판 칸 = 건설 모드 (그 시설이 골라진 채. 문 칸 = 문 옮기기). 떠나면서 저장(멈춤). 확정하면 이 일반 판은 버리고 새 배치로 다음 판, 취소하면 이어서
+          buzz('tap'); api.setPreset(b.getAttribute('data-gcell')); api.go('build', true); return;
+        }
+        if (q('data-fsortie')) { buzz('tap'); openSheet('sortie'); return; }
+        if ((b = q('data-card'))) { slotClick(b.getAttribute('data-card')); return; }
+        if (q('data-cd-skip')) { cdSkip(); return; }
+        if (q('data-cd-cancel')) { cdCancel(); return; }
+        if (q('data-cd-go')) {
+          var inf = SIM.pickInfo(S), c = inf && cdCand(inf, cd.pre);
+          if (!c) return;
+          if (c.target === 'room') cdSelect(c.id); else cdUse(c.id);
+          return;
+        }
+        if ((b = q('data-cd-use'))) {
+          var pi = SIM.pickInfo(S);
+          if (b.getAttribute('aria-disabled') === 'true' || !pi || !pi.sel || !cd.room) { api.toast('먼저 판에서 방을 골라요'); buzz('warn'); return; }
+          cdUse(pi.sel, cd.room);
+        }
+      });
       if (bossBtn) bossBtn.addEventListener('click', function () {
         if (bossBtn.getAttribute('aria-disabled') === 'true') { api.toast((bi0 && bi0.why) || '지금은 도전할 수 없어요'); buzz('warn'); return; }
         var r = P.challengeBoss();
@@ -905,8 +1023,7 @@
         }
         var line = repLine(rep);
         recent.push({ text: line, ok: rep.defended }); while (recent.length > 3) recent.shift();
-        var rl = el.querySelector('.fld-recent');
-        if (rl) { rl.textContent = '최근: ' + line; rl.className = 'fld-line fld-recent ' + (rep.defended ? 'good' : 'bad'); }
+        note(line);
         log('다음 일반 판까지 잠깐 쉬어요…', 'dim');
         scheduleNext(Math.max(0, FL.rest) * 1000);
       }
@@ -925,7 +1042,7 @@
         run.raf = requestAnimationFrame(frame);
         var real = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
         if (U.hold || U.dead) return;   // 아래 창이 열려 있는 동안은 멈춤
-        if (U.phase === 'fight' && S.pick) { if (!cd.open) openCardSheet(); return; }   // 카드 선택 대기: 전투 완전 정지 (일시정지 중이어도, 새로고침 뒤에도 같은 창)
+        if (U.phase === 'fight' && S.pick) { if (!cd.open) openCardUi(); return; }   // 카드 선택 대기: 전투 완전 정지 (일시정지 중이어도, 새로고침 뒤에도 같은 창)
         if (U.phase === 'fight' && !U.paused) {
           // 카드 전용 화면이 떠 있는 동안 전투는 완전히 멈춘다 (고를 때까지 기다림). 층 알림(U.notice·S.pending)이 떠 있는 동안도 멈춤: 누르면 다음 층 시작
           if (U.card || U.notice || U.floorNotice) fitOverlay();
@@ -940,7 +1057,7 @@
           checkCards();
           checkFloorNotice();
           paint();
-          if (S.pick && !cd.open) { openCardSheet(); return; }   // 이번 프레임에 카드 기회가 생김
+          if (S.pick && !cd.open) { openCardUi(); return; }   // 이번 프레임에 카드 기회가 생김
           if (S.done) finish();
           else if ((saveT += real) >= FL.saveEvery) { saveT = 0; flowSave(); }
         } else if (U.phase === 'fight') {

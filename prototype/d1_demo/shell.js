@@ -1,22 +1,23 @@
-/* D1 첫 데모 화면 (순수 JS, 임시 숫자·임시 문구). UI 개편 (2026-10-29): 기준 docs/specs/ui_restructure.md 사용자 확정본, 지시서 refs/brief_ui_restructure_ui.md
+/* D1 데모 화면 (순수 JS, 임시 숫자·임시 문구). DS 구조 UI 다시 만들기 (2026-10-29): 시안 refs/mockup_ds_ui_2026-10-29, 지시서 refs/brief_ds_ui.md
  *
- * 화면 틀 (기획서 2절)
- *  - 하단 탭 3개: 회사 · 현장 · 군단 (순서·이름 고정, 행동 버튼으로 바꾸지 않음). 군단은 첫 전투 정산 전 `잠김 · 첫 전투 후 열림`. 마계·내 집·가운데 홈/다음 주/운영 버튼은 없다(데모에 없어 숨김).
- *  - 공통 상단 바 hud(): 상태(회사/운영/건설/보스/결과/군단) · 회사 레벨 · 현장 전투력(의뢰 없으면 —) · 그 탭에 맞는 재화(회사 = 회사 금 / 현장 = 마석 + 회사 금 / 군단 = 신석 + 회사 금) · 설정 /
- *    다음 목표 한 줄 / (현장만) 보스 검증 n/5 막대. 전투력은 참고 수치, 납품 조건처럼 그리지 않는다.
- *  - 현장 = 같은 5x7 판 4상태. 운영·보스 도전·보스 결과 = battle.js (SCREEN_PLUGINS.field), 건설 = build.js (SCREEN_PLUGINS.build, 탭은 현장).
- *    출진·부대 조달·보충은 현장 [출진] 창, 시설 강화는 지은 시설을 누르는 창 (둘 다 battle.js). 보스 도전 중에는 탭이 보이되 이동이 막힌다(bossLocked).
- *  - 회사 = 의뢰가 없으면 의뢰 게시판이 첫 영역(수락 -> 현장), 있으면 의뢰 요약 + [현장으로] + 사무실 인물 무대 + 작품집. 납품 실행 입구는 현장 5/5 결과 하나, 회사는 정산·안내.
- *    납품 직후 정산(settle)과 데모 끝(demoEnd)은 회사 쪽 화면. 군단 = 부족 · 친위대 하위 탭, 2열 카드 + 아래 상세 (출진 배치·조달은 현장).
+ * 화면 틀 (DS 구조 그대로 먼저, 덜어내는 건 나중)
+ *  - 홈 = 앱을 켜면 보이는 화면 = 던전에서 일반 침입이 늘 자동으로 도는 화면 (battle.js SCREEN_PLUGINS.field). 위에서 아래로:
+ *    상단 바(소장 초상·Lv·전투력·경험치·마석·금) · 스테이지 막대(단계·일반 판 점·지난 시간·[보스 도전]) · 전투장(판 + 왼쪽 의뢰·작품집·랭킹 / 오른쪽 임무·출석·설정 + 다음 목표 상자)
+ *    · 카드 6칸 · 시설 성장판(함정·대기실·미끼·문 + 부대 모집) · 하단 탭 6개 회사·카드·군단·도전·마계·상점.
+ *  - 탭·왼쪽/오른쪽 아이콘을 누르면 홈 위로 패널이 아래에서 올라온다 (이 파일 PANELS). 위쪽 약 150px에는 전투가 계속 보인다 (홈은 그대로 살아 있고 패널은 그 위에 얹힌 별도 창).
+ *    누른 탭 자리는 [닫기]로 바뀐다. 패널이 열려 있어도 일반 침입은 계속 돈다. 보스 도전 중에는 패널·탭 이동이 막힌다 (bossLocked).
+ *  - 건설 모드 = 성장판 칸을 누르면 (그 시설이 골라진 채) 판을 크게 보여 주는 별도 화면 (build.js SCREEN_PLUGINS.build, 해시 #build). 문 칸 = 문 옮기기.
+ *  - 기능이 아직 없는 칸(랭킹·임무·출석·카드 4~6칸·도전·마계·상점·부대장·총 보유 효과·걸러 보기·일괄 강화·회사 운영·연구)은 디자인 없이 회색 상자 + 이름 + 자물쇠만, 누르면 토스트.
  *
  * 규칙
- *  - 한 페이지 안에서 주소 끝의 해시(#company 등)로 화면을 바꾼다. 브라우저 뒤로 가기 = 이전 화면. 예전 이름 #home #battle #sortie = 현장, #units = 군단은 받아서 옮겨 준다.
- *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고, 값을 바꾸는 것은 PROGRESS의 정해진 함수(buildZone·commitLayout·challengeBoss·deliver …)로만 한다.
- *    읽는 함수 = API.md 13~15절. 화면은 흐름 시험(BATTLE_DATA.FLOW.on = true)이 켜진 경우만 지원한다 (옛 주 단위 화면 코드는 지움, 로직은 남아 있음).
- *  - 화면 지킴이(guardScreen): 정산 중이면 어느 화면이든 result로, 보스 도전 중이면 현장으로, 데모 끝이면 회사로, 군단·작품집은 열림 조건 전엔 막는다.
- *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }. 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; }.
+ *  - 한 페이지 안에서 주소 끝의 해시로 화면을 바꾼다: #field = 홈, #build = 건설, #company #cards #corps #challenge #demon #shop #board(의뢰) #gallery #settings #result(납품 정산) = 홈 + 그 패널.
+ *    패널을 열고 닫을 때는 홈을 다시 그리지 않는다 (전투가 안 끊김). 브라우저 뒤로 가기 = 패널 닫기. 예전 이름 #home #battle #sortie = 홈, #units = 군단은 받아서 옮겨 준다.
+ *  - 진행 상태와 규칙은 progress.js (window.PROGRESS). 이 파일은 그 값을 보고 그리기만 하고, 값을 바꾸는 것은 PROGRESS의 정해진 함수(buildZone·commitLayout·challengeBoss·deliver·upgradeTribe·setAutoDeploy …)로만 한다.
+ *    읽는 함수 = API.md 13~18절. 화면은 흐름 시험(BATTLE_DATA.FLOW.on = true)이 켜진 경우만 지원한다.
+ *  - 화면 지킴이(guardScreen): 정산 중이면 어느 화면이든 #result로, 보스 도전 중이면 홈으로, 데모 끝이면 건설 불가, 군단·작품집은 열림 조건 전엔 막는다.
+ *  - 화면 하나 = 함수 하나: SCREENS.이름 = function (el) { el에 내용을 채운다 }. 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; }. 패널 하나 = PANELS.이름 = function (box) { box에 채운다 }.
  *  - 전환 애니메이션은 앞으로 갈 때만 (var(--dur-sheet) var(--ease-out)). 뒤로/닫기는 즉시.
- *  - 튜토리얼: 은발 마왕 말풍선(#tut). 흐름 시험 동안은 꺼 둠(tutOn). 새 튜토리얼은 나중에 새 동선으로 다시 만든다 (옛 "다음 주" 문구는 lines.js에서 지움).
+ *  - 튜토리얼: 은발 마왕 말풍선(#tut). 흐름 시험 동안은 꺼 둠(tutOn). 새 튜토리얼은 나중에 새 동선으로 다시 만든다.
  *  - 용어: 화면 글에 "퀘스트"를 쓰지 않는다 (의뢰·보스 검증). 회사 금(영구) · 마석(현장 전용) · 신석(과금)은 따로 표시한다.
  *  - 숫자는 가짜(균형 없음). 상태(RUN)는 progress.js가 localStorage에 자동 저장한다. 설정은 이 파일이 따로 저장.
  */
@@ -29,16 +30,61 @@
   // ---------- 진행 상태 (progress.js) ----------
   var P = window.PROGRESS, RUN = P.RUN;
 
-  // ---------- 하단 탭 3개 (기획서 2절): 회사 · 현장 · 군단 ----------
-  // state: open = 열림 · gate = 진행하면 열림(잠김 + 조건, 지금 열렸는지는 tabState가 정함)
+  // ---------- 아이콘 (시안의 선 그림. 색은 CSS 클래스 .c-* 로만 칠한다) ----------
+  var ICON = {
+    helm: '<path d="M5 12a7 7 0 0114 0z"/><path d="M3 12h18"/><circle cx="12" cy="17" r="3"/>',
+    gem: '<path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18"/>',
+    gem2: '<path d="M12 3l8 9-8 9-8-9z"/>',
+    coin: '<circle cx="12" cy="12" r="8"/><path d="M12 8v8"/>',
+    crown: '<path d="M3 18h18l-2-10-5 4-2-7-2 7-5-4z"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
+    doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/>',
+    gallery: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 16l5-5 4 4 3-3 4 4"/>',
+    rank: '<path d="M5 20V10M12 20V4M19 20v-7"/>',
+    task: '<path d="M9 11l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="2"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+    smoke: '<path d="M4 14a4 4 0 014-4 5 5 0 019.6 1A3.5 3.5 0 0117 18H7a3 3 0 01-3-4z"/>',
+    shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+    spikes: '<path d="M4 20l4-10 4 10M12 20l4-10 4 10"/>',
+    spikes2: '<path d="M4 18l4-10 4 10zM12 18l4-10 4 10z"/>',
+    dens: '<circle cx="7" cy="12" r="3"/><circle cx="12" cy="12" r="3"/><circle cx="17" cy="12" r="3"/>',
+    lure: '<path d="M12 3v6M8 9h8l-1 12H9z"/>',
+    door: '<rect x="7" y="3" width="10" height="18" rx="1"/><circle cx="14" cy="12" r="1"/>',
+    recruit: '<circle cx="9" cy="8" r="3"/><circle cx="16" cy="9" r="2.5"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6M14 14c3 0 6 2 6 5"/>',
+    person: '<circle cx="12" cy="9" r="5"/><path d="M5 21c0-4 3-6 7-6s7 2 7 6z"/>',
+    blob: '<path d="M4 18c0-6 4-11 8-11s8 5 8 11z"/>',
+    star: '<path d="M12 3l3 6 6 1-4 4 1 7-6-3-6 3 1-7-4-4 6-1z"/>',
+    t_company: '<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/>',
+    t_card: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6"/>',
+    t_corps: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6"/><circle cx="17" cy="9" r="2.5"/>',
+    t_challenge: '<path d="M4 20h16M6 20V9l6-5 6 5v11"/><path d="M10 20v-4h4v4"/>',
+    t_demon: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+    t_shop: '<path d="M4 9l2-5h12l2 5"/><path d="M4 9h16v11H4z"/><path d="M9 20v-6h6v6"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    play: '<path d="M8 5l11 7-11 7z"/>',
+    pause: '<path d="M8 5v14M16 5v14"/>'
+  };
+  // 아이콘 한 개: ic('lock', 'c-dim', 16, 채움?) -> svg 글. 색은 .c-* 클래스(맨 위 변수)로
+  function ic(name, cls, size, fill) {
+    return '<svg class="ic' + (fill ? ' fill' : '') + (cls ? ' ' + cls : '') + '" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICON[name] || '') + '</svg>';
+  }
+
+  // ---------- 하단 탭 6개 (DS 구조): 회사 · 카드 · 군단 · 도전 · 마계 · 상점 ----------
+  // gate = 진행하면 열림(군단: 첫 전투 후), soon = 아직 기능 없음 (누르면 패널에 "잠김" 한 줄)
   var TABS = [
-    { id: 'company', label: '회사', state: 'open' },
-    { id: 'field',   label: '현장', state: 'open' },
-    { id: 'corps',   label: '군단', state: 'gate' }
+    { id: 'company',   label: '회사', icon: 't_company' },
+    { id: 'cards',     label: '카드', icon: 't_card' },
+    { id: 'corps',     label: '군단', icon: 't_corps', gate: true },
+    { id: 'challenge', label: '도전', icon: 't_challenge', soon: true },
+    { id: 'demon',     label: '마계', icon: 't_demon', soon: true },
+    { id: 'shop',      label: '상점', icon: 't_shop', soon: true }
   ];
-  var TAB_IDS = ['company', 'field', 'corps', 'build'];   // 탭 막대가 보이는 화면 (build = 현장 탭의 건설 상태)
+  // 홈 위에 패널로 열리는 화면 이름 (해시). 나머지 해시: field(홈) · build(건설)
+  var PANEL_IDS = ['company', 'cards', 'corps', 'challenge', 'demon', 'shop', 'board', 'gallery', 'settings', 'result'];
   // 예전 주소 이름 -> 새 화면
-  var ALIAS = { home: 'field', dungeon: 'field', battle: 'field', sortie: 'field', units: 'corps', shop: 'company', leaders: 'company', workshop: 'company', records: 'company', contract: 'company' };
+  var ALIAS = { home: 'field', dungeon: 'field', battle: 'field', sortie: 'field', units: 'corps', leaders: 'company', workshop: 'company', records: 'company', contract: 'board' };
+  var BASE_HASH = 'field';
 
   // 홈 무대 = 아이소메트릭 방. 캐릭터·가구·벽 소품 자리는 stage.js 표에 있다 (나중에 도트 그림만 끼우면 됨)
   var ST = window.STAGE;
@@ -157,48 +203,23 @@
     return '<button class="entry ' + o.kind + (o.on ? ' on' : '') + '"' + attr + (o.attrs || '') + '><span class="nm">' + nm + '</span>' + (sub ? '<small>' + sub + '</small>' : '') + '</button>';
   }
 
-  // ---------- 공통 상단 바 hud · 다음 목표 · 보스 검증 막대 (기획서 2·7절) ----------
+  // ---------- 공통 상단 바 hud (시안: 소장 초상 + Lv 배지 · 전투력 · 경험치 막대 · 마석 · 금) ----------
   function powerText() { try { return RUN.phase === 'play' && RUN.quest ? fmtN(P.sitePower()) : '—'; } catch (e) { return '—'; } }
-  // 다음 목표 한 줄 (행동 + 대상). 우선순위: 정산/납품 -> 미확정 수정 -> 실패 후 수정 -> 다음 보스
-  function goalText(c) {
-    c = c || {};
-    if (RUN.phase === 'settle') return '납품 정산을 마치세요';
-    if (RUN.phase === 'demoEnd') return '작품집과 군단을 둘러보세요';
-    if (RUN.phase !== 'play' || !RUN.quest) return '의뢰를 받아 현장을 여세요';
-    if (c.pending) return '미확정 배치를 확정하거나 취소하세요';
-    var pr = P.questProgress(), fi = P.flowInfo(), bi = fi.boss;
-    if (pr && pr.complete) return '납품하고 회사에서 정산하세요';
-    if (bossLocked()) return '보물방 도달을 막으세요';
-    if (fi.show && !fi.show.success) return '보물방에 도달한 길의 배치를 고치세요';
-    if (c.state === 'build') return '문·시설 배치를 정해 확정하세요';
-    return bi && bi.stage > 1 ? '보스 ' + bi.stage + '단계에 도전하세요' : '첫 보스에 도전해 방어를 확인하세요';
-  }
-  // 보스 검증 막대: 성공한 보스 수 n/5 (도전 중인 번호는 따로 표시)
-  function bossBarHtml(c) {
-    var pr = P.questProgress();
-    if (!pr) return '';
-    var fi = P.flowInfo(), n = pr.stage, tot = pr.total, segs = '', i, note;
-    var challenging = bossLocked();
-    for (i = 0; i < tot; i++) segs += '<i class="' + (i < n ? 'on' : '') + (i === n && challenging ? ' now' : '') + '"></i>';
-    if (pr.complete) note = '검증 완료';
-    else if (challenging) note = (n + 1) + '단계 도전 중';
-    else if (c && c.state === 'build') note = '전투 정지';
-    else if (fi.show && fi.show.stage === n + 1 && !fi.show.success) note = (n + 1) + '단계 실패';
-    else note = '다음 ' + (n + 1) + '단계';
-    return '<div class="hboss"><b>보스 검증 ' + n + '/' + tot + '</b><span class="hsegs">' + segs + '</span><small>' + note + '</small></div>';
+  // 잠긴 칸 한 줄 글: 이름 + 준비 중 문구 (lines.js soon 에 있으면 그 글)
+  function soonText(name) { return '🔒 ' + name + ': ' + lineOf('soon', name, '준비 중'); }
+  function chipHtml(kind) {
+    if (kind === 'mas') return '<span class="hchip" data-chip="mas">' + ic('gem', 'c-mas', 16) + money(P.budgetLeft()) + '</span>';
+    if (kind === 'gem') return '<span class="hchip" data-chip="gem">' + ic('gem2', 'c-gem', 16) + RUN.gems + '</span>';
+    return '<span class="hchip" data-chip="gold">' + ic('coin', 'c-gold', 16) + money(RUN.gold) + '</span>';
   }
   function hudInner(c) {
-    var tab = c.tab || 'company', co = P.company(), boss = bossLocked();
-    var label = c.label || (tab === 'corps' ? '군단' : tab === 'field' ? '운영' : '회사');
-    var extra = tab === 'field' ? '<span class="chip maseok" data-chip="mas">마석 ' + money(P.budgetLeft()) + '</span>'
-      : tab === 'corps' ? '<span class="chip sinseok" data-chip="gem">신석 ' + RUN.gems + '</span>' : '';
-    return '<div class="hud1"><span class="hstate">' + label + '</span><span class="hpow">Lv ' + co.lv + ' · 전투력 <b>' + powerText() + '</b></span>' +
-      '<span class="chip" data-chip="gold">회사 금 ' + money(RUN.gold) + '</span>' +
-      '<button class="gear" type="button" ' + (boss ? 'data-toast="보스전이 끝나면 열 수 있어요"' : 'data-go="settings"') + ' aria-label="설정">&#9881;&#xFE0E;</button></div>' +
-      '<div class="hud2">' + extra + '<span class="hgoal">목표: ' + esc(goalText(c)) + '</span></div>' +
-      (tab === 'field' && RUN.phase === 'play' && RUN.quest ? bossBarHtml(c) : '');
+    var tab = c.tab || 'field', co = P.company(), boss = bossLocked() || c.state === 'boss';
+    var chips = tab === 'company' ? chipHtml('gold') : tab === 'corps' ? chipHtml('gem') + chipHtml('gold') : chipHtml('mas') + chipHtml('gold');
+    return '<div class="hportrait">' + ic('helm', '', 24) + '<b class="hlv">Lv' + co.lv + '</b></div>' +
+      '<div class="hpw"><span class="hpow">전투력 <b>' + powerText() + '</b></span>' + (boss ? '' : '<span class="hxp"><i style="width:' + pct(co.exp, co.need) + '"></i></span>') + '</div>' +
+      (c.state === 'build' ? '<span class="hlabel">건설</span>' : '') + '<span class="grow"></span>' + chips;
   }
-  // c = { tab: 'company'|'field'|'corps', label(상태 글), state(CSS 색 구분: op·build·boss·res), pending(건설 미확정 있음) }. 다시 그릴 땐 hudRefresh(노드)
+  // c = { tab: 'field'|'company'|'corps'(칩 종류), state(op·boss·res·build) }. 다시 그릴 땐 hudRefresh(노드)
   function hud(c) {
     var h = div('hud' + (c && c.state ? ' ' + c.state : ''));
     h._ctx = c || {};
@@ -206,6 +227,14 @@
     return h;
   }
   function hudRefresh(h) { if (h && h._ctx) h.innerHTML = hudInner(h._ctx); }
+  // 패널이 열리면 상단 바 칩을 그 탭에 맞게 (회사 = 금 / 군단 = 신석 + 금 / 그 밖 = 마석 + 금)
+  function hudSetTab(tab) {
+    Array.prototype.forEach.call(document.querySelectorAll('.hud'), function (h) {
+      if (!h._ctx || h._ctx.state === 'build') return;
+      h._ctx.tab = tab; hudRefresh(h);
+    });
+  }
+
 
   // 보스 검증 단계 목록 (의뢰 카드·게시판 공통). cur = 지금 단계(0~5, 없으면 모두 앞으로)
   function stagesHtml(q, cur) {
@@ -235,15 +264,39 @@
   function bindShaft() { /* 자리만 남김 (예전 호출 호환) */ }
 
 
-  // ---------- 회사 탭 ----------
-  // 의뢰 수락 -> 현장 운영 (일반 판이 바로 시작)
+  // ---------- 패널 틀: 홈 위로 올라오는 창 (#panel). 홈은 그대로 살아 있어 전투가 안 끊긴다 ----------
+  var PANELS = {};
+  var panelEl = document.getElementById('panel');
+  var curPanel = null;
+  var panelHooks = [];   // 패널이 닫히거나 바뀔 때 부르는 정리 함수 (무대 걷기 타이머 등)
+  function runPanelHooks() { panelHooks.splice(0).forEach(function (fn) { fn(); }); }
+  // 패널 머리: 제목 + [닫기] (탭 패널은 하단 탭 자리가 [닫기]라 머리가 없다. 정산은 닫을 수 없음)
+  function phead(title, closable) {
+    return div('phead', '<h3>' + title + '</h3>' + (closable ? '<button class="pclose" type="button" data-close>' + ic('close', '', 14) + '닫기</button>' : ''));
+  }
+  // 하위 탭 줄: items = [{ label, id, on, lock(잠김이면 누를 때 토스트 글) }]
+  function subtabsEl(items) {
+    var s = div('subtabs');
+    s.innerHTML = items.map(function (it) {
+      if (it.lock) return '<button type="button" class="lockb" data-toast="' + esc(it.lock) + '">' + esc(it.label) + ' (잠김)</button>';
+      return '<button type="button"' + (it.on ? ' class="on"' : '') + (it.id ? ' data-t="' + it.id + '"' : '') + '>' + esc(it.label) + '</button>';
+    }).join('');
+    return s;
+  }
+  // 잠긴 한 줄 칸: 디자인 없이 회색 상자 + 이름 + 자물쇠
+  function lockRowHtml(name, cond) {
+    return '<button type="button" class="lockrow" data-toast="' + esc(cond ? '🔒 ' + name + ': ' + cond : soonText(name)) + '">' + ic('lock', '', 14) + '<span>' + esc(name) + '</span></button>';
+  }
+
+  // ---------- 의뢰 (홈 왼쪽 [의뢰] 패널) ----------
+  // 의뢰 수락 -> 홈 (일반 침입이 바로 시작)
   function acceptQuest(qq) {
     if (!P.pickQuest(qq, [])) return false;
     buzz('good'); toast('새 부지에서 시작: ' + qq.name);
-    go('field', true);
+    goHomeFresh(true);
     return true;
   }
-  // 의뢰 게시판 (의뢰가 없을 때 회사의 첫 영역): 후보 카드 + 아직 못 받는 의뢰의 해금 조건
+  // 의뢰 게시판 (의뢰가 없을 때): 후보 카드 + 아직 못 받는 의뢰의 해금 조건
   function boardInto(el) {
     var list = P.offerQuests(), lk = P.lockedQuest(), picked = false;
     el.appendChild(div('qtitle', '<h3>의뢰 게시판</h3><div class="dim small-text">' +
@@ -258,65 +311,89 @@
     if (lk) el.appendChild(div('card lockq', '<div class="qhead"><span class="chip">' + lk.floors + '층 의뢰</span><h3>🔒 ' + esc(lk.name) + '</h3></div>' +
       '<div class="small-text dim">회사 레벨 ' + lk.minCompanyLv + '부터 받을 수 있어요 (지금 Lv ' + P.company().lv + ')</div>'));
   }
-  // 의뢰 있음: 이름 · 보스 검증 요약 · [현장으로]. 납품 실행 버튼은 두지 않는다 (현장 5/5 결과 하나) -> 검증 완료면 안내만
+  // 진행 중 의뢰 요약: 이름 · 보스 검증 · 다음 보스. (납품 실행 입구는 홈 5/5 결과·스테이지 막대의 [납품] 하나)
   function questSummary(q) {
     var pr = P.questProgress(), bi = pr && pr.boss, h = '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>' + esc(q.name) + '</h3></div>';
     if (q.client) h += '<div class="qclient">' + (q.client.kind ? '<span class="chip">' + esc(q.client.kind) + '</span> ' : '') + '<b>' + esc(q.client.name || '') + '</b></div>';
     h += '<div class="stat"><span>보스 검증</span><b>' + pr.stage + '/' + pr.total + '</b></div>';
-    h += pr.complete ? '<div class="qnote"><b class="ready">검증 완료 · 현장에서 납품</b></div>'
+    h += pr.complete ? '<div class="qnote"><b class="ready">검증 완료 · 홈에서 납품</b></div>'
       : '<div class="qnote small-text dim">다음 보스: ' + esc(bi && bi.name ? bi.name + ' (' + bi.squads + '분대)' : '—') + (bi && bi.tries ? ' · 도전 ' + bi.tries + '번' : '') + '</div>';
-    h += '<div class="row2"><button class="btn primary" type="button" data-go="field">현장으로</button><button class="btn" type="button" data-go="board">계약 보기</button></div>';
     return div('card qsum', h);
   }
-  SCREENS.company = function (el) {
-    el.appendChild(hud({ tab: 'company', label: '회사' }));
-    var co = P.company(), lv = co.lv, rk = rankOf(lv), q = RUN.quest;
-    if (RUN.phase === 'demoEnd') demoEndScreen(el);
-    else if (RUN.phase === 'play' && q) el.appendChild(questSummary(q));
-    else boardInto(el);
-    el.appendChild(div('card rankcard', '<div class="rankrow"><b class="ranktitle">' + esc(rk.title || '') + '</b><span class="chip accent">회사 Lv ' + lv + '</span></div>' +
-      '<div class="rankdesc small-text dim"><span>' + esc(rk.desc || '') + '</span><b>경험치 ' + co.exp + '/' + co.need + '</b></div><div class="xpbar"><i style="width:' + pct(co.exp, co.need) + '"></i></div>'));
-
-    // 무대: 아이소메트릭 방 (그림 = stage.js SVG) + 캐릭터 자리. 바깥 틀(.stage)은 남는 높이를 채우고 방(.stagebox)은 비율을 지킨 채 가운데에 놓는다
-    var stage = div('stage'), box = div('stagebox', ST.roomSvg());
-    stage.appendChild(box);
-    var actors = startActors(stage, box);
-    stage.appendChild(div('stagetag', '<span class="chip">검은망치 건설 본사</span>'));
-    el.appendChild(stage);
-    wanderActors(actors, stage);
-
-    var gal = deliveredOnce() ? { kind: 'open', go: 'gallery', name: '작품집', sub: '납품한 던전 ' + RUN.works.length + '곳' } : { kind: 'lock', name: '작품집', cond: condText('gallery') };
-    el.appendChild(div('entries one', entry(gal)));
-  };
-
-  // ---------- 계약 보기 (회사 탭 안): 지금 받은 의뢰 한 장. 계약·보상 확인용이라 보스 도전 버튼은 없다 ----------
-  SCREENS.board = function (el) {
-    el.appendChild(head('계약 보기', 'company'));
-    var q = RUN.quest;
-    if (!q) { el.appendChild(div('card dim', '진행 중인 의뢰가 없어요')); return; }
+  // 계약 한 장: 지금 받은 의뢰 (계약·보상 확인용)
+  function contractCard(q) {
     var pr = P.questProgress();
-    var h = '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>' + esc(q.name) + '</h3></div>';
+    var h = '<div class="qhead"><span class="chip accent">' + questTag(q) + '</span><h3>계약 · ' + esc(q.name) + '</h3></div>';
     if (q.client) h += '<div class="qclient">' + (q.client.kind ? '<span class="chip">' + esc(q.client.kind) + '</span> ' : '') + '<b>' + esc(q.client.name || '') + '</b></div>';
     h += siteHtml(q) + fixedHtml(q);
     if (q.attr) h += '<div class="qattr"><div class="qattr-h"><span class="chip">던전 속성</span> <b>' + esc(q.attr.label || '') + '</b></div>' + (q.attr.effect ? '<div class="small-text">' + esc(q.attr.effect) + '</div>' : '') + '</div>';
     h += '<div class="poplabel qlabel">보스 검증 ' + q.stage + '/' + q.stages.length + (pr && pr.complete ? ' · 검증 완료' : '') + '</div>' + stagesHtml(q, q.stage) +
       '<div class="stat"><span>마석</span><b>' + money(P.budgetLeft()) + ' / ' + money(RUN.site.budgetStart) + '</b></div>' +
       '<div class="stat"><span>납품 보수</span><b>' + rewardText(q.reward) + '</b></div>';
-    el.appendChild(div('card contract', h));
-    el.appendChild(div('dim small-text', '한 번에 의뢰 하나만 받을 수 있어요. 보스 5단계를 모두 막으면 현장의 [납품]으로 끝낼 수 있어요.'));
+    return div('card contract', h);
+  }
+  PANELS.board = function (box) {
+    box.appendChild(phead('의뢰', true));
+    var body = div('pbody'), q = RUN.quest;
+    box.appendChild(body);
+    if (RUN.phase === 'demoEnd') demoEndScreen(body);
+    else if (RUN.phase === 'play' && q) {
+      body.appendChild(questSummary(q)); body.appendChild(contractCard(q));
+      body.appendChild(div('dim small-text', '한 번에 의뢰 하나만 받을 수 있어요. 보스 5단계를 모두 막으면 홈의 [납품]으로 끝낼 수 있어요.'));
+    } else boardInto(body);
   };
 
-  // ---------- 작품집 (회사 탭 입구, 첫 납품 뒤 열림): 납품한 던전 목록 + 작품집 효과 ----------
-  SCREENS.gallery = function (el) {
-    el.appendChild(head('작품집', 'company'));
+  // ---------- 작품집 (홈 왼쪽 [작품집], 첫 납품 뒤 열림): 납품한 던전 목록 + 작품집 효과 ----------
+  PANELS.gallery = function (box) {
+    box.appendChild(phead('작품집', true));
+    var body = div('pbody'); box.appendChild(body);
     var wi = P.worksInfo();
     var rows = wi.list.slice().reverse().map(function (w) {
       return '<li><b>No.' + w.no + ' ' + esc(w.name) + '</b><br><span class="dim small-text">' + esc(w.client) + ' · 가치 ' + w.value + ' · 전투력 ' + w.power + '</span></li>';
     });
-    el.appendChild(div('card', '<h3>납품한 던전</h3>' + (rows.length ? '<ul class="plain">' + rows.join('') + '</ul>' : '<div class="dim small-text">아직 없어요</div>')));
+    body.appendChild(div('card', '<h3>납품한 던전</h3>' + (rows.length ? '<ul class="plain">' + rows.join('') + '</ul>' : '<div class="dim small-text">아직 없어요</div>')));
     var ef = wi.effect;
-    el.appendChild(div('card', '<h3>작품집 효과</h3><div class="stat"><span>' + esc(ef.label) + '</span><b>' + (ef.active ? '적용 중' : '작품 1개부터') + '</b></div><div class="small-text dim">' + esc(ef.text) + '</div>'));
+    body.appendChild(div('card', '<h3>작품집 효과</h3><div class="stat"><span>' + esc(ef.label) + '</span><b>' + (ef.active ? '적용 중' : '작품 1개부터') + '</b></div><div class="small-text dim">' + esc(ef.text) + '</div>'));
   };
+
+  // ---------- 회사 (하단 탭): 하위 탭 회사 운영(잠김) · 직원 · 연구(잠김). 직원 = 사무실 무대 + 인물 대사 ----------
+  PANELS.company = function (box) {
+    box.appendChild(subtabsEl([{ label: '회사 운영', lock: soonText('회사 운영') }, { label: '직원', on: true }, { label: '연구', lock: soonText('연구') }]));
+    var co = P.company(), rk = rankOf(co.lv);
+    if (rk.title) box.appendChild(div('rankline', '<b>' + esc(rk.title) + '</b><span class="dim">' + esc(rk.desc || '') + '</span>'));
+    // 무대: 아이소메트릭 방 (그림 = stage.js SVG) + 캐릭터 자리. 바깥 틀(.stage)은 남는 높이를 채우고 방(.stagebox)은 비율을 지킨 채 가운데에 놓는다
+    var body = div('pbody nopad'), stage = div('stage'), sbox = div('stagebox', ST.roomSvg());
+    stage.appendChild(sbox);
+    var actors = startActors(stage, sbox);
+    stage.appendChild(div('stagetag', '<span class="chip">검은망치 건설 본사</span>'));
+    body.appendChild(stage); box.appendChild(body);
+    wanderActors(actors, stage);
+  };
+
+  // ---------- 카드 (하단 탭): 카드 3종 목록(설명만, 보스전에서만 쓴다) + 잠긴 칸 ----------
+  PANELS.cards = function (box) {
+    var BD0 = window.BATTLE_DATA, list = (BD0 && BD0.BOSS_CARDS && BD0.BOSS_CARDS.list) || [];
+    var look = { smoke: ['smoke', 'c-grey'], reserve: ['shield', 'c-blue'], trigger: ['spikes', 'c-red'] };
+    box.appendChild(div('phead', '<h3>보스전 카드</h3><span class="dim small-text">보스전에서만 최대 2번</span>'));
+    var body = div('pbody'); box.appendChild(body);
+    list.forEach(function (c) {
+      var l = look[c.id] || ['doc', ''];
+      body.appendChild(div('cinfo', ic(l[0], l[1], 28) + '<div class="ctxt"><b>' + esc(c.name) + '</b><span class="dim">' + esc(c.text) + '</span><small class="dim">' + (c.target === 'room' ? '방 고르기' : '바로 사용') + '</small></div>'));
+    });
+    var lk = '';
+    for (var i = 4; i <= 6; i++) lk += '<button type="button" class="cslot lock" data-toast="' + esc(soonText('카드 칸 ' + i)) + '">' + ic('lock', '', 16) + '</button>';
+    body.appendChild(div('cslots', lk));
+    body.appendChild(div('dim small-text', '카드 칸 4~6은 아직 열리지 않았어요.'));
+  };
+  // ---------- 도전 · 마계 · 상점 (하단 탭): 아직 기능 없음 = 잠김 한 줄 ----------
+  function soonPanel(id, name) {
+    PANELS[id] = function (box) {
+      var body = div('pbody'); box.appendChild(body);
+      body.insertAdjacentHTML('beforeend', lockRowHtml(name));
+      body.appendChild(div('dim small-text', name + ' 탭은 아직 열리지 않았어요.'));
+    };
+  }
+  soonPanel('challenge', '도전'); soonPanel('demon', '마계'); soonPanel('shop', '상점');
 
   // ---------- 회사 무대: 캐릭터 자리 · 걷기 · 말풍선 ----------
   // 캐릭터 한 명 = div.actor (움직이는 틀) 안에 button.slot (도트 자리). 위치는 칸 좌표 -> 무대 비율(%)로 둔다.
@@ -367,7 +444,7 @@
       }, DUR0.fx * (5 + fxRandom() * 6)); // 2.5~5.5초마다
     }
     next();
-    leaveHooks.push(function () {
+    panelHooks.push(function () {
       clearTimeout(timer);
       actors.forEach(function (x) { clearTimeout(x.timer); });
       speaking = null; clearTimeout(bubbleTimer);
@@ -431,27 +508,57 @@
   }
 
 
-  // ---------- 군단 탭: 부족 / 친위대 하위 탭, 2열 카드 + 아래 상세 (기획서 5절). 첫 전투 정산 뒤에 열린다 ----------
-  // 부족 = 내가 쓰는 몬스터 종류(신석 강화는 계속 유지). 친위대 = 이름 있는 개체(다음 현장 동행, 첫 납품 뒤 열림). 출진 배치·부대 조달·보충은 현장 [출진] 창에서만 (여기엔 실행 버튼 없음, 신석 강화만).
-  // 능력치는 1명 기준 (statOf·statParts). 성장 창 공통 표시: 대상 -> 지금/다음 효과 -> 비용이 적힌 실행 버튼 하나. 잔액·부족 이유는 버튼 옆.
+  // ---------- 군단 (하단 탭): 하위 탭 부족 · 친위대 · 부대장(잠김). 위 약 150px에 전투가 계속 보인다 ----------
+  // 출진 칸(층 출진 한도만큼 + 나머지 잠김) · 총 보유 효과(잠김) · 걸러 보기(잠김) · 부족 격자(Lv·막대·강화 가능) · [자동 편성] [일괄 강화(잠김)].
+  // 출진 칸은 보기만 (출진·조달·보충은 홈의 [부대 모집] 창). 부족 신석 강화는 격자 칸을 눌러 아래 상세에서.
   var corpsTab = 'tribe', corpsSel = { tribe: null, guard: null };
+  var TRIBE_LOOK = { stone: ['blob', 'c-blue', 't-stone'], ember: ['person', 'c-red', 't-ember'] };   // 부족 -> [아이콘, 색 클래스, 테두리 클래스]
+  function tribeLook(id) { return TRIBE_LOOK[id] || ['star', 'c-purple', 't-stone']; }
   function whereText(u) {   // "1층 C3 출진 중" / "대기"
     return u.floor ? u.floor + '층 ' + (u.placed ? esc(zoneName(u.placed)) + ' ' : '') + '출진 중' : '대기';
   }
-  SCREENS.corps = function (el) {
-    el.appendChild(hud({ tab: 'corps', label: '군단' }));
-    var segEl = div('seg corpstabs'), gridEl = div('cgrid'), detEl = div('card cdetail');
-    var T = P.TRIBES || [];
-    function squadsOf(tid) { return P.squads().filter(function (u) { return u.tribe === tid; }); }
-
-    function tribeCardHtml(t) {
-      var ti = P.tribeInfo(t.id), n = squadsOf(t.id).length, on = corpsSel.tribe === t.id;
-      return '<button class="ccard' + (on ? ' on' : '') + '" type="button" data-pick="' + t.id + '"><div class="portrait">도트</div><b class="cname">' + esc(t.name) + '</b>' +
-        '<span class="chip">' + esc(t.role) + '</span><small class="cmeta">강화 Lv ' + (ti ? ti.lv + '/' + ti.max : 0) + '</small>' +
-        '<small class="cmeta">' + (ti && ti.contracted === false ? '사용권 없음' : '현장 부대 ' + n) + '</small></button>';
+  PANELS.corps = function (box) {
+    var tabsHost = div('subtabs'), body = div('pbody'), foot = div('pfoot');
+    box.appendChild(tabsHost); box.appendChild(body); box.appendChild(foot);
+    var T = P.TRIBES || [], BDc = window.BATTLE_DATA || {};
+    function lockCell(label, why) { return '<div class="scell lock" data-toast="' + esc(why || soonText(label)) + '">' + ic('lock', '', 14) + '<span>' + esc(label) + '</span></div>'; }
+    // 출진 칸: 1층 한도(capMax)만큼 -> 부대 있는 칸 / 빈 칸 / 잠김(대기실 더 필요), 2층 칸은 열릴 때까지 잠김
+    function outRowHtml() {
+      var fis = P.floorsInfo(), cells = '', used = 0, total = 0, openN = 0, n, i;
+      for (n = 1; n <= 2; n++) {
+        var fi = fis[n - 1], cm = (BDc.FLOOR_CAP || {})[n] || 0;
+        if (fi && fi.open) {
+          openN++;
+          for (i = 0; i < fi.capMax; i++) {
+            var u = fi.units[i];
+            if (u) {
+              var lk = tribeLook(u.tribe);
+              cells += '<button type="button" class="scell filled ' + (u.kind === 'guard' ? 't-guard' : lk[2]) + '" data-unit="' + u.id + '">' + ic(lk[0], lk[1], 20, true) +
+                '<span class="sn">' + esc(u.kind === 'guard' ? u.name : u.tribeName) + '</span><span class="sl">Lv' + u.lv + (u.kind === 'guard' ? '' : ' · ' + u.count + '명') + '</span></button>';
+            } else if (i < fi.cap) cells += '<div class="scell empty"><span class="sl">빈 칸</span></div>';
+            else cells += lockCell('대기실 더', '🔒 출진 칸: 대기실을 더 지으면 열려요');
+          }
+          used += fi.units.length; total += fi.cap;
+        } else {
+          for (i = 0; i < cm; i++) cells += lockCell(n + '층 열림', '🔒 ' + n + '층: ' + condText('floor2'));
+        }
+      }
+      return '<div class="srow"><div class="srow-t"><b>' + (openN > 1 ? '출진' : '1층 출진') + '</b><span class="dim">' + used + '/' + total + '</span></div><div class="scells">' + cells + '</div></div>';
+    }
+    function tribeGridHtml() {
+      var h = '', i;
+      T.forEach(function (t) {
+        var ti = P.tribeInfo(t.id), lk = tribeLook(t.id), on = corpsSel.tribe === t.id, c = gemCost(ti);
+        var can = !!(ti && ti.contracted !== false && ti.next != null && ti.canAfford);
+        var st = !ti || ti.contracted === false ? '사용권 없음' : ti.next == null || c == null ? '최고' : can ? '강화 가능' : '신석 ' + c;
+        h += '<button type="button" class="tcell ' + lk[2] + (on ? ' on' : '') + '" data-pick="' + t.id + '">' + ic(lk[0], lk[1], 24, true) + '<span>Lv' + (ti ? ti.lv : 0) + '</span>' +
+          '<span class="tbar"><i style="width:' + pct(ti ? ti.lv : 0, ti && ti.max ? ti.max : 1) + '"></i></span><span class="tst' + (can ? ' ok' : '') + '">' + st + '</span></button>';
+      });
+      for (i = T.length; i < 5; i++) h += '<div class="tcell lock" data-toast="' + esc(soonText('부족 칸')) + '">' + ic('lock', '', 18) + '<span>0/1</span></div>';
+      return '<div class="tgrid">' + h + '</div>';
     }
     function tribeDetailHtml(t) {
-      var ti = P.tribeInfo(t.id), c = gemCost(ti), sq = squadsOf(t.id);
+      var ti = P.tribeInfo(t.id), c = gemCost(ti);
       var upBtn = !ti || ti.contracted === false ? '<button class="btn primary" type="button" disabled>사용권 필요</button>'
         : ti.next == null || c == null ? '<button class="btn primary" type="button" disabled>최고 단계</button>'
         : '<button class="btn primary' + (ti.canAfford ? '' : ' poor') + '" type="button" data-uptribe="' + t.id + '"' + (ti.canAfford ? '' : ' aria-disabled="true"') + '>신석 강화 · 신석 ' + c + '</button>';
@@ -462,17 +569,18 @@
         '<div class="uprow"><span class="uplab">지금</span><span class="upval">' + esc(ti ? ti.effect : '—') + '</span></div>' +
         '<div class="uprow"><span class="uplab">다음</span><span class="upval">' + (ti && ti.next ? '<b>' + esc(ti.next) + '</b>' : '최고 단계') + '</span></div>' +
         '<div class="upfoot2"><span class="upwhy">' + why + '</span>' + upBtn + '</div>' +
-        '<div class="small-text dim">신석 ' + RUN.gems + ' 보유 · 누르면 바로 적용돼요 (진행 중인 일반 판은 새 판으로 바뀌어요)</div></div>' +
-        '<div class="bt-sub">현장 부대 ' + sq.length + '곳 (배치는 현장 [출진] 창에서)</div>' +
-        (sq.length ? sq.map(function (u) {
-          return '<div class="stat"><span>' + esc(uname(u)) + ' · ' + u.count + '/' + u.cap + '명 · Lv ' + u.lv + '</span><b>' + whereText(u) + '</b></div>';
-        }).join('') : '<div class="small-text dim">부대가 없어요. 현장의 [출진] 창에서 조달해요.</div>');
+        '<div class="small-text dim">신석 ' + RUN.gems + ' 보유 · 누르면 바로 적용돼요 (진행 중인 일반 판은 새 판으로 바뀌어요)</div></div>';
     }
-    function guardCardHtml(u, i) {
-      if (!u) return '<div class="ccard empty"><div class="portrait">칸 ' + (i + 1) + '</div><b class="cname dim">비어 있음</b><small class="cmeta">납품 때 지정</small></div>';
-      var on = corpsSel.guard === u.id;
-      return '<button class="ccard guard' + (on ? ' on' : '') + '" type="button" data-pick="' + u.id + '"><div class="portrait">친위대</div><b class="cname">' + esc(u.name) + '</b>' +
-        '<span class="chip">' + esc(u.tribeName) + '</span><small class="cmeta">Lv ' + u.lv + ' · 등급 ' + P.monGrade(u.lv) + '</small><small class="cmeta">' + whereText(u) + '</small></button>';
+    function guardGridHtml() {
+      var gs = P.guards(), h = '', i;
+      for (i = 0; i < P.GUARD_MAX; i++) {
+        var u = gs[i];
+        if (!u) { h += '<div class="tcell empty"><span class="dim">칸 ' + (i + 1) + '</span><span class="tst">비어 있음</span></div>'; continue; }
+        var lk = tribeLook(u.tribe);
+        h += '<button type="button" class="tcell t-guard' + (corpsSel.guard === u.id ? ' on' : '') + '" data-pick="' + u.id + '">' + ic(lk[0], lk[1], 24, true) + '<span>Lv' + u.lv + '</span>' +
+          '<span class="tbar"><i style="width:' + pct(u.exp, u.need) + '"></i></span><span class="tst">' + esc(u.name) + '</span></button>';
+      }
+      return '<div class="tgrid">' + h + '</div>';
     }
     function guardDetailHtml(u) {
       var raw = RUN.guards.filter(function (g) { return g.id === u.id; })[0] || {}, t = tribeById(u.tribe);
@@ -486,59 +594,63 @@
     function draw() {
       var gOpen = deliveredOnce();
       if (corpsTab === 'guard' && !gOpen) corpsTab = 'tribe';
-      segEl.innerHTML = '<button type="button" data-t="tribe"' + (corpsTab === 'tribe' ? ' class="on"' : '') + '>부족</button>' +
-        (gOpen ? '<button type="button" data-t="guard"' + (corpsTab === 'guard' ? ' class="on"' : '') + '>친위대 <small>최대 ' + P.GUARD_MAX + '명</small></button>'
-          : '<button type="button" class="lockbtn" data-toast="' + esc('🔒 친위대: ' + condText('guard')) + '">🔒 친위대 <small>잠김 · ' + esc(condText('guard')) + '</small></button>');
+      tabsHost.innerHTML = '<button type="button" data-t="tribe"' + (corpsTab === 'tribe' ? ' class="on"' : '') + '>부족</button>' +
+        (gOpen ? '<button type="button" data-t="guard"' + (corpsTab === 'guard' ? ' class="on"' : '') + '>친위대</button>'
+          : '<button type="button" class="lockb" data-toast="' + esc('🔒 친위대: ' + condText('guard')) + '">친위대 (잠김)</button>') +
+        '<button type="button" class="lockb" data-toast="' + esc(soonText('부대장')) + '">부대장 (잠김)</button>';
+      var h = outRowHtml();
       if (corpsTab === 'tribe') {
-        if (!corpsSel.tribe && T.length) corpsSel.tribe = T[0].id;
-        gridEl.innerHTML = T.map(tribeCardHtml).join('');
+        h += lockRowHtml('총 보유 효과') + lockRowHtml('걸러 보기') + tribeGridHtml();
         var t = tribeById(corpsSel.tribe);
-        detEl.innerHTML = t ? tribeDetailHtml(t) : '';
+        h += t ? '<div class="card cdetail">' + tribeDetailHtml(t) + '</div>' : '<div class="small-text dim">부족 칸을 누르면 신석 강화 정보가 보여요.</div>';
       } else {
-        var gs = P.guards(), h = '';
-        if (!corpsSel.guard || !gs.some(function (g) { return g.id === corpsSel.guard; })) corpsSel.guard = gs[0] ? gs[0].id : null;
-        for (var i = 0; i < P.GUARD_MAX; i++) h += guardCardHtml(gs[i], i);
-        gridEl.innerHTML = h;
-        var g = gs.filter(function (x) { return x.id === corpsSel.guard; })[0];
-        detEl.innerHTML = g ? guardDetailHtml(g) : '<div class="small-text dim">친위대는 납품할 때 부대 대장 중에서 골라요. 이름 있는 몬스터라서 레벨을 지닌 채 다음 현장에도 같이 가요.</div>';
+        h += guardGridHtml();
+        var gs = P.guards(), g = gs.filter(function (x) { return x.id === corpsSel.guard; })[0];
+        h += g ? '<div class="card cdetail">' + guardDetailHtml(g) + '</div>' : '<div class="small-text dim">친위대는 납품할 때 부대 대장 중에서 골라요. 이름 있는 몬스터라서 레벨을 지닌 채 다음 현장에도 같이 가요.</div>';
       }
+      body.innerHTML = h;
+      foot.innerHTML = '<button type="button" class="pbtn" data-auto>자동 편성</button><button type="button" class="pbtn lockb" data-toast="' + esc(soonText('일괄 강화')) + '">' + ic('lock', '', 14) + '일괄 강화</button>';
     }
-    segEl.addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('[data-t]') : null;
-      if (b) { corpsTab = b.getAttribute('data-t'); buzz('tap'); draw(); }
+    box.addEventListener('click', function (e) {
+      var q = function (a) { return e.target.closest ? e.target.closest('[' + a + ']') : null; }, b;
+      if ((b = q('data-t'))) { corpsTab = b.getAttribute('data-t'); buzz('tap'); draw(); return; }
+      if ((b = q('data-pick'))) { corpsSel[corpsTab === 'guard' ? 'guard' : 'tribe'] = b.getAttribute('data-pick'); buzz('tap'); draw(); return; }
+      if ((b = q('data-unit'))) {
+        var u = P.unitById(b.getAttribute('data-unit'));
+        if (u) { toast(uname(u) + ' · Lv ' + u.lv + (u.kind === 'guard' ? '' : ' · ' + u.count + '/' + u.cap + '명') + ' (출진 조정은 홈의 [부대 모집])'); buzz('tap'); }
+        return;
+      }
+      if ((b = q('data-uptribe'))) {
+        var tn = b.getAttribute('data-uptribe'), inf = P.tribeInfo(tn);
+        if (!inf || !inf.canAfford) { toast((inf && inf.why) || '지금은 할 수 없어요'); buzz('warn'); return; }
+        var r = P.upgradeTribe(tn);
+        toast(r && r.msg ? r.msg : '완료');
+        if (r && r.ok) { buzz('good'); stageToast(r.stages); } else buzz('warn');
+        draw(); refreshHome();
+        if (r && r.ok) flashUp(body.querySelector('.grow-box'));
+        return;
+      }
+      if (q('data-auto')) {
+        var ar = P.setAutoDeploy(true);
+        toast(ar && ar.msg ? ar.msg : '자동 편성');
+        if (ar && ar.ok) { buzz('good'); stageToast(ar.stages); draw(); refreshHome(); } else buzz('warn');
+      }
     });
-    gridEl.addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('[data-pick]') : null;
-      if (!b) return;
-      corpsSel[corpsTab === 'guard' ? 'guard' : 'tribe'] = b.getAttribute('data-pick');
-      buzz('tap'); draw();
-    });
-    detEl.addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('[data-uptribe]') : null;
-      if (!b) return;
-      var tn = b.getAttribute('data-uptribe'), inf = P.tribeInfo(tn);
-      if (!inf || !inf.canAfford) { toast((inf && inf.why) || '지금은 할 수 없어요'); buzz('warn'); return; }
-      var r = P.upgradeTribe(tn);
-      toast(r && r.msg ? r.msg : '완료');
-      if (r && r.ok) { buzz('good'); stageToast(r.stages); } else buzz('warn');
-      draw(); hudRefresh(hudNode);
-      if (r && r.ok) flashUp(detEl.querySelector('.grow-box'));
-    });
-    var hudNode = el.firstChild;
-    el.appendChild(segEl); el.appendChild(gridEl); el.appendChild(detEl); draw();
+    draw();
   };
 
-
-  SCREENS.settings = function (el) {
-    el.appendChild(head('설정', lastTab));
-    var box = div('card');
+  // ---------- 설정 (홈 오른쪽 아래 [설정] 아이콘 패널) ----------
+  PANELS.settings = function (box) {
+    box.appendChild(phead('설정', true));
+    var body = div('pbody'); box.appendChild(body);
+    var card = div('card');
     var defs = [['sound', '소리'], ['vibe', '진동'], ['reduce', '움직임 줄이기']];
     function drawToggles() {
-      box.innerHTML = defs.map(function (d) {
+      card.innerHTML = defs.map(function (d) {
         return '<div class="toggle"><span>' + d[1] + '</span><button class="sw' + (S[d[0]] ? ' on' : '') + '" data-sw="' + d[0] + '" aria-label="' + d[1] + '"></button></div>';
       }).join('');
     }
-    box.addEventListener('click', function (e) {
+    card.addEventListener('click', function (e) {
       var k = e.target.getAttribute && e.target.getAttribute('data-sw');
       if (!k) return;
       S[k] = !S[k]; saveSettings();
@@ -547,7 +659,7 @@
       buzz('tap');
     });
     drawToggles();
-    el.appendChild(box);
+    body.appendChild(card);
 
     var hold = document.createElement('button');
     hold.className = 'btn hold';
@@ -562,13 +674,13 @@
         P.reset();
         tut.local = {}; tut.off = false; tutEnd(false); // 튜토리얼도 처음부터
         toast('처음부터 다시 시작해요');
-        go('company', true);
+        goHomeFresh(true);
       }, MOTION.hold.charge);
     });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { hold.addEventListener(ev, stopHold); });
-    el.appendChild(hold);
-    el.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 회사 금·신석·부대·친위대·의뢰가 모두 처음으로 돌아갑니다.'));
-    el.appendChild(div('mt-auto dim small-text', '버전: D1 첫 데모 (UI 개편: 3탭·현장 4상태, 임시 숫자)'));
+    body.appendChild(hold);
+    body.appendChild(div('dim small-text', '되돌릴 수 없는 일은 길게 눌러야 동작합니다. 회사 금·신석·부대·친위대·의뢰가 모두 처음으로 돌아갑니다.'));
+    body.appendChild(div('mt-auto dim small-text', '버전: D1 첫 데모 (DS 구조 UI: 홈 + 패널, 임시 숫자)'));
   };
 
   // 건설 상태는 build.js (구역 판). SCREEN_PLUGINS.build 가 아래에서 SCREENS.build 로 등록된다.
@@ -601,8 +713,8 @@
     var r = RUN.phase === 'settle' ? RUN.report : null;
     var ids = [];   // 친위대로 데려갈 현장 부대 id
     var demoEnd = !!(r && P.demoState().canLeave);   // 데모 의뢰를 다 납품함: 새 의뢰 대신 [정산 마치기] -> 데모 끝 화면
-    el.appendChild(head('납품 정산'));
-    if (!r) { el.appendChild(div('card dim', '정산할 내용이 없어요')); el.appendChild(div('', '<button class="btn primary" data-go="company">회사로</button>')); return; }
+    el.appendChild(phead('납품 정산', false));
+    if (!r) { el.appendChild(div('card dim', '정산할 내용이 없어요')); el.appendChild(div('', '<button class="btn primary" data-go="field">홈으로</button>')); return; }
 
     el.appendChild(div('stamp', '납품 완료'));
     el.appendChild(div('dim small-text', r.quest.name + ' · 보스 검증 ' + r.stage + '/' + (r.quest.stages ? r.quest.stages.length : 5) + ' · 건설 ' + r.builds + '회'));
@@ -657,7 +769,7 @@
       el.appendChild(questCard(q, function (qq) {
         if (picked) return;
         picked = true;
-        if (P.pickQuest(qq, ids.slice())) { buzz('good'); toast('새 부지에서 시작: ' + qq.name); go('field', true); }
+        if (P.pickQuest(qq, ids.slice())) { buzz('good'); toast('새 부지에서 시작: ' + qq.name); goHomeFresh(true); }
         else picked = false;
       }));
     });
@@ -669,7 +781,7 @@
       fin.querySelector('button').addEventListener('click', function () {
         var lr = P.leaveSettle();
         if (!lr.ok) { toast(lr.msg); buzz('warn'); return; }
-        tutEnd(false); toastsEl.innerHTML = ''; buzz('best'); go('company', true);
+        tutEnd(false); toastsEl.innerHTML = ''; buzz('best'); goHomeFresh(true); go('board', true);
       });
       el.appendChild(fin);
     }
@@ -693,11 +805,11 @@
     el.appendChild(div('dim small-text', '이 다음은 새 현장이 차례로 열려요. 아래 작품집과 군단 탭은 그대로 둘러볼 수 있어요.'));
     var rs = div('', '<button class="btn primary big" data-restart>처음부터 다시</button>');
     rs.querySelector('button').addEventListener('click', function () {
-      P.reset(); tut.local = {}; tut.off = false; tutEnd(false); toast('처음부터 다시 시작해요'); buzz('good'); goFresh('company');
+      P.reset(); tut.local = {}; tut.off = false; tutEnd(false); toast('처음부터 다시 시작해요'); buzz('good'); goHomeFresh(true);
     });
     el.appendChild(rs);
   }
-  SCREENS.result = deliverScreen;
+  PANELS.result = function (box) { var body = div('pbody'); box.appendChild(body); deliverScreen(body); };
 
   // ---------- 튜토리얼: 은발 마왕 말풍선 (대사는 lines.js, 단계 기록은 progress.js 계약 함수) ----------
   // 계약: P.tutorial() -> { on, seen } · P.tutorialSeen(id) (본 단계로 기록) · P.skipTutorial() · P.tutorialPath() (구역 id 배열 또는 null).
@@ -854,18 +966,21 @@
       return p.slice(0, 4);
     } catch (e) { return []; }
   }
-
-  // ---------- 화면 플러그인 (화면을 별도 파일로 뺄 때: battle.js = 현장 운영·보스·결과, build.js = 건설) ----------
+  // ---------- 화면 플러그인 (화면을 별도 파일로 뺄 때: battle.js = 홈(전투장·보스·결과), build.js = 건설) ----------
   // 별도 파일은 SCREEN_PLUGINS.이름 = function (api) { return function (el) {...}; } 로 등록한다.
   // api.onLeave(fn): 다른 화면으로 나갈 때 한 번 불러 준다 (타이머·루프 정리용).
   var leaveHooks = [];
   var guardFn = null;   // 건설 상태가 미확정 배치를 지키려고 등록: function (dest, proceed) -> 막았으면 true
+  var buildPreset = null;   // 홈 성장판 칸을 눌러 건설 모드로 올 때 골라 둘 시설 ('trap'·'den'·'lure') 또는 'door' (문 옮기기)
   var API = {
     toast: toast, buzz: buzz, fxRandom: fxRandom, div: div, go: go, onLeave: function (fn) { leaveHooks.push(fn); },
     head: head, questTag: questTag, stageToast: stageToast, fixedHtml: fixedHtml, stagesHtml: stagesHtml,
     shaftHtml: shaftHtml, bindShaft: bindShaft,
-    // 공통 상단 바 · 탭 이동 막기(보스 도전 중) · 미확정 지킴이(건설)
+    // 공통 상단 바 · 탭 이동 막기(보스 도전 중) · 미확정 지킴이(건설) · 아이콘 · 잠긴 칸 글
     hud: hud, hudRefresh: hudRefresh, bossLocked: bossLocked, setGuard: function (fn) { guardFn = fn; },
+    icon: ic, soonText: soonText, condText: condText, galleryOpen: deliveredOnce, esc: esc,
+    // 건설 모드 미리 고른 시설 (홈 -> 건설)
+    setPreset: function (k) { buildPreset = k || null; }, takePreset: function () { var k = buildPreset; buildPreset = null; return k; },
     // 출진 창·강화 창이 쓰는 글 도우미
     uname: uname, statLine: statLine, zoneName: zoneName, fmtN: fmtN, money: money, flashUp: flashUp,
     unitName: function (id) { var u = P.unitById(id); return u ? uname(u) : ''; },
@@ -873,7 +988,7 @@
     tutPlace: tutPlace, tutStart: tutStart, tutDone: function (id) { if (tutActive(id)) tutEnd(true); }, tutActive: tutActive, tutZones: tutZones,
     // 결과 반영(한 번만, 결과표 내용을 돌려줌)
     finishBattle: function (result) { return P.applyBattle(result); },
-    rerender: function () { render(); }   // 같은 화면을 새로 그림 (다음 일반 판·보스 도전·결과로)
+    rerender: function () { render(true); }   // 홈을 새로 그림 (다음 일반 판·보스 도전·결과로). 열려 있는 패널은 그대로
   };
   var plugins = window.SCREEN_PLUGINS || {};
   Object.keys(plugins).forEach(function (k) { SCREENS[k] = plugins[k](API); });
@@ -882,75 +997,106 @@
   // 화면 지킴이: 상태에 맞지 않는 화면이면 맞는 화면으로 바꾼다 (주소 기록은 덮어씀)
   function guardScreen(name) {
     var to = ALIAS[name] || name;
-    if (!SCREENS[to]) to = 'company';
+    if (to !== 'field' && to !== 'build' && PANEL_IDS.indexOf(to) < 0) to = BASE_HASH;
     if (RUN.phase === 'settle') to = 'result';                         // 납품 직후엔 정산부터
-    else if (bossLocked()) to = 'field';                               // 보스 도전 중엔 탭 이동 막음 (끝나면 결과로 자동 전환)
-    else if (to === 'result') to = 'company';
-    else if (RUN.phase === 'demoEnd' && (to === 'field' || to === 'build')) to = 'company';   // 데모 끝: 회사 탭에 "데모는 여기까지" 화면
-    else if (RUN.phase === 'choose' && to === 'build') to = 'field';   // 의뢰 없이 건설 불가 (현장은 회사 게시판 안내만)
+    else if (bossLocked()) to = 'field';                               // 보스 도전 중엔 패널·탭 이동 막음 (끝나면 결과로 자동 전환)
+    else if (to === 'result') to = 'field';
+    else if (RUN.phase === 'demoEnd' && to === 'build') to = 'field';  // 데모 끝: 건설 불가
+    else if (RUN.phase === 'choose' && to === 'build') to = 'field';   // 의뢰 없이 건설 불가
     else if (to === 'corps' && !corpsOpen()) to = 'field';             // 군단은 첫 전투 정산 뒤에 열림
-    else if (to === 'gallery' && !deliveredOnce()) to = 'company';     // 작품집은 첫 납품 뒤에 열림
+    else if (to === 'gallery' && !deliveredOnce()) to = 'field';       // 작품집은 첫 납품 뒤에 열림
     if (to !== name) history.replaceState(null, '', '#' + to);
     return to;
   }
-  var lastName = '';
-  var lastTab = 'company';   // 설정 등에서 뒤로 갈 곳 (마지막으로 본 탭 화면)
+  var lastName = '';       // 마지막으로 그린 화면 이름 (패널 이름 또는 field·build)
+  var lastBase = '';       // 'field'(홈) · 'build'(건설)
+  var homeSigAt = '';      // 홈을 그릴 때의 상태 표 (달라졌으면 패널만 여닫지 않고 홈을 다시 그림)
   var corpsWas = null;     // 군단 탭이 방금 열렸는지 알아채는 용 (열리면 토스트 한 번)
 
-  function render() {
+  function homeSig() { try { var f = P.flowInfo(); return RUN.phase + '|' + (RUN.quest ? RUN.quest.key || RUN.quest.name : '') + '|' + (f && f.show ? 'show' : ''); } catch (e) { return RUN.phase; } }
+
+  function tabOfPanel(name) { return name === 'company' ? 'company' : name === 'corps' ? 'corps' : 'field'; }   // 상단 바 칩 종류
+  // 패널 열기·바꾸기·닫기. keep = 같은 패널이 이미 떠 있으면 다시 그리지 않는다 (홈을 다시 그릴 때)
+  function showPanel(name, keep) {
+    var opening = !curPanel && !!name, was = curPanel;
+    if (name && name === was && keep) { document.body.classList.add('paneled'); hudSetTab(tabOfPanel(name)); document.dispatchEvent(new Event('panelchange')); return; }
+    runPanelHooks();
+    curPanel = name || null;
+    document.body.classList.toggle('paneled', !!name);
+    if (!name || !PANELS[name]) { curPanel = null; panelEl.hidden = true; panelEl.innerHTML = ''; hudSetTab('field'); document.dispatchEvent(new Event('panelchange')); return; }
+    var box = div('pnl' + (opening && animateNext ? ' enter' : '') + ' p-' + name);
+    PANELS[name](box);
+    panelEl.innerHTML = '';
+    panelEl.appendChild(box);
+    panelEl.hidden = false;
+    hudSetTab(tabOfPanel(name));
+    document.dispatchEvent(new Event('panelchange'));
+  }
+  function closePanel() { history.replaceState(null, '', '#' + BASE_HASH); animateNext = false; render(); }
+  // 홈을 새로 그리며 패널을 닫는다 (수락·정산·처음부터)
+  function goHomeFresh(anim) { animateNext = !!anim; history.replaceState(null, '', '#' + BASE_HASH); render(true); }
+  // 패널 안에서 상태를 바꿨을 때 (군단 강화·자동 편성): 진행 중이던 일반 판은 버려졌으니 홈을 새 판으로 다시 그림. 패널은 그대로
+  function refreshHome() { render(true); }
+
+  function render(force) {
+    var name = guardScreen((location.hash || '#' + BASE_HASH).slice(1));
+    var base = name === 'build' ? 'build' : 'field', panel = base === 'field' && PANEL_IDS.indexOf(name) >= 0 ? name : null;
+    document.body.setAttribute('data-screen', name);
+    // 빠른 길: 홈이 살아 있고 상태도 같으면 패널만 여닫는다 (전투가 안 끊김)
+    if (!force && base === 'field' && lastBase === 'field' && homeSigAt === homeSig()) {
+      lastName = name;
+      showPanel(panel, false);
+      drawTabs(name);
+      animateNext = false;
+      return;
+    }
     leaveHooks.splice(0).forEach(function (fn) { fn(); });
     guardFn = null;
-    var name = guardScreen((location.hash || '#company').slice(1));   // 켜면 회사부터
     tutLeave(name);
-    var keep = name === lastName && !animateNext ? view.scrollTop : 0; // 같은 화면을 다시 그릴 땐 스크롤 유지
-    lastName = name;
-    if (TAB_IDS.indexOf(name) >= 0 && name !== 'build') lastTab = name;
+    lastName = name; lastBase = base;
     P.setBattle(false); // 흐름 시험: 일반 판 중에도 배치를 바꿀 수 있다 (보스 중만 progress.js 가 막음)
-    document.body.setAttribute('data-screen', name);
-    drawTabs(name);
     var el = div('screen');
-    SCREENS[name](el);
-    if (animateNext) el.classList.add('enter');
-    animateNext = false;
+    SCREENS[base](el);
+    var enter = animateNext && !panel;
+    if (enter) el.classList.add('enter');
     view.innerHTML = '';
     view.appendChild(el);
-    view.scrollTop = keep;
+    homeSigAt = homeSig();
+    showPanel(panel, true);
+    drawTabs(name);
+    animateNext = false;
     tutCheck(name);
   }
-  // 같은 화면이면 해시가 안 바뀌어 hashchange 가 없으니 직접 다시 그린다 (처음부터 다시 등)
-  function goFresh(hash) { if ((location.hash || '#company') === '#' + hash) render(); else go(hash, true); }
 
-  // 하단 막대: 탭 화면(회사·현장·건설 상태·군단)에서 3개 탭. 지금 보는 탭만 윗줄 표시(건설 = 현장).
-  //  군단 = 첫 전투 정산 전 `잠김 · 첫 전투 후 열림`. 보스 도전 중에는 탭이 보이되 이동이 막히고 `보스전 종료 후`를 적는다.
-  function tabState(t) { return t.state === 'gate' ? (corpsOpen() ? 'open' : 'lock') : t.state; }
+  // 하단 막대 (DS 구조): 회사·카드·군단·도전·마계·상점 6개. 열린 패널의 탭 자리는 [닫기]. 보스 도전 중에는 흐리게 막힘(글자만).
+  //  군단 = 첫 전투 정산 전 `🔒` 토스트. 도전·마계·상점 = 흐린 글자 (누르면 패널에 잠김 한 줄)
   function drawTabs(name) {
-    tabsEl.className = '';
-    var now = corpsOpen();
+    var lock = bossLocked(), now = corpsOpen();
     if (corpsWas === false && now) toast('군단이 열렸어요!');
     corpsWas = now;
-    tabsEl.hidden = TAB_IDS.indexOf(name) < 0;
-    var shown = name === 'build' ? 'field' : name, lock = bossLocked();
-    tabsEl.classList.toggle('bosslock', lock);
+    tabsEl.hidden = false;
+    tabsEl.className = lock ? 'bosslock' : '';
     tabsEl.innerHTML = TABS.map(function (t) {
-      var st = tabState(t), on = st === 'open' && t.id === shown;
-      if (st === 'lock') return '<button class="lock" type="button" data-toast="' + esc('🔒 ' + t.label + ': ' + condText(t.id)) + '"><span class="nm">🔒 ' + t.label + '</span><small>잠김 · ' + condText(t.id) + '</small></button>';
-      if (lock && !on) return '<button class="open locked" type="button" data-toast="보스전이 끝나면 이동할 수 있어요"><span class="nm">' + t.label + '</span><small>보스전 종료 후 이동</small></button>';
-      return '<button class="open' + (on ? ' on' : '') + '" type="button" data-go="' + t.id + '"><span class="nm">' + t.label + '</span></button>';
+      if (lock) return '<button class="tb locked" type="button" data-toast="보스전이 끝나면 이동할 수 있어요"><span class="nm">' + t.label + '</span></button>';
+      if (name === t.id) return '<button class="tb closing" type="button" data-close>' + ic('close', '', 18) + '<span class="nm">닫기</span></button>';
+      if (t.gate && !now) return '<button class="tb lock" type="button" data-toast="' + esc('🔒 ' + t.label + ': ' + condText(t.id)) + '">' + ic(t.icon, '', 20) + '<span class="nm">' + t.label + '</span></button>';
+      return '<button class="tb' + (t.soon ? ' dimtab' : '') + '" type="button" data-go="' + t.id + '">' + ic(t.icon, '', 20) + '<span class="nm">' + t.label + '</span></button>';
     }).join('');
   }
 
-  // 눌림은 한 곳에서 받는다: data-go(앞으로, 애니메이션) · data-back(즉시) · data-toast · data-deliver(납품)
+  // 눌림은 한 곳에서 받는다: data-go(앞으로, 애니메이션) · data-back(즉시) · data-toast · data-deliver(납품) · data-close(패널 닫기)
   document.addEventListener('click', function (e) {
-    var t = e.target.closest ? e.target.closest('[data-go],[data-back],[data-toast],[data-deliver]') : null;
+    var t = e.target.closest ? e.target.closest('[data-go],[data-back],[data-toast],[data-deliver],[data-close]') : null;
     if (!t) return;
     if (t.hasAttribute('data-toast')) { toast(t.getAttribute('data-toast')); buzz('tap'); return; }
     if (t.hasAttribute('data-deliver')) { deliverNow(); return; }
+    if (t.hasAttribute('data-close')) { buzz('tap'); closePanel(); return; }
     var dest = t.hasAttribute('data-back') ? t.getAttribute('data-back') : t.getAttribute('data-go'), anim = !t.hasAttribute('data-back');
     if (guardFn && guardFn(dest, function () { buzz('tap'); go(dest, anim); })) return;   // 건설 미확정: 확정·취소를 먼저 물음
     buzz('tap');
     go(dest, anim);
   });
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', function () { render(); });
 
   // 방치 시간은 마지막으로 저장한 때(RUN.lastSeen)부터 재므로, 화면을 켜 둔 동안은 1분마다 저장하고 가리거나 닫을 때도 저장한다.
   // 전투 중에도 저장한다: P.save()는 RUN을 그대로 쓸 뿐이라 전투 저장 지점(RUN.bsave)은 안 바뀐다 (bsave는 saveBattle 로만 갱신).

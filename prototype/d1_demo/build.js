@@ -7,6 +7,7 @@
  *  - 흐름 (시설): 아래 시설 띠(함정·대기실·미끼)에서 시설을 끌어 빈 구역에 놓는다 (눌러 고른 뒤 칸을 눌러도 됨). 놓은 것은 "미확정"(점선·반투명·× 빼기, 여러 곳 가능).
  *  - 흐름 (문): 노란 문 표시를 끌어 문 없는 안쪽 벽(점선 칸)에 놓는다 (문을 누른 뒤 빈 벽을 눌러도 됨). 끄는 동안 P.previewLayout 으로 검사:
  *    거절이면 이유(why) 토스트 + 끊긴 방(isolated) 빗금, 문은 원래 자리로. 옮긴 문은 미확정(점선·반투명).
+ *  - DS 구조 UI (2026-10-29): 홈 시설 성장판 칸(함정·대기실·미끼·문)을 누르면 이 화면으로 오고, 그 시설이 골라진 채(api.takePreset) 시작한다. 문 칸 = 문 옮기기(빈 벽 점선을 처음부터 보임). 방 이름표("왼쪽 끝 1" 등)는 안 보인다(CSS).
  *  - UI 개편 (2026-10-29): 현장 탭의 건설 상태. 위 = 공통 상단 바(api.hud) + 판을 크게 + 아래 시설 띠·합계·[취소][건설 확정 · 마석 N]. 확정·취소 모두 현장(운영 또는 보스 결과)으로 돌아간다.
  *    미확정이 있는데 탭·설정을 누르면 [확정하고 이동][버리고 이동][계속 수정]을 묻는다 (api.setGuard). 브라우저 뒤로 가기는 미확정을 버린다.
  *  - 아래 한 줄 합계 (미확정 시설 n곳 · 문 n개 옮김 · 마석 a → b · 가치 · 전투력). [건설 확정] = P.commitLayout 으로 문 + 시설 한 번에 확정 (문은 무료) / [취소] = 미확정 버리고 나감 (비용 없음).
@@ -288,6 +289,7 @@
       var armedDoor = null; // 눌러서 고른 문 { edge, floor } (빈 벽을 누르면 옮김)
       var drag = null;      // 끌기 중 { kind: 'tool'|'pend'|'door', ... }
       var isoRooms = null;  // 거절된 문 옮기기에서 끊긴 방 { 방: true } (잠깐 빗금)
+      var presetDoor = false; // 홈 [문] 칸으로 들어옴: 첫 동작 전까지 문 옮기기 안내 + 빈 벽 점선
       var timers = [];
       el.classList.add('fixed', 'buildmode');
 
@@ -389,6 +391,7 @@
         });
         if (armed) markDrops(armed);
         if (armedDoor || (drag && drag.kind === 'door' && drag.started)) markDoorSlots(armedDoor ? armedDoor.floor : drag.floor);
+        else if (presetDoor && !armed) markDoorSlots(1);
       }
       function toolKeys() {
         return TOOL_ORDER.filter(function (k) {
@@ -425,6 +428,7 @@
         if (!order.length && !nd) {
           h = armed ? '<b>' + TOOL_LABEL[armed] + '</b>을(를) 골랐어요 · 놓을 빈 구역을 누르세요 (마석 ' + money(left) + ')'
             : armedDoor ? '문을 골랐어요 · 옮길 빈 벽(점선)을 누르세요'
+            : presetDoor ? '🚪 노란 문 표시를 끌어 점선 빈 벽에 놓으세요 (문은 공짜)'
             : '시설은 빈 구역에, 노란 문은 다른 벽으로 끌어 놓으세요 (마석 ' + money(left) + ')';
         } else {
           var c = cur || { cost: 0, valueAfter: 0, valueNow: 0, powerAfter: 0, powerNow: 0, gift: 0 }, ps = [];
@@ -447,6 +451,7 @@
 
       // ----- 시설 놓기·빼기·확정 -----
       function place(z, k) {
+        presetDoor = false;
         var r = canPlace(z, k, false);
         if (!r.ok) { api.toast(r.why); api.buzz('warn'); return false; }
         if (!pend[z]) order.push(z);
@@ -530,6 +535,7 @@
       }
       // n층의 from 문을 to 벽으로. 검사에 걸리면 이유 토스트 + 끊긴 방 빗금, 문은 그대로
       function moveDoorTo(n, from, to) {
+        presetDoor = false;
         var list = (pdoors[n] || []).map(function (id) { return id === from ? to : id; }), ex = {};
         ex[n] = list;
         var p = layout(null, ex);
@@ -740,6 +746,7 @@
         var t = e.target.closest ? e.target.closest('[data-tool]') : null;
         if (!t || drag) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        presetDoor = false;
         drag = { kind: 'tool', k: t.getAttribute('data-tool'), pid: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY,
           started: false, ghost: null, hot: null, node: t, raf: 0 };
         listen();
@@ -808,6 +815,10 @@
       });
 
       if (q && RUN.site.builds === 0) api.tutStart('zones', { keep: true });   // 첫 건설 전 안내 (추천 칸 강조는 drawBoard 가 api.tutZones 로, 대기실 띠는 drawTools 가)
+      // 홈 성장판 칸으로 들어왔으면 그 시설이 골라진 채로 시작 (문 칸 = 문 옮기기: 빈 벽 점선을 처음부터 보임)
+      var pre = api.takePreset ? api.takePreset() : null;
+      if (pre === 'door') presetDoor = true;
+      else if (pre && toolKeys().indexOf(pre) >= 0) armed = pre;
       redraw();
       // 튜토리얼 강조 칸이 화면 아래에 잘려 있으면 보이는 곳까지 단면을 내려 준다 (화면이 붙은 뒤에 재야 해서 한 프레임 뒤)
       requestAnimationFrame(function () {
