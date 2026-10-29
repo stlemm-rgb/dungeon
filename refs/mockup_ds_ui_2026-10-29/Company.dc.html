@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>회사 탭</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e6a23c}a:hover{color:#f0c070}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #16181c; color: #e9ebef; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="height: 56px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; gap: 8px;">
+    <div style="position: relative; width: 42px; height: 42px; border-radius: 12px; background: #3a3020; border: 2px solid #e6a23c; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e6a23c" stroke-width="1.8" aria-hidden="true"><path d="M5 12a7 7 0 0114 0z"/><path d="M3 12h18"/><circle cx="12" cy="17" r="3"/></svg>
+      <span style="position: absolute; bottom: -6px; right: -6px; background: #e6a23c; color: #1b1305; border-radius: 6px; font-size: 10px; font-weight: 800; padding: 0 4px;">Lv1</span>
+    </div>
+    <span style="font-size: 14px; font-weight: 800;">전투력 8</span>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 4px; background: #21252b; border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 13px; font-weight: 600;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f0c070" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8"/></svg>120</div>
+  </div>
+
+  <div style="position: relative; height: 150px; margin: 0 12px; border-radius: 12px; overflow: hidden; background: #0f1115;">
+    <svg width="366" height="150" viewBox="0 210 350 143" preserveAspectRatio="xMidYMid slice" role="img" aria-label="위쪽에 던전 전투가 계속 보임">
+      <g fill="#2a2e35">
+        <rect x="3" y="213" width="64" height="64" rx="6"/><rect x="283" y="213" width="64" height="64" rx="6"/>
+        <rect x="3" y="283" width="64" height="64" rx="6"/><rect x="143" y="283" width="64" height="64" rx="6"/><rect x="213" y="283" width="64" height="64" rx="6"/><rect x="283" y="283" width="64" height="64" rx="6"/>
+      </g>
+      <rect x="73" y="213" width="204" height="64" rx="6" fill="#1d3846"/>
+      <rect x="73" y="283" width="64" height="64" rx="6" fill="#40291f"/>
+      <g stroke="#5d7183" stroke-width="7" stroke-linecap="round" fill="none"><path d="M35 210V355M315 210V355M105 315H245M175 315V355"/></g>
+      <g stroke="#0f1115" stroke-width="3"><circle cx="35" cy="300" r="10" fill="#b9c0cc"/><circle cx="315" cy="240" r="10" fill="#7fd18b"/></g>
+    </svg>
+    <span style="position: absolute; left: 8px; top: 8px; background: rgba(33,37,43,.92); border-radius: 8px; padding: 3px 8px; font-size: 11px; color: #98a1ae;">1-3 · 일반 침입 진행 중</span>
+  </div>
+
+  <div style="flex-grow: 1; margin-top: 8px; background: #21252b; border-radius: 18px 18px 0 0; padding: 12px 12px 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;">
+      <button style="height: 36px; border-radius: 10px; border: 0; background: #e6a23c; color: #1b1305; font: 800 13px 'Noto Sans KR', sans-serif;">회사 운영</button>
+      <button style="height: 36px; border-radius: 10px; border: 0; background: #2a2f37; color: #e9ebef; font: 600 13px 'Noto Sans KR', sans-serif;">직원</button>
+      <button style="height: 36px; border-radius: 10px; border: 0; background: #1c1f24; color: #6b7380; font: 600 13px 'Noto Sans KR', sans-serif;">연구 (잠김)</button>
+    </div>
+
+    <div style="height: 150px; position: relative; display: flex; align-items: center; justify-content: center;">
+      <div style="width: 84px; height: 84px; border-radius: 50%; background: #3a3020; border: 2px solid #e6a23c; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <span style="font-size: 11px; color: #f0c070;">검은망치 건설</span>
+        <span style="font-size: 18px; font-weight: 800;">3단계</span>
+      </div>
+      <span style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 12px; background: #2a2f37; border-radius: 8px; padding: 4px 8px;">함정 피해 Lv3</span>
+      <span style="position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 12px; background: #2a2f37; border-radius: 8px; padding: 4px 8px;">금 수입 Lv2</span>
+      <span style="position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 12px; background: #2a2f37; border-radius: 8px; padding: 4px 8px;">대기실 체력 Lv3</span>
+      <span style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 12px; background: #2a2f37; border-radius: 8px; padding: 4px 8px;">마석 보급 Lv2</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <div style="height: 52px; border-radius: 12px; background: #2a2f37; padding: 0 10px; display: flex; align-items: center; gap: 10px;">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; font-weight: 600;">함정 피해 +6% → +8%</span>
+          <span style="height: 5px; border-radius: 3px; background: #1c1f24; display: block;"><span style="display: block; width: 80%; height: 5px; border-radius: 3px; background: #e6a23c;"></span></span>
+        </div>
+        <button style="height: 38px; padding: 0 10px; border-radius: 10px; border: 0; background: #e6a23c; color: #1b1305; font: 800 12px 'Noto Sans KR', sans-serif;">레벨업 금 40</button>
+      </div>
+      <div style="height: 52px; border-radius: 12px; background: #2a2f37; padding: 0 10px; display: flex; align-items: center; gap: 10px;">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; font-weight: 600;">대기실 체력 +6% → +8%</span>
+          <span style="height: 5px; border-radius: 3px; background: #1c1f24; display: block;"><span style="display: block; width: 80%; height: 5px; border-radius: 3px; background: #e6a23c;"></span></span>
+        </div>
+        <button style="height: 38px; padding: 0 10px; border-radius: 10px; border: 0; background: #e6a23c; color: #1b1305; font: 800 12px 'Noto Sans KR', sans-serif;">레벨업 금 40</button>
+      </div>
+      <div style="height: 52px; border-radius: 12px; background: #2a2f37; padding: 0 10px; display: flex; align-items: center; gap: 10px;">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; font-weight: 600;">마석 보급 +2 → +3</span>
+          <span style="height: 5px; border-radius: 3px; background: #1c1f24; display: block;"><span style="display: block; width: 50%; height: 5px; border-radius: 3px; background: #e6a23c;"></span></span>
+        </div>
+        <button style="height: 38px; padding: 0 10px; border-radius: 10px; border: 0; background: #2a2f37; color: #6b7380; font: 800 12px 'Noto Sans KR', sans-serif; border: 1px solid #3a414c;">금 60 필요</button>
+      </div>
+    </div>
+    <span style="font-size: 11px; color: #6b7380; text-align: center;">회사 능력 4개는 DS 마법책 자리 (숫자·항목은 자리 표시)</span>
+  </div>
+
+  <nav style="height: 62px; border-top: 1px solid #2a2f37; background: #21252b; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 800; color: #e6a23c; text-decoration: none;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>닫기</a>
+    <a href="Boss.dc.html" style="display: flex; align-items: center; justify-content: center; font-size: 11px; color: #c8ccd3; text-decoration: none;">카드</a>
+    <a href="Corps.dc.html" style="display: flex; align-items: center; justify-content: center; font-size: 11px; color: #c8ccd3; text-decoration: none;">군단</a>
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; font-size: 11px; color: #6b7380; text-decoration: none;">도전</a>
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; font-size: 11px; color: #6b7380; text-decoration: none;">마계</a>
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; font-size: 11px; color: #6b7380; text-decoration: none;">상점</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

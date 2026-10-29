@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>홈 던전 자동 전투</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e6a23c}a:hover{color:#f0c070}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #16181c; color: #e9ebef; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="height: 56px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; gap: 8px;">
+    <div style="position: relative; width: 42px; height: 42px; border-radius: 12px; background: #3a3020; border: 2px solid #e6a23c; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e6a23c" stroke-width="1.8" aria-hidden="true"><path d="M5 12a7 7 0 0114 0z"/><path d="M3 12h18"/><circle cx="12" cy="17" r="3"/></svg>
+      <span style="position: absolute; bottom: -6px; right: -6px; background: #e6a23c; color: #1b1305; border-radius: 6px; font-size: 10px; font-weight: 800; padding: 0 4px;">Lv1</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <span style="font-size: 14px; font-weight: 800;">전투력 8</span>
+      <span style="width: 90px; height: 4px; border-radius: 2px; background: #3a414c; display: block;"><span style="display: block; width: 20%; height: 4px; border-radius: 2px; background: #6fcf7a;"></span></span>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 4px; background: #21252b; border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 13px; font-weight: 600;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b88cf0" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18"/></svg>40</div>
+    <div style="display: flex; align-items: center; gap: 4px; background: #21252b; border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 13px; font-weight: 600;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f0c070" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8"/></svg>0</div>
+  </div>
+
+  <div style="height: 40px; box-sizing: border-box; margin: 0 12px; padding: 0 6px 0 12px; border-radius: 12px; background: #21252b; display: flex; align-items: center; gap: 8px;">
+    <span style="font-size: 14px; font-weight: 800;">1-3</span>
+    <div style="display: flex; gap: 5px; align-items: center;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #6fcf7a;"></span>
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #6fcf7a;"></span>
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #e6a23c;"></span>
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #3a414c;"></span>
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #3a414c;"></span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e5604f" stroke-width="2" aria-hidden="true"><path d="M3 18h18l-2-10-5 4-2-7-2 7-5-4z"/></svg>
+    </div>
+    <span style="font-size: 12px; color: #98a1ae;">0:12</span>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 30px; padding: 0 12px; border-radius: 9px; border: 0; background: #e6a23c; color: #1b1305; font: 800 13px 'Noto Sans KR', sans-serif;">보스 도전</button>
+  </div>
+
+  <div style="position: relative; height: 382px; margin-top: 8px; display: flex; justify-content: center;">
+    <div style="position: absolute; left: 12px; top: 4px; display: flex; flex-direction: column; gap: 10px;">
+      <button aria-label="의뢰" style="width: 44px; height: 44px; border-radius: 12px; border: 0; background: #21252b; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 9px 'Noto Sans KR', sans-serif; gap: 1px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>의뢰</button>
+      <button aria-label="작품집" style="width: 44px; height: 44px; border-radius: 12px; border: 0; background: #21252b; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 9px 'Noto Sans KR', sans-serif; gap: 1px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 16l5-5 4 4 3-3 4 4"/></svg>작품집</button>
+      <button aria-label="랭킹 (자리)" style="width: 44px; height: 44px; border-radius: 12px; border: 1px dashed #3a414c; background: transparent; color: #6b7380; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 9px 'Noto Sans KR', sans-serif; gap: 1px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>랭킹</button>
+    </div>
+    <div style="position: absolute; right: 12px; top: 4px; display: flex; flex-direction: column; gap: 10px;">
+      <button aria-label="임무 (자리)" style="width: 44px; height: 44px; border-radius: 12px; border: 1px dashed #3a414c; background: transparent; color: #6b7380; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 9px 'Noto Sans KR', sans-serif; gap: 1px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l2 2 4-4"/><rect x="4" y="4" width="16" height="16" rx="2"/></svg>임무</button>
+      <button aria-label="출석 (자리)" style="width: 44px; height: 44px; border-radius: 12px; border: 1px dashed #3a414c; background: transparent; color: #6b7380; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 9px 'Noto Sans KR', sans-serif; gap: 1px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>출석</button>
+      <button aria-label="설정" style="width: 44px; height: 44px; border-radius: 12px; border: 0; background: #21252b; color: #98a1ae; display: flex; align-items: center; justify-content: center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+      </button>
+    </div>
+    <div style="width: 262px; height: 367px; border-radius: 12px; overflow: hidden; background: #0f1115;">
+      <svg width="262" height="367" viewBox="0 0 350 490" role="img" aria-label="던전 판: 침입자 3분대가 자동으로 들어오는 중">
+        <g fill="#2a2e35">
+          <rect x="3" y="3" width="64" height="64" rx="6"/><rect x="73" y="3" width="64" height="64" rx="6"/><rect x="213" y="3" width="64" height="64" rx="6"/><rect x="283" y="3" width="64" height="64" rx="6"/>
+          <rect x="3" y="73" width="64" height="64" rx="6"/><rect x="73" y="73" width="64" height="64" rx="6"/><rect x="143" y="73" width="64" height="64" rx="6"/><rect x="213" y="73" width="64" height="64" rx="6"/><rect x="283" y="73" width="64" height="64" rx="6"/>
+          <rect x="3" y="143" width="64" height="64" rx="6"/><rect x="73" y="143" width="64" height="64" rx="6"/><rect x="143" y="143" width="64" height="64" rx="6"/><rect x="283" y="143" width="64" height="64" rx="6"/>
+          <rect x="3" y="213" width="64" height="64" rx="6"/><rect x="283" y="213" width="64" height="64" rx="6"/>
+          <rect x="3" y="283" width="64" height="64" rx="6"/><rect x="143" y="283" width="64" height="64" rx="6"/><rect x="213" y="283" width="64" height="64" rx="6"/><rect x="283" y="283" width="64" height="64" rx="6"/>
+          <rect x="3" y="353" width="64" height="64" rx="6"/><rect x="73" y="353" width="64" height="64" rx="6"/><rect x="213" y="353" width="64" height="64" rx="6"/><rect x="283" y="353" width="64" height="64" rx="6"/>
+          <rect x="3" y="423" width="64" height="64" rx="6"/><rect x="73" y="423" width="64" height="64" rx="6"/><rect x="213" y="423" width="64" height="64" rx="6"/><rect x="283" y="423" width="64" height="64" rx="6"/>
+        </g>
+        <rect x="143" y="3" width="64" height="64" rx="6" fill="#2f4a35"/>
+        <rect x="73" y="213" width="204" height="64" rx="6" fill="#1d3846"/>
+        <rect x="213" y="143" width="64" height="64" rx="6" fill="#40291f"/>
+        <rect x="73" y="283" width="64" height="64" rx="6" fill="#40291f"/>
+        <rect x="143" y="353" width="64" height="64" rx="6" fill="#202f45"/>
+        <rect x="143" y="423" width="64" height="64" rx="6" fill="#44381a"/>
+        <g stroke="#5d7183" stroke-width="7" stroke-linecap="round" fill="none">
+          <path d="M175 35V105M105 105H245M35 105H105M245 105H315M35 105V455M315 105V455M35 455H315M175 105V175M35 175H105M245 175H315M105 315H245M175 315V455M35 385H105M245 385H315"/>
+        </g>
+        <g fill="#e0734f"><path d="M233 186l6-14 6 14zM245 186l6-14 6 14z"/><path d="M93 326l6-14 6 14zM105 326l6-14 6 14z"/></g>
+        <g fill="#58a6e8"><circle cx="160" cy="388" r="6"/><circle cx="175" cy="388" r="6"/><circle cx="190" cy="388" r="6"/></g>
+        <path d="M163 460l12-14 12 14z" fill="#f0c070"/>
+        <g stroke="#0f1115" stroke-width="3">
+          <circle cx="175" cy="150" r="11" fill="#7fd18b"/>
+          <circle cx="35" cy="270" r="11" fill="#b9c0cc"/>
+          <circle cx="315" cy="190" r="11" fill="#6cb4f0"/>
+        </g>
+        <g font-family="Noto Sans KR, sans-serif" font-size="18" font-weight="800" text-anchor="middle">
+          <text x="245" y="160" fill="#f08a7c">-6</text>
+          <text x="35" y="240" fill="#f0c070">+2</text>
+        </g>
+      </svg>
+    </div>
+    <div style="position: absolute; right: 12px; bottom: 6px; width: 120px; background: rgba(33,37,43,.95); border: 1px solid #3a414c; border-radius: 10px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px;">
+      <span style="font-size: 10px; color: #98a1ae;">다음 목표</span>
+      <span style="font-size: 12px; font-weight: 800;">보스 1 막기</span>
+      <span style="font-size: 11px; color: #b88cf0;">마석 +20</span>
+    </div>
+  </div>
+
+  <div style="margin: 8px 12px 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;">
+    <div style="height: 50px; border-radius: 10px; background: #2a2f37; border: 1px solid #3a414c; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; color: #98a1ae;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b9c0cc" stroke-width="1.8" aria-hidden="true"><path d="M4 14a4 4 0 014-4 5 5 0 019.6 1A3.5 3.5 0 0117 18H7a3 3 0 01-3-4z"/></svg>연막</div>
+    <div style="height: 50px; border-radius: 10px; background: #2a2f37; border: 1px solid #3a414c; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; color: #98a1ae;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#58a6e8" stroke-width="1.8" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg>수비대</div>
+    <div style="height: 50px; border-radius: 10px; background: #2a2f37; border: 1px solid #3a414c; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; color: #98a1ae;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e0734f" stroke-width="1.8" aria-hidden="true"><path d="M4 20l4-10 4 10M12 20l4-10 4 10"/></svg>긴급</div>
+    <div style="height: 50px; border-radius: 10px; background: #1c1f24; display: flex; align-items: center; justify-content: center; color: #4a515c;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
+    <div style="height: 50px; border-radius: 10px; background: #1c1f24; display: flex; align-items: center; justify-content: center; color: #4a515c;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
+    <div style="height: 50px; border-radius: 10px; background: #1c1f24; display: flex; align-items: center; justify-content: center; color: #4a515c;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
+  </div>
+
+  <div style="margin: 8px 12px 0; padding: 10px; border-radius: 14px; background: #21252b; display: flex; gap: 10px;">
+    <div style="flex-grow: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;">
+      <button style="height: 58px; border-radius: 10px; border: 1px solid #5a3a2a; background: #40291f; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 600 10px 'Noto Sans KR', sans-serif;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#e0734f" aria-hidden="true"><path d="M4 18l4-10 4 10zM12 18l4-10 4 10z"/></svg>함정 ×2<span style="color: #f0c070;">Lv1</span></button>
+      <button style="height: 58px; border-radius: 10px; border: 1px solid #2c4a6e; background: #202f45; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 600 10px 'Noto Sans KR', sans-serif;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#58a6e8" aria-hidden="true"><circle cx="7" cy="12" r="3"/><circle cx="12" cy="12" r="3"/><circle cx="17" cy="12" r="3"/></svg>대기실 ×1<span style="color: #f0c070;">Lv1</span></button>
+      <button style="height: 58px; border-radius: 10px; border: 1px solid #4a3a5c; background: #33263f; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 600 10px 'Noto Sans KR', sans-serif;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b88cf0" stroke-width="2" aria-hidden="true"><path d="M12 3v6M8 9h8l-1 12H9z"/></svg>미끼<span style="color: #98a1ae;">0</span></button>
+      <button style="height: 58px; border-radius: 10px; border: 1px solid #6b5420; background: #3a3020; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 600 10px 'Noto Sans KR', sans-serif;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8bb72" stroke-width="2" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="1"/><circle cx="14" cy="12" r="1"/></svg>문 35<span style="color: #98a1ae;">옮기기</span></button>
+    </div>
+    <button style="width: 78px; border-radius: 12px; border: 1px solid #3a414c; background: #2a2f37; color: #e9ebef; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 11px 'Noto Sans KR', sans-serif;">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7fd18b" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="16" cy="9" r="2.5"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6M14 14c3 0 6 2 6 5"/></svg>
+      부대 모집<span style="color: #b88cf0;">마석 10</span></button>
+  </div>
+
+  <div style="flex-grow: 1;"></div>
+  <nav style="height: 62px; border-top: 1px solid #2a2f37; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));">
+    <a href="Company.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #c8ccd3; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg>회사</a>
+    <a href="Boss.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #c8ccd3; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6"/></svg>카드</a>
+    <a href="Corps.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #c8ccd3; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6"/><circle cx="17" cy="9" r="2.5"/></svg>군단</a>
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #6b7380; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20h16M6 20V9l6-5 6 5v11"/><path d="M10 20v-4h4v4"/></svg>도전</a>
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #6b7380; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>마계</a>
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: #6b7380; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9l2-5h12l2 5"/><path d="M4 9h16v11H4z"/><path d="M9 20v-6h6v6"/></svg>상점</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
