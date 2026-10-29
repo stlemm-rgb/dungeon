@@ -564,3 +564,80 @@ q1 판 `g1` (33방, 문 35개 = 방 수 + 2): 입구에서 **왼쪽 끝 길(A열
 ### 17-4. 측정 (숫자는 안 바꿈, 다시 맞추기는 마지막에 몰아서 = 사용자 결정)
 
 - `tools/test_d1_core.py` 18절 `sample.noTimeout`: 검사 판 전체의 안전장치 걸린 수(0이어야 함)·일반/보스 판 평균·최대 시간.
+
+## 18. 보스전 카드 3종 (2026-10-29, 지시서 `refs/brief_cards_core.md`, 기획서 `docs/specs/dungeon_cards.md` 0절)
+
+**보스전에서만**, 한 판에 최대 2번 카드 기회가 온다. 기회가 오면 전투가 완전히 멈추고(`S.pick`) 화면이 고른 결과를 넘기면 이어진다. 숫자는 모두 임시 (`BATTLE_DATA.BOSS_CARDS`).
+
+### 18-1. 켜기 (화면이 할 일 1줄)
+
+- 보스 판 전투 입력을 `P.battleInput(plan, { cards: true })`로 만든다 (`BSIM.create`·`restore` 둘 다). 흐름 시험(`FLOW.on`) + `plan.mode === 'boss'`일 때만 실제로 켜진다. **안 넘기면 지금처럼 카드 없음** (지금 battle.js·검사 도구 그대로 동작).
+- 일반 판·옛 주 단위 규칙(`FLOW.on = false`)에는 새 카드가 없다. 옛 `EVENT_CARDS`·`crisis` 사건은 옛 규칙용으로 그대로 (새 흐름 화면은 `crisis` 사건을 계속 무시).
+
+### 18-2. 규칙
+
+| 것 | 내용 |
+| --- | --- |
+| 기회 | 첫 분대 진입 순간 1 (`slot 'enter'`) + 이후 위기 1 (`slot 'crisis'`). 여러 층 합쳐 판당. 재도전(새 전투) = 다시 2회 |
+| 위기 | 옛 위기 감지와 같음: 보물방과 문으로 이어진 방에 분대가 들어섬 · 분대 진행도 85% (분대마다 한 번) · 던전 안 분대 3개 이상 · 보스 주 (종류마다 한 번) |
+| 합침 | 첫 진입과 같은 순간(같은 `step`)의 위기는 진입 기회 하나로 (`kinds`에 같이 나옴) |
+| 넘기기 | 기회 1회 사용, 효과 없음. 모두 넘기면 카드 없는 판과 결과가 똑같다 |
+| 후보 없음 | 창을 안 띄우고 기회도 안 씀. 진입 기회는 그 순간이 지나면 다시 안 옴, 위기 기회는 다음 위기를 기다림 |
+| 후보 | 3종 고정 목록 중 **지금 대상이 있는 것만**, 목록 순서 그대로 (무작위 없음 -> 같은 단계·같은 배치·같은 선택 = 같은 결과) |
+| 정지 | `S.pick`이 있으면 `BSIM.step`은 아무것도 안 함 (시간도 안 흐름). 연막 3초는 재개 뒤 게임 시간 |
+| 층 | 효과는 지금 층만. 다음 층으로 넘어가면 연막은 없어짐 |
+
+| 카드 (`id`) | 대상 | 효과 |
+| --- | --- | --- |
+| 연막 살포 `smoke` | 자동: 지금 층에서 `move` 상태인 분대 전체 (`ids`) | 그 분대들 `sec`(3)초 정지 (이동·함정 다시 굴리기 멈춤). 조우 중(`fight`)·대기 중 분대는 대상 아님 |
+| 임시 수비대 `reserve` | 직접: 지금 층의 **빈 대기실**(출진 부대 0) 1곳 (`rooms[].z`). 층 출진 한도(`FLOOR_CAP`)가 이미 찼으면 후보 없음 | 그 방에 이번 전투 전용 부대 (`tmp1`…): 기본 무료 부대와 같은 부족·인원(돌등껍질족 3명), 레벨 1 기본 능력치(체력 120·공격 5·방어 0.25), 성장·부족 강화·시설 강화 없음. 다음에 오는 분대와 실제로 조우 |
+| 긴급 작동 `trigger` | 직접: `move` 분대가 안에 있는 함정 1곳 (`rooms[{ z, ids, dmg }]`). 그 분대가 그 함정에 `trapMax`(2)번 넘게 들어간 뒤면 대상 아님 | 확률 없이 기본 피해(칸당 6 × 칸 수) 1회, 강화·카드 배율 없음 (침입자 방어는 적용). 체력 절반 아래면 퇴각(원인 `'card'`) |
+
+### 18-3. 함수 (`window.BSIM`, S = 전투 상태)
+
+| 함수 | 돌려주는 값 |
+| --- | --- |
+| `pickInfo(S)` | 선택 대기 중이면 `{ n(몇 번째 기회 1·2), max(2), left(이 창 포함 남은 기회), slot('enter'·'crisis'), kinds(['treasure'·'surge'·'boss'], 진입만이면 []), where[{ kind, id(분대, 없으면 -1), z(그 분대가 있던 방) }], at(게임 초), floor, sel(대상 고르는 중인 카드 id, 아니면 ''), cands[후보] }`, 아니면 `null`. 복사본 |
+| 후보 `cands[]` | `{ id, kind('event'·'reinforce'·'trap'), name, text(효과 한 줄), grade(1), target('auto'·'room') }` + smoke `ids, sec` · reserve `rooms[{ z }], count, unitName` · trigger `rooms[{ z, ids, dmg }]` |
+| `pickSelect(S, id)` | 방을 고르는 카드를 눌렀을 때. `{ ok, why, card }` (`S.pick.sel = id`, 아무것도 적용 안 함, 저장 지점에 남음) |
+| `pickCancel(S)` | 대상 고르기 취소 -> 후보로 (`sel = ''`). 고르는 중이 아니면 `false` |
+| `pickUse(S, id, z)` | 쓰기. `z`는 `target 'room'`일 때만. `{ ok, why, ev(사건 목록 -> 화면 show에 그대로), rec(기록 한 줄) }`. 거절: 선택 대기 아님 · 후보에 없는 카드 · 후보 방이 아닌 방. **한 번 쓰면 `S.pick = null` -> 두 번째 호출은 `ok:false` (연타 중복 없음)** |
+| `pickSkip(S)` | 넘기기. `{ ok, ev }` |
+| `cardsLeft(S)` | 남은 기회 (카드 꺼진 전투 = 0) |
+| `cardDef(id)` | 데이터 한 줄 (`BOSS_CARDS.list`) |
+
+### 18-4. 사건 (`step`·`pickUse`가 돌려줌)
+
+| 사건 | 모양 | 화면 |
+| --- | --- | --- |
+| `cardPick` | `{ n, slot, kinds, where, cands(id 목록) }` | 이 사건이 오면(또는 `S.pick`이 있으면) 카드 창. 프레임 루프는 `S.pick`이 있는 동안 `step`을 불러도 그대로 멈춰 있음 |
+| `card` (smoke) | `{ card:'smoke', n, ids, sec }` | 대상 분대에 연막·남은 초 (`S.squads[id].smoke` = 남은 초) |
+| `smokeEnd` | `{ id, x, y }` | 그 분대 연막 풀림 |
+| `card` (reserve) | `{ card:'reserve', n, z, unit, count }` | 그 방에 부대 점 새로 그리기 (`S.dens[z]`의 개체 `tmp: true`, `S.mu[unit].tmp`). "배치 완료 / 아직 교전 없음"은 기록 `fights`로 구분 |
+| `card` (trigger) | `{ card:'trigger', n, z, dmg, ids, lost(실제 깎은 체력), retreats }` (목록 맨 앞) | 함정 발동·피해 표시. 뒤에 `kill`·`wipe`·`iretreat{cause:'card'}`가 이어질 수 있음 |
+| `card` (skip) | `{ card:'skip', n }` | |
+
+### 18-5. 결과 기록
+
+| 어디 | 모양 |
+| --- | --- |
+| `BSIM.result(S).cards` | `{ on, used, left, missed(후보 없어 지나간 기회 수), log[] }`. `log[]` = `{ n, slot, kinds, at, floor, card('smoke'·'reserve'·'trigger'·'skip'), name, grade }` + smoke `ids, sec` · reserve `z, unit, unitName, count, fights(교전 수), repels(그중 격퇴), out(임시 부대 퇴각), ids(싸운 분대)` · trigger `z, dmg, ids, lost, retreats` |
+| `result().squadResults[]` | 늘어남: `cardDmg`(긴급 작동이 깎은 체력) · `stopped`(연막으로 멈춘 초) |
+| 보스 결과 (`applyBattle().boss` = `flowInfo().show`) | `cards[{ n, slot, card, name, z, roomName, text, ...숫자 }]` (`text` 예: "긴급 작동 C6 · 피해 54 · 퇴각 1분대", "연막 살포 · 3분대 3초 정지", "임시 수비대 C6 · 교전 1 · 격퇴 1", "넘기기"). `rows[]`에 `cardDmg`·`stopped`. 추정 문구 없음 |
+| 영구 기록 | 임시 부대는 `result().deployed`·`fought`·`monRetreat`·`monDown`·`damage`에서 빠짐 -> 경험치·쉼·RUN 부대·건설 선물에 안 남음 |
+
+### 18-6. 저장 (v7 그대로, 새 저장 칸 없음)
+
+- 모두 전투 저장 지점(`snapshot` -> `saveBattle`) 안: `S.cards`(남은 기회·위기 기록·로그·임시 부대 능력치) · `S.pick`(후보·`sel`) · 분대 `smoke`·`stopped`·`cardDmg` · 임시 부대(`S.dens`·`S.mu`).
+- 화면은 **창이 열린 순간·`pickSelect`·`pickCancel`·`pickUse`·`pickSkip` 직후에 `saveBattle`** 하면 새로고침 뒤 같은 창(대상 고르는 중 포함)·같은 효과로 이어진다. 효과는 `pickUse` 안에서 한 번만 적용되고 그 즉시 `S.pick`이 지워진다.
+- 카드 칸 없는 옛 저장 지점 = 그 전투는 카드 없이 끝까지 (종전 규칙).
+
+### 18-7. 화면(frontend)에 넘길 일
+
+1. battle.js 보스 판: `P.battleInput(plan, { cards: true })` (create·restore 둘 다).
+2. 프레임 루프: `S.pick`이 있으면 계산을 멈추고 카드 창 (지금의 옛 위기 카드 창 `spawnCard`·`U.queue`는 새 흐름에선 안 씀). 창은 `pickInfo(S)`로 그림: 위기 위치(`where`) 강조, 후보마다 이름·효과 한 줄·대상(분대 수·방), [넘기기], "n/2번째".
+3. `target 'room'` 카드: 누르면 `pickSelect` -> 후보 창을 접고 판에서 `rooms[].z`만 고를 수 있게 -> [사용] = `pickUse(S, id, z)` / [취소] = `pickCancel`. `auto` 카드는 바로 `pickUse(S, id)`.
+4. 사용 직후 `show(r.ev)` + `checkpoint()`, [계속]으로 원래 배속. 새로고침 복원 때 `S.pick.sel`이 있으면 대상 고르는 화면부터.
+5. 연막: 대상 분대에 연막·남은 초(`q.smoke`). 임시 수비대: `S.dens[z]`에 새로 생긴 점을 그림 (`drawFloor`는 시작 때만 점을 만들므로 다시 그려야 함), 이름은 `m.name`("임시 수비대 (돌등껍질족)"). 긴급 작동: 함정 번쩍 + `-lost`.
+6. 보스 결과 창: `show.cards[].text` 한 줄씩 (분대별 기록 옆이나 아래).
+7. 390px에서 창·대상 선택·취소 확인, 움직임 줄이기 대응 (기획서 5·7절).

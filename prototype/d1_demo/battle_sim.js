@@ -25,6 +25,11 @@
  *  - 침입자 강함: 레벨(plan.groups[].lv) × 던전 가치 배율(plan.power). 던전 속성(plan.attr) fx는 침입자 카드 fx에 더함
  *  - 고정 구역 '얼어붙은 하역장'(kind fixed, FIXED_ZONES slow·span): 지나간 분대는 span 방 동안 느려짐 (q.chill, 사건 chill)
  *  - 카드 위기: 사건 'crisis' { kind: surge|treasure|boss, n, left } 전투당 최대 CARD_RULE.maxPerBattle (S.crisis에 저장)
+ *  - 보스전 카드 3종 (2026-10-29, docs/specs/dungeon_cards.md 0절, API.md 18절): o.cards = true + plan.mode 'boss'일 때만 (S.cards.on).
+ *    기회 = 첫 분대 진입 1 + 이후 위기 1 (BD.BOSS_CARDS enter·crisis). 기회가 오면 step 끝에서 S.pick(후보 목록)을 만들고 그동안 step은 아무것도 안 함 (전투 완전 정지).
+ *    화면이 pickSelect(대상 고르기 시작)·pickCancel(후보로 돌아감)·pickUse(카드, 방)·pickSkip(넘기기)를 부르면 적용하고 재개. 후보·시점은 전투 상태에서만 나옴 (무작위 안 씀)
+ *    효과: smoke = 이동 분대 q.smoke초 정지 · reserve = 빈 대기실에 임시 부대(S.mu[id].tmp, result의 deployed·fought·monRetreat에서 빠짐) · trigger = 함정 기본 피해 1회
+ *    기록 = S.cards.log (result().cards). 저장 지점(snapshot)에 S.cards·S.pick·q.smoke가 그대로 들어감 -> 복원하면 같은 선택 대기·같은 효과
  *  - 시설 강화 (docs/specs/facility_upgrade.md): o.up = { trap: { 방: 칸당 더할 피해 }, den: { 방: 전투 체력 배율 } } (progress.js battleInput이 만듦).
  *    S.up에 순수 데이터로 담아 저장 지점에도 남는다. 대기실 체력 배율은 create 때 전투 복사본에 한 번만 곱함 (restore는 저장된 체력을 그대로 써서 중복 없음)
  */
@@ -67,6 +72,20 @@
     return out;
   }
 
+  // ---------- 보스전 카드 (API.md 18절) ----------
+  function bossCards() { return BD.BOSS_CARDS || { enter: 1, crisis: 1, list: [] }; }
+  function cardDef(id) { return (bossCards().list || []).filter(function (c) { return c.id === id; })[0] || null; }
+  // 임시 수비대 1명 능력치 (progress.js battleInput이 기본 능력치로 만듦) -> 순수 데이터
+  function cardUnitOf(o) {
+    var u = o && o.cardUnit;
+    if (!u || typeof u.hp !== 'number' || !(u.hp > 0)) return null;
+    return { name: String(u.name || '임시 수비대'), count: Math.max(1, u.count | 0), hp: u.hp, atk: +u.atk || 0, def: +u.def || 0, tribe: String(u.tribe || '') };
+  }
+  function freshCards(on, unit) {
+    var B = bossCards();
+    return { on: !!on, slots: { enter: Math.max(0, B.enter | 0), crisis: Math.max(0, B.crisis | 0) }, enterSeen: false, used: 0, hits: [], seen: {}, log: [], missed: [], unit: unit || null, tmp: 0, tmpAt: {} };
+  }
+
   function create(o) {
     var plan = o.plan, zones = o.zones, units = o.units, doors = doorsOf(o);
     var S = {
@@ -76,7 +95,8 @@
       gain: { gold: 0, gems: 0, exp: 0, kills: 0, porterKills: 0 }, reached: 0, retreated: 0, loot: 0, total: 0,
       goal: o.goal || (Z.goal ? Z.goal() : 'B'), front: [], mu: {}, crisis: { n: 0, kinds: {}, sq: {} },
       floor: 1, floorT: 0, pending: 0, open: Z.OPEN || 1, tally: { trap: 0, den: 0, clash: 0, card: 0 }, clashes: 0,
-      up: upOf(o)
+      up: upOf(o), pick: null,
+      cards: freshCards(!!(o.cards && plan.mode === 'boss'), cardUnitOf(o))   // 보스전 카드 (API.md 18절)
     };
     S.front = Z.bossFront ? Z.bossFront(doors) : [];
     // 대기실 부대 (전투 안에서만 쓰는 복사본). 부대 하나 = 인원 수만큼의 개체
@@ -124,7 +144,7 @@
       q.id = i; q.habit = i % 3; q.route = route; q.wps = wps; q.wp = 1; q.x = home.x; q.y = home.y; q.home = home;
       q.len = len || 1; q.went = 0; q.state = 'wait'; q.zone = 'Y'; q.prevZone = 'Y'; q.trapT = 0; q.chill = 0; q.chillSlow = 0;
       q.maxHp = maxHp; q.seen = {}; q.insp = {}; q.trapIn = {}; q.passes = 0; q.inspect = 0; q.fast = false; q.depart = false;
-      q.clash = null; q.floor = 1; q.cause = ''; q.endT = 0;
+      q.clash = null; q.floor = 1; q.cause = ''; q.endT = 0; q.smoke = 0; q.stopped = 0; q.cardDmg = 0;
       S.total += q.mem.length;
     });
     S.squads = all;
@@ -191,6 +211,7 @@
 
   // ---------- 위기 감지 (이벤트 카드 B안) ----------
   function crisis(S, kind, q, ev) {
+    cardHit(S, kind, q);
     var max = cardRule().maxPerBattle || 2, c = S.crisis;
     if (c.n >= max) return false;
     if (kind === 'treasure') { if (c.sq[q.id]) return false; c.sq[q.id] = true; }
@@ -198,6 +219,15 @@
     c.n++; c.kinds[kind] = (c.kinds[kind] || 0) + 1;
     ev.push({ type: 'crisis', kind: kind, n: c.n, left: max - c.n, id: q ? q.id : -1, x: q ? q.x : 2.5, y: q ? q.y : 0 });
     return true;
+  }
+  // 보스전 카드: 위기 기록 (종류마다 한 번, 보물방 근접은 분대마다 한 번). 이번 step 끝에 cardMoment가 봄
+  function cardHit(S, kind, q) {
+    var c = S.cards;
+    if (!c || !c.on) return;
+    var key = kind === 'treasure' && q ? 't' + q.id : kind;
+    if (c.seen[key]) return;
+    c.seen[key] = true;
+    c.hits.push({ kind: kind, id: q ? q.id : -1, z: q ? q.zone : '' });
   }
   function crisisLeft(S) { return Math.max(0, (cardRule().maxPerBattle || 2) - (S.crisis ? S.crisis.n : 0)); }
 
@@ -211,6 +241,7 @@
     var mu = S.mu[id];
     if (!mu || mu.out) return;
     mu.out = true; mu.big = false;   // 데모 사망 없음: 큰 피해 판정 안 함
+    if (mu.tmp) { var tr = cardTmpRec(S, id); if (tr) tr.out = true; }
     var down = 0;
     (S.dens[mu.z] || []).forEach(function (m) { if (m.id === id) { m.out = true; if (m.hp <= 0) down++; } });
     ev.push({ type: 'mretreat', z: mu.z, id: id, big: false, down: down, guard: mu.guard });
@@ -245,6 +276,13 @@
     var win = mp * jm >= ip * ji;   // 몬스터 승
     var frac = Math.min(C.damageCap, C.damageK * (win ? ip / Math.max(1e-9, mp) : mp / Math.max(1e-9, ip)));
     S.fought[z] = true; S.clashes++;
+    var tmpSeen = {};   // 임시 수비대가 실제로 싸움: 카드 기록에 교전·격퇴
+    mons.forEach(function (m) {
+      if (!m.tmp || tmpSeen[m.id]) return;
+      tmpSeen[m.id] = true;
+      var tr = cardTmpRec(S, m.id);
+      if (tr) { tr.fights++; if (win) tr.repels++; tr.ids.push(q.id); }
+    });
     if (win) {
       // 이긴 몬스터 피해: 지금 체력 합 × frac, 앞 개체부터
       var left = 0; mons.forEach(function (m) { left += m.hp; }); left *= frac;
@@ -346,8 +384,10 @@
 
   function step(S, dt) {
     var ev = [];
-    if (S.done || S.pending) return ev;
+    if (S.done || S.pending || S.pick) return ev;   // S.pick = 카드 선택 대기 (전투 완전 정지)
     S.t += dt; S.floorT += dt;
+    var entered = false;
+    if (S.cards) S.cards.hits = [];
     if (S.freeze > 0) S.freeze -= dt;
     var decay = Math.exp(-dt / (retreatRule().burstWindow || 4));
     Object.keys(S.mu).forEach(function (id) { S.mu[id].burst *= decay; });
@@ -356,6 +396,7 @@
       S.releaseT -= dt;
       if (S.releaseT <= 0) {
         var nq = S.squads[S.released++]; nq.state = 'move'; S.releaseT = BD.SQUAD_GAP; ev.push({ type: 'enter', id: nq.id });
+        if (S.released === 1) entered = true;
         if (S.released === 1 && S.plan.surge) crisis(S, 'surge', null, ev);
         if (S.released === 1 && S.plan.boss) crisis(S, 'boss', null, ev);
       }
@@ -364,6 +405,11 @@
     S.squads.forEach(function (q) {
       if (q.state === 'fight' && q.clash) { tickClash(S, q, dt, ev); return; }
       if (q.state !== 'move' || S.freeze > 0) return;
+      if (q.smoke > 0) {   // 연막 살포: 이 분대만 정지 (이동·함정 다시 굴리기 멈춤)
+        q.smoke = Math.max(0, q.smoke - dt);
+        if (q.smoke <= 1e-9) { q.smoke = 0; ev.push({ type: 'smokeEnd', id: q.id, x: q.x, y: q.y }); }
+        return;
+      }
       moveSquad(S, q, dt, ev);
       if (q.state === 'move' && trapLive(S, q)) {
         q.trapT -= dt;
@@ -389,13 +435,137 @@
         S.done = true; ev.push({ type: 'end' });
       }
     }
+    if (S.cards && S.cards.on && !S.done && !S.pending) cardMoment(S, entered, ev);
+    if (S.cards) S.cards.hits = [];
     return ev;
+  }
+  // ---------- 보스전 카드: 기회 열기 · 후보 · 고르기 (API.md 18절) ----------
+  // 이번 step에 첫 분대 진입이 있었으면 진입 기회 (같은 순간 위기는 합침), 아니면 위기가 있었을 때 위기 기회. 후보가 없으면 창 없이 기회 안 씀
+  function cardMoment(S, entered, ev) {
+    var c = S.cards, slot = '';
+    if (entered && !c.enterSeen) { c.enterSeen = true; if (c.slots.enter > 0) slot = 'enter'; }
+    else if (c.hits.length && c.enterSeen && c.slots.crisis > 0) slot = 'crisis';
+    if (!slot) return;
+    var cands = cardCands(S), kinds = c.hits.map(function (h) { return h.kind; });
+    if (!cands.length) { c.missed.push({ slot: slot, at: Math.round(S.t * 100) / 100, kinds: kinds }); return; }
+    S.pick = { n: c.used + 1, slot: slot, kinds: kinds, where: c.hits.slice(), at: Math.round(S.t * 100) / 100, floor: S.floor, sel: '', cands: cands };
+    ev.push({ type: 'cardPick', n: S.pick.n, slot: slot, kinds: kinds, where: S.pick.where, cands: cands.map(function (x) { return x.id; }) });
+  }
+  function cardFloorCap(f) { var t = BD.FLOOR_CAP || {}; return t[f] || t[1] || 3; }
+  // 지금 쓸 수 있는 카드 (BOSS_CARDS.list 순서). 대상: smoke = 이동 분대 ids · reserve = 빈 대기실 rooms[{ z }] · trigger = 함정 rooms[{ z, ids, dmg }]
+  function cardCands(S) {
+    var f = S.floor, out = [];
+    var moving = S.squads.filter(function (q) { return q.state === 'move' && (q.floor || 1) === f; });
+    (bossCards().list || []).forEach(function (d) {
+      var c = { id: d.id, kind: d.kind, name: d.name, text: d.text, grade: d.grade || 1, target: d.target || 'auto' };
+      if (d.id === 'smoke') {
+        if (!moving.length) return;
+        c.ids = moving.map(function (q) { return q.id; }); c.sec = d.sec || 3;
+      } else if (d.id === 'reserve') {
+        var u = S.cards.unit, used = 0;
+        Object.keys(S.mu).forEach(function (id) { if (Z.floorOf(S.mu[id].z) === f) used++; });
+        if (!u || used >= cardFloorCap(f)) return;
+        c.rooms = Object.keys(S.zones).filter(function (z) { return z !== 'Y' && kindOf(S, z) === 'den' && Z.floorOf(z) === f && !(S.dens[z] && S.dens[z].length); }).sort()
+          .map(function (z) { return { z: z }; });
+        if (!c.rooms.length) return;
+        c.count = u.count; c.unitName = u.name;
+      } else if (d.id === 'trigger') {
+        var rooms = {};
+        moving.forEach(function (q) {
+          if (q.zone === 'Y' || kindOf(S, q.zone) !== 'trap' || (q.trapIn[q.zone] || 0) > (grid().trapMax || 2)) return;
+          (rooms[q.zone] = rooms[q.zone] || []).push(q.id);
+        });
+        c.rooms = Object.keys(rooms).sort().map(function (z) { return { z: z, ids: rooms[z], dmg: Z.trapDmgOf(z) }; });
+        if (!c.rooms.length) return;
+      } else return;
+      out.push(c);
+    });
+    return out;
+  }
+  function cardTmpRec(S, id) { var c = S.cards, i = c && c.tmpAt ? c.tmpAt[id] : undefined; return typeof i === 'number' ? c.log[i] : null; }
+  function pickCand(S, id) { return S.pick ? S.pick.cands.filter(function (c) { return c.id === id; })[0] || null : null; }
+  function cardResolve(S) { var c = S.cards; if (c.slots[S.pick.slot] > 0) c.slots[S.pick.slot]--; c.used++; S.pick = null; }
+  // 화면용: 선택 대기 정보 (없으면 null). 복사본이라 고쳐도 상태는 안 바뀜
+  function pickInfo(S) {
+    if (!S.pick) return null;
+    var p = JSON.parse(JSON.stringify(S.pick)), B = bossCards();
+    p.max = (B.enter | 0) + (B.crisis | 0); p.left = cardsLeft(S);
+    return p;
+  }
+  // 남은 기회 (지금 열린 창 포함). 카드가 꺼진 전투 = 0
+  function cardsLeft(S) {
+    var c = S.cards;
+    if (!c || !c.on) return 0;
+    var e = c.enterSeen && !(S.pick && S.pick.slot === 'enter') ? 0 : c.slots.enter;
+    return e + c.slots.crisis;
+  }
+  // 대상 고르기 시작 (방을 고르는 카드). 아무것도 적용 안 함, 저장 지점에 sel로 남음
+  function pickSelect(S, id) {
+    var c = pickCand(S, id);
+    if (!c) return { ok: false, why: S.pick ? '지금 쓸 수 없는 카드예요' : '카드를 고를 때가 아니에요' };
+    S.pick.sel = id;
+    return { ok: true, card: JSON.parse(JSON.stringify(c)) };
+  }
+  // 대상 고르기 취소 -> 후보 선택으로 돌아감 (기회 그대로)
+  function pickCancel(S) { if (!S.pick || !S.pick.sel) return false; S.pick.sel = ''; return true; }
+  // 넘기기: 기회 1회 사용, 효과 없음
+  function pickSkip(S) {
+    if (!S.pick) return { ok: false, why: '카드를 고를 때가 아니에요', ev: [] };
+    var p = S.pick;
+    S.cards.log.push({ n: p.n, slot: p.slot, kinds: p.kinds, at: p.at, floor: p.floor, card: 'skip', name: '넘기기' });
+    cardResolve(S);
+    return { ok: true, ev: [{ type: 'card', card: 'skip', n: p.n }] };
+  }
+  // 카드 쓰기: id = 후보 id, z = 방(target 'room'일 때). 한 번 쓰면 S.pick이 없어져 두 번째 호출은 거절 (연타 중복 없음)
+  function pickUse(S, id, z) {
+    var c = pickCand(S, id), ev = [];
+    if (!c) return { ok: false, why: S.pick ? '지금 쓸 수 없는 카드예요' : '카드를 고를 때가 아니에요', ev: ev };
+    var room = null;
+    if (c.target === 'room') {
+      room = (c.rooms || []).filter(function (r) { return r.z === z; })[0];
+      if (!room) return { ok: false, why: '이 방에는 쓸 수 없어요', ev: ev };
+    }
+    var p = S.pick, rec = { n: p.n, slot: p.slot, kinds: p.kinds, at: p.at, floor: p.floor, card: id, name: c.name, grade: c.grade };
+    if (id === 'smoke') {
+      var ids = [];
+      S.squads.forEach(function (q) {
+        if (c.ids.indexOf(q.id) < 0 || q.state !== 'move') return;
+        q.smoke = Math.max(q.smoke || 0, c.sec); q.stopped = (q.stopped || 0) + c.sec; ids.push(q.id);
+      });
+      rec.ids = ids; rec.sec = c.sec;
+      ev.push({ type: 'card', card: 'smoke', n: p.n, ids: ids, sec: c.sec });
+    } else if (id === 'reserve') {
+      var u = S.cards.unit, uid = 'tmp' + (++S.cards.tmp), list = [];
+      for (var i = 0; i < u.count; i++) list.push({ id: uid, n: i, name: u.name, hp: u.hp, max: u.hp, atk: u.atk, def: u.def, guard: false, lost: 0, out: false, tmp: true });
+      S.dens[z] = list;
+      S.mu[uid] = { z: z, max: u.hp * u.count, burst: 0, out: false, big: false, guard: false, tmp: true };
+      rec.z = z; rec.unit = uid; rec.unitName = u.name; rec.count = u.count; rec.fights = 0; rec.repels = 0; rec.out = false; rec.ids = [];
+      S.cards.tmpAt[uid] = S.cards.log.length;
+      ev.push({ type: 'card', card: 'reserve', n: p.n, z: z, unit: uid, count: u.count });
+    } else if (id === 'trigger') {
+      var dmg = Z.trapDmgOf(z), hit = [], lost = 0, back = 0, head = { type: 'card', card: 'trigger', n: p.n, z: z, dmg: dmg };
+      ev.push(head);
+      S.squads.forEach(function (q) {
+        if (room.ids.indexOf(q.id) < 0 || q.state !== 'move' || q.zone !== z) return;
+        var hp0 = hpOf(q);
+        q.cause = 'card';
+        hurtAll(S, q, dmg, ev);
+        var l = hp0 - hpOf(q); q.cardDmg = (q.cardDmg || 0) + l; lost += l; hit.push(q.id);
+        if (q.state === 'dead' || checkInvader(S, q, 'card', ev)) back++;
+      });
+      rec.z = z; rec.dmg = dmg; rec.ids = hit; rec.lost = Math.round(lost); rec.retreats = back;
+      head.ids = hit; head.lost = rec.lost; head.retreats = back;
+    }
+    S.cards.log.push(rec);
+    cardResolve(S);
+    return { ok: true, ev: ev, rec: JSON.parse(JSON.stringify(rec)) };
   }
   // 층별 차례 전투: floorEnd 사건 뒤 화면이 알림을 보여 주고 부른다. 계단에 있던 분대가 다음 층 탐험을 시작
   function nextFloor(S) {
     var ev = [];
     if (!S.pending) return ev;
     S.floor = S.pending; S.pending = 0; S.floorT = 0;
+    S.squads.forEach(function (q) { q.smoke = 0; });   // 카드 효과는 그 층에서만 (연막은 층이 끝나면 없앰)
     S.squads.forEach(function (q) { if (q.state === 'stairs') { q.state = 'move'; q.floor = S.floor; q.depart = true; } });
     ev.push({ type: 'floorStart', n: S.floor });
     return ev;
@@ -429,6 +599,7 @@
     var damage = 0, deployed = [], fought = [];
     Object.keys(S.dens).forEach(function (z) {
       S.dens[z].forEach(function (m) {
+        if (m.tmp) return;   // 임시 수비대(카드)는 영구 부대가 아님: 경험치·쉼·수리에 안 셈
         damage += m.lost;
         if (deployed.indexOf(m.id) < 0) deployed.push(m.id);
         if (S.fought && S.fought[z] && fought.indexOf(m.id) < 0) fought.push(m.id);
@@ -437,6 +608,7 @@
     var monRetreat = [], monDown = {};
     Object.keys(S.mu || {}).forEach(function (id) {
       var mu = S.mu[id];
+      if (mu.tmp) return;
       var down = 0; (S.dens[mu.z] || []).forEach(function (m) { if (m.id === id && m.hp <= 0) down++; });
       if (down) monDown[id] = down;
       if (mu.out) monRetreat.push({ id: id, big: false, down: down, guard: !!mu.guard });
@@ -451,9 +623,15 @@
       // 3차: 결과 요약 한 줄용 (함정으로 퇴각·전멸한 분대, 대기실에서 격퇴한 분대 ...) · 분대별 결과
       trapRetreats: tl.trap || 0, denRepels: tl.den || 0, clashRetreats: tl.clash || 0, clashes: S.clashes || 0,
       squadResults: S.squads.map(function (q) { return { id: q.id, habit: q.habit, state: q.state, cause: q.cause, passes: q.passes, time: Math.round((q.endT || S.t) * 100) / 100,
-        grade: q.grade, rooms: Object.keys(q.seen || {}).length, last: q.zone, trapDmg: Math.round(q.trapDmg || 0), hpLeft: Math.round(hpOf(q) / (q.maxHp || 1) * 100) }; }),
+        grade: q.grade, rooms: Object.keys(q.seen || {}).length, last: q.zone, trapDmg: Math.round(q.trapDmg || 0), hpLeft: Math.round(hpOf(q) / (q.maxHp || 1) * 100),
+        cardDmg: Math.round(q.cardDmg || 0), stopped: q.stopped || 0 }; }),
+      cards: cardResult(S),   // 보스전 카드 기록 (API.md 18절)
       trapDmg: Math.round(trapDmg)   // 흐름 시험: 함정이 침입자에게 준 피해 합 · squadResults[].rooms(지난 방 수)·last(끝난 방)·trapDmg·hpLeft(남은 체력 %)
     };
+  }
+  function cardResult(S) {
+    var c = S.cards || freshCards(false, null);
+    return { on: !!c.on, used: c.used | 0, left: cardsLeft(S), log: JSON.parse(JSON.stringify(c.log || [])), missed: (c.missed || []).length };
   }
   var REFS = { plan: 1, zones: 1, units: 1, doors: 1, icard: 1, fx: 1 };
   function snapshot(S) {
@@ -481,10 +659,19 @@
     if (!Array.isArray(S.front)) S.front = Z.bossFront ? Z.bossFront(S.doors) : [];
     // 강화 칸 없는 옛 저장 지점: 지금 입력으로 채움 (전투 중엔 강화를 못 바꿔 전투 시작 때와 같음. 대기실 체력은 저장된 값 그대로라 다시 곱하지 않음)
     if (!S.up || typeof S.up !== 'object' || !S.up.trap || !S.up.den) S.up = upOf(o);
+    // 카드 칸 없는 옛 저장 지점 = 그 전투는 카드 없이 (종전 규칙으로 마침)
+    if (!S.cards || typeof S.cards !== 'object' || !S.cards.slots) S.cards = freshCards(false, null);
+    ['hits', 'log', 'missed'].forEach(function (k) { if (!Array.isArray(S.cards[k])) S.cards[k] = []; });
+    if (!S.cards.seen || typeof S.cards.seen !== 'object') S.cards.seen = {};
+    if (!S.cards.tmpAt || typeof S.cards.tmpAt !== 'object') S.cards.tmpAt = {};
+    if (!S.pick || typeof S.pick !== 'object' || !Array.isArray(S.pick.cands)) S.pick = null;
+    S.squads.forEach(function (q) { if (typeof q.smoke !== 'number') q.smoke = 0; if (typeof q.stopped !== 'number') q.stopped = 0; if (typeof q.cardDmg !== 'number') q.cardDmg = 0; });
     return S;
   }
   function squadInfo(q) { var a = aliveMem(q); return { alive: a.length, porters: a.filter(function (m) { return m.porter; }).length }; }
 
   window.BSIM = { create: create, snapshot: snapshot, restore: restore, step: step, applyCard: applyCard, progress: progress, result: result, squadInfo: squadInfo, cardById: cardById, attrById: attrById, livingMon: livingMon,
-    crisisLeft: crisisLeft, nextFloor: nextFloor, elapsed: elapsed };
+    crisisLeft: crisisLeft, nextFloor: nextFloor, elapsed: elapsed,
+    // 보스전 카드 (API.md 18절)
+    pickInfo: pickInfo, pickSelect: pickSelect, pickCancel: pickCancel, pickUse: pickUse, pickSkip: pickSkip, cardsLeft: cardsLeft, cardDef: cardDef };
 })();

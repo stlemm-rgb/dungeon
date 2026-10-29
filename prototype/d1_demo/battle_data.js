@@ -343,6 +343,20 @@ window.BATTLE_DATA = {
   //  마석 경제 (2026-10-29, API.md 16절): 마석 = 의뢰 시작 마석(QUESTS budget 50) + 단계 보스 첫 성공 때 [의뢰인 보급 stages[i].budget 10 + bossReward 10].
   //   일반 판·실패·재도전 = 마석 0 (주마다 +30 무한 보급·다음 주 쉼 없음). n단계 보스에 도전할 때 쓸 수 있는 마석 합 = 50 · 70 · 90 · 110 · 130
   FLOW: { on: true, rest: 1.5, saveEvery: 2, bossReward: 10 },
+  // 보스전 카드 3종 (2026-10-29, 기획서 docs/specs/dungeon_cards.md 0·4·6절, 지시서 refs/brief_cards_core.md, API.md 18절). 숫자는 모두 임시 (수치 단계에서 측정)
+  //  FLOW.on일 때 보스전에서만, 화면이 battleInput(plan, { cards: true })로 켠 전투에서만 나온다. 일반 판·옛 주 단위 규칙(FLOW.on = false)에는 없음 (옛 규칙은 EVENT_CARDS)
+  //  기회 = 첫 분대 진입 enter회 + 이후 위기 crisis회 (전투 한 판, 여러 층 합쳐). 첫 진입과 같은 순간의 위기는 합침. 넘기기도 기회 1회 사용. 후보가 없으면 창 없이 기회 안 씀
+  //  위기 = CARD_RULE.kinds와 같은 감지 (보물방 앞 방 진입·진행도 crisisProgress% · 던전 안 massSquads분대 · 보스 주). 후보 = list 중 지금 대상이 있는 것만, 이 순서 그대로
+  //  list: id · kind(event 이벤트 · reinforce 원군 · trap 함정) · name · text(효과 한 줄) · target('auto' 대상 자동 · 'room' 방 하나 직접) · grade(등급 자리, 데모는 1단계뿐)
+  //   smoke 연막 살포: 지금 층에서 이동 중인 분대 전체 sec초(게임 시간) 정지
+  //   reserve 임시 수비대: 빈 대기실 1곳(층 출진 한도 FLOOR_CAP 안)에 MON_SQUAD_FREE와 같은 부족·인원, 기본 능력치(레벨 1, 성장·부족 강화·시설 강화 없음)의 이번 전투 전용 부대
+  //   trigger 긴급 작동: 이동 중 분대가 있는 함정 1곳 즉시 발동. 확률 없이 기본 피해(칸당 6 × 칸 수, 강화·카드 배율 없음) 1회. 그 분대가 그 함정에 trapMax번 넘게 들어간 뒤면 대상 아님
+  BOSS_CARDS: { enter: 1, crisis: 1,
+    list: [
+      { id: 'smoke', kind: 'event', name: '연막 살포', text: '이 층에서 움직이는 침입자 모두 3초 멈춤', target: 'auto', grade: 1, sec: 3 },
+      { id: 'reserve', kind: 'reinforce', name: '임시 수비대', text: '빈 대기실 1곳에 이번 전투만 싸우는 기본 부대 배치', target: 'room', grade: 1 },
+      { id: 'trigger', kind: 'trap', name: '긴급 작동', text: '침입자가 있는 함정 1곳을 바로 발동 (기본 피해 1회)', target: 'room', grade: 1 }
+    ] },
   // 단계별 보스 (의뢰 key -> 납품 단계 수만큼). 같은 단계 재도전 = 같은 구성·같은 시드 -> 같은 배치면 같은 결과
   //  name = 보스 이름 · groups = 무리 [{ name, grade(GRADE_STAT), squads(분대 수), lv, porters(분대 10명 중 짐꾼) }] · card = 침입자 카드 id (INVADER_CARDS)
   //  power = 체력·공격 배율 (일반 판은 새 던전이면 ×0.6~1) · seed = 전투 시드 (의뢰·단계에 묶인 고정값)

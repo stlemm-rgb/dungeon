@@ -10,6 +10,8 @@
 보스 도전·고정 시드·결정론·보스 중 잠김·새로고침 이어하기·실패(잃는 것 없음)·문 고쳐 성공·첫 성공 보상 한 번·납품·흐름 칸 없는 옛 v7.
 17절 = 마석 경제(켬): 시작 마석·일반 판/실패/재도전 0·단계 보급 + 첫 성공 보상 한 번·새로고침/중간 저장 이어하기 중복 없음·받은 단계 다시 안 줌·5단계 합계.
 18절 = 시간 제한 없음: 60초 넘는 판도 끝까지·안전장치(걸리면 보물방 도달 = 방어 실패)·옛 저장 지점의 timeout 칸·보스 결과에 시간 초과 글 없음·검사 판 전체 안전장치 0.
+19절 = 보스전 카드 3종(API.md 18절): 일반 판·카드 안 켠 화면·옛 규칙엔 없음, 기회 2회(진입 + 위기)·합침·넘기기·후보 없음, 연막 정지 3초·임시 수비대 조우·긴급 작동 피해,
+연타 중복 없음, 선택 대기(대상 고르는 중) 저장·복원, 연막 지속 중 복원, 같은 선택 = 같은 결과, 영구 부대·경험치에 안 남음, 카드 칸 없는 옛 저장 지점.
 옛 v6 저장 바꾸기(B안)는 tools/test_oldsaves.py가 tools/oldsaves/d1/로 검사한다.
 
 화면 없이 battle_data.js·zones.js·progress.js·battle_sim.js를 node로 직접 불러 확인한다 (test_c1_core.py와 같은 방식).
@@ -978,6 +980,179 @@ FLOW_ON = true;
   sample.noTimeout = { runs: RUNS.n, safety: RUNS.safety, normalAvg: avg(RUNS.normal), normalMax: mx(RUNS.normal), bossAvg: avg(RUNS.boss), bossMax: mx(RUNS.boss), slow: Math.round(S1.t) };
   ok(RUNS.safety === 0, '검사 판 전체에서 안전장치 걸린 수 0: ' + RUNS.safety);
 }
+
+// ===================== 19) 보스전 카드 3종 (refs/brief_cards_core.md, API.md 18절): 기회 2회·합침·넘기기·후보 없음·효과·저장·결정론 =====================
+FLOW_ON = true;
+{
+  const NEW = ['smoke', 'reserve', 'trigger'];
+  const reboot = () => { W = boot(); P = W.PROGRESS; R = P.RUN; BD = W.BATTLE_DATA; Z = W.ZONES; ok(P.load(), '새로고침'); };
+  // 카드 켠 보스전을 끝까지: choose(pi, S) -> { id, z } (쓰기) 또는 null (넘기기). picks = 열린 창 목록
+  const runCards = (inp, choose, dt, S0) => {
+    const S = S0 || W.BSIM.create(inp), d = dt || 0.05, picks = [];
+    for (let i = 0; i < 40000 && !S.done; i++) {
+      W.BSIM.step(S, d); if (S.pending) W.BSIM.nextFloor(S);
+      if (S.pick) {
+        const pi = W.BSIM.pickInfo(S); picks.push(pi);
+        const c = choose ? choose(pi, S) : null, r = c ? W.BSIM.pickUse(S, c.id, c.z) : W.BSIM.pickSkip(S);
+        ok(r.ok, '카드 처리: ' + (r.why || ''));
+      }
+    }
+    ok(S.done, '카드 보스전 끝남');
+    return { S, picks, res: W.BSIM.result(S) };
+  };
+  const noCards = r => { const o = JSON.parse(JSON.stringify(r)); delete o.cards; return o; };
+  // a) 일반 판·카드를 안 켠 화면·옛 규칙 = 기회 없음
+  startQ1();
+  P.startBattle();
+  const nIn = P.battleInput(null, { cards: true });
+  ok(!nIn.cards && !nIn.cardUnit, '일반 판 입력엔 카드 없음');
+  { const S = W.BSIM.create(nIn); let pk = 0; for (let i = 0; i < 20000 && !S.done; i++) { W.BSIM.step(S, 0.1); if (S.pick) pk++; } ok(S.done && !pk && !S.cards.on && W.BSIM.cardsLeft(S) === 0, '일반 판: 카드 창 없음'); }
+  ok(P.commitLayout({ builds: { C6: 'den', B7: 'den', D7: 'den' } }).ok, '보물방 앞 대기실 3');
+  ok(P.challengeBoss().ok, '보스 도전');
+  { const S = W.BSIM.create(P.battleInput()); let pk = 0; for (let i = 0; i < 20000 && !S.done; i++) { W.BSIM.step(S, 0.05); if (S.pick) pk++; } ok(S.done && !pk && !S.cards.on, '카드를 안 켠 보스전(지금 화면) = 카드 없음'); }
+  BD.FLOW.on = false; ok(!P.battleInput(R.plan, { cards: true }).cards, '옛 규칙(FLOW 끔)엔 새 카드 없음'); BD.FLOW.on = true;
+  const bIn = () => P.battleInput(null, { cards: true });
+  ok(bIn().cards === true && bIn().cardUnit, '보스 판 + cards = 켬');
+  // b) 기회 2회: 첫 분대 진입 1 + 이후 위기 1. 모두 넘기기 = 카드 없는 판과 같은 결과
+  const base = W.BSIM.result(runSim(W, P.battleInput(), 0.05));
+  const sk = runCards(bIn(), null);
+  ok(sk.picks.length === 2 && sk.picks[0].slot === 'enter' && sk.picks[0].n === 1 && sk.picks[1].slot === 'crisis' && sk.picks[1].n === 2 && sk.picks[1].kinds.length > 0,
+    '기회 2회 (진입 + 위기): ' + JSON.stringify(sk.picks.map(p => [p.slot, p.kinds, p.at])));
+  ok(sk.picks[0].left === 2 && sk.picks[1].left === 1 && sk.res.cards.used === 2 && sk.res.cards.left === 0 && sk.res.cards.log.every(l => l.card === 'skip'), '넘기기도 기회 1회 사용');
+  ok(same(noCards(sk.res), noCards(base)), '모두 넘기기 = 카드 없는 판과 같은 결과');
+  ok(sk.picks.every(p => p.cands.every(c => NEW.indexOf(c.id) >= 0 && c.grade === 1 && c.name && c.text)) && !sk.picks.some(p => p.cands.some(c => BD.EVENT_CARDS.some(e => e.id === c.id))), '후보 = 새 3종만 (옛 EVENT_CARDS 없음), 등급 칸');
+  // c) 첫 진입과 같은 순간의 위기는 합침 (보스 주 위기 = 첫 분대 진입 순간)
+  { const inp = bIn(); inp.plan = Object.assign({}, inp.plan, { boss: true });
+    const m = runCards(inp, null);
+    ok(m.picks.length === 2 && m.picks[0].slot === 'enter' && m.picks[0].kinds.indexOf('boss') >= 0 && m.picks[1].slot === 'crisis', '진입 + 같은 순간 위기 = 한 번: ' + JSON.stringify(m.picks.map(p => [p.slot, p.kinds]))); }
+  // d) 후보가 없으면 창 없이 기회 안 씀 (시험: 긴급 작동만 남김 -> 진입 순간엔 함정에 분대가 없음)
+  { const keep = BD.BOSS_CARDS.list; BD.BOSS_CARDS.list = keep.filter(c => c.id === 'trigger');
+    const S = W.BSIM.create(bIn()); let first = null;
+    for (let i = 0; i < 40 && !S.pick; i++) W.BSIM.step(S, 0.05);
+    first = S.pick;
+    ok(!first && S.cards.missed.length >= 1 && S.cards.missed[0].slot === 'enter' && S.cards.used === 0 && S.cards.slots.crisis === 1, '후보 없음 -> 창 없음, 기회 안 씀: ' + JSON.stringify(S.cards.missed));
+    BD.BOSS_CARDS.list = keep; }
+  // e) 연막 살포: 이동 분대 전체 3초 정지 -> 정확히 다시 움직임
+  { const S = W.BSIM.create(bIn());
+    for (let i = 0; i < 40 && !S.pick; i++) W.BSIM.step(S, 0.05);
+    const pi = W.BSIM.pickInfo(S), sm = pi && pi.cands.filter(c => c.id === 'smoke')[0];
+    ok(sm && sm.target === 'auto' && sm.ids.length >= 1 && sm.sec === 3, '연막 후보 (대상 자동): ' + JSON.stringify(sm));
+    const rs0 = S.rs, u = W.BSIM.pickUse(S, 'smoke');
+    ok(u.ok && !S.pick && S.rs === rs0 && W.BSIM.pickUse(S, 'smoke').ok === false && W.BSIM.pickSkip(S).ok === false, '연막 사용 (무작위 안 씀) · 연타 거절');
+    const pos = sm.ids.map(id => [S.squads[id].x, S.squads[id].y]), t0 = S.t; let endT = -1;
+    while (S.t < t0 + 2.9 && !S.pick) { W.BSIM.step(S, 0.05).forEach(e => { if (e.type === 'smokeEnd' && endT < 0) endT = S.t; }); }
+    ok(same(sm.ids.map(id => [S.squads[id].x, S.squads[id].y]), pos) && endT < 0, '연막 중 대상 분대 그대로');
+    for (let i = 0; i < 6 && !S.pick; i++) W.BSIM.step(S, 0.05).forEach(e => { if (e.type === 'smokeEnd' && endT < 0) endT = S.t; });
+    ok(endT > 0 && Math.abs(endT - t0 - 3) < 0.06, '연막 3초 뒤 풀림 (' + Math.round((endT - t0) * 100) / 100 + '초)');
+    for (let i = 0; i < 10 && !S.pick; i++) W.BSIM.step(S, 0.05);
+    ok(S.squads[sm.ids[0]].state !== 'move' || !same([S.squads[sm.ids[0]].x, S.squads[sm.ids[0]].y], pos[0]), '연막 뒤 다시 이동');
+  }
+  // f) 임시 수비대: 빈 대기실 직접 선택 · 기본 무료 부대와 같은 인원·기본 능력치 · 실제 조우 · 영구 부대·경험치에 안 남음
+  {
+    const cu = bIn().cardUnit, tr = BD.TRIBES.filter(t => t.id === BD.MON_SQUAD_FREE.tribe)[0];
+    ok(cu.count === BD.MON_SQUAD_FREE.count && cu.hp === tr.base.hp && cu.atk === tr.base.atk && cu.def === tr.base.def, '임시 수비대 = 기본 인원·기본 능력치: ' + JSON.stringify(cu));
+    ok(!sk.picks.some(p => p.cands.some(c => c.id === 'reserve')), '빈 대기실 없음(3곳 모두 출진) -> 임시 수비대 후보 없음');
+    const capIn = bIn(); capIn.units = { B7: R.site.units.B7 }; const cap0 = BD.FLOOR_CAP[1]; BD.FLOOR_CAP[1] = 1;
+    { const S = W.BSIM.create(capIn); for (let i = 0; i < 40 && !S.pick; i++) W.BSIM.step(S, 0.05); ok(S.pick && !S.pick.cands.some(c => c.id === 'reserve'), '층 출진 한도가 차면 후보 없음'); }
+    BD.FLOOR_CAP[1] = cap0;
+    const sq0 = JSON.stringify(R.site.squads), un0 = JSON.stringify(R.site.units), gift0 = JSON.stringify(R.site.denGifts);
+    let got = null;
+    ['C6', 'B7', 'D7'].forEach(z => {
+      if (got) return;
+      const inp = bIn(); inp.units = {};   // 시험: 출진 부대를 빼서 대기실 3곳을 비움
+      let clashTmp = 0;
+      const r = runCards(inp, (pi, S) => {
+        const c = pi.cands.filter(x => x.id === 'reserve')[0];
+        if (!c || S.cards.tmp) return null;
+        ok(c.target === 'room' && same(c.rooms.map(x => x.z), ['B7', 'C6', 'D7']), '빈 대기실 후보: ' + JSON.stringify(c.rooms));
+        ok(W.BSIM.pickUse(S, 'reserve', 'C2').ok === false, '대기실 아닌 방 거절');
+        return { id: 'reserve', z };
+      });
+      const rec = r.res.cards.log.filter(l => l.card === 'reserve')[0];
+      if (rec && rec.fights > 0) got = { z, r, rec };
+    });
+    ok(got && got.rec.z && got.rec.count === cu.count && got.rec.unit === 'tmp1' && got.rec.fights >= 1 && got.rec.ids.length >= 1, '임시 수비대 실제 조우: ' + JSON.stringify(got && got.rec));
+    if (got) {
+      const res = got.r.res;
+      ok(res.deployed.indexOf('tmp1') < 0 && res.fought.indexOf('tmp1') < 0 && !res.monRetreat.some(m => m.id === 'tmp1') && !('tmp1' in res.monDown), '결과의 출진·교전·퇴각에 임시 부대 없음 (경험치·쉼 대상 아님)');
+      ok(got.r.S.mu.tmp1 && got.r.S.mu.tmp1.tmp && got.r.S.dens[got.z].every(m => m.tmp), '전투 상태엔 임시 부대가 있음');
+      const rep = P.applyBattle(res);
+      ok(rep && rep.boss && rep.boss.cards.length === 2 && rep.boss.cards.some(c => c.card === 'reserve' && c.fights === got.rec.fights && c.text.indexOf('교전 ' + got.rec.fights) >= 0), '보스 결과 카드 기록: ' + JSON.stringify(rep && rep.boss.cards.map(c => c.text)));
+      ok(JSON.stringify(R.site.squads) === sq0 && JSON.stringify(R.site.units) === un0 && JSON.stringify(R.site.denGifts) === gift0 && !JSON.stringify(R.site).includes('tmp1'), '영구 부대·출진·건설 선물에 안 남음');
+      sample.cardReserve = { z: got.z, fights: got.rec.fights, repels: got.rec.repels, out: got.rec.out, reached: res.reached };
+      P.closeBossResult();
+    }
+  }
+  // g) 긴급 작동: 이동 분대가 있는 함정 1곳 · 확률 없이 기본 피해 1회 · 강화 미가산 · 같은 분대 진입 제한 유지
+  //    시험 스위치: 보물방 앞 3곳을 함정으로, 위기는 보물방 앞 진입만 (대량 출현·진행도 위기 끔) -> 위기 순간에 분대가 그 함정 안에 있음
+  startQ1(); R.site.budget = 999;
+  ok(P.commitLayout({ builds: { C6: 'trap', B7: 'trap', D7: 'trap' } }).ok && P.upgradeFacility('C6').ok && P.upgradeFacility('B7').ok && P.upgradeFacility('D7').ok, '보물방 앞 함정 3 + 강화');
+  const sw = () => { BD.CARD_RULE.massSquads = 99; BD.CARD_RULE.crisisProgress = 0; };
+  sw(); ok(P.challengeBoss().ok, '보스 도전 (함정 판)');
+  const pickTrigger = (pi) => { const c = pi.cands.filter(x => x.id === 'trigger')[0]; return c ? { id: 'trigger', z: c.rooms[0].z } : null; };
+  // 두 번째 기회(보물방 앞 진입 위기)까지 가서 멈춤
+  const toCrisis = () => { const S = W.BSIM.create(bIn()); let prev = null;
+    for (let i = 0; i < 40000 && !S.done; i++) { const snap = W.BSIM.snapshot(S); W.BSIM.step(S, 0.05); if (S.pick) { if (S.pick.slot === 'enter') { W.BSIM.pickSkip(S); continue; } return { S, prev: snap }; } }
+    return { S, prev: null }; };
+  const tc1 = toCrisis(), S = tc1.S, pi = W.BSIM.pickInfo(S), tg = pi && pi.cands.filter(c => c.id === 'trigger')[0];
+  ok(pi && pi.slot === 'crisis' && pi.kinds.indexOf('treasure') >= 0 && tg && tg.target === 'room' && tg.rooms.length >= 1, '위기(보물방 앞) 순간 긴급 작동 후보: ' + JSON.stringify(tg && tg.rooms));
+  if (tg) {
+    const room = tg.rooms[0], q = S.squads[room.ids[0]];
+    ok(room.dmg === Z.trapDmgOf(room.z) && room.dmg === 6 && q.zone === room.z && q.state === 'move', '대상 = 분대가 있는 함정, 기본 피해 ' + room.dmg + ' (강화 미가산)');
+    // 대상 고르기 -> 취소 -> 다시 후보
+    ok(W.BSIM.pickSelect(S, 'trigger').ok && S.pick.sel === 'trigger' && W.BSIM.pickCancel(S) && S.pick && S.pick.sel === '' && W.BSIM.cardsLeft(S) === 1, '대상 고르기 취소 -> 후보로 돌아감 (기회 그대로)');
+    ok(W.BSIM.pickUse(S, 'trigger', 'C2').ok === false && S.pick, '함정 아닌 방·분대 없는 방 거절');
+    // 저장·복원: 대상 고르는 중 저장 -> 새로고침 -> 같은 창
+    W.BSIM.pickSelect(S, 'trigger');
+    ok(P.saveBattle({ snap: W.BSIM.snapshot(S), ui: {} }), '선택 대기 중 저장');
+    const piSaved = W.BSIM.pickInfo(S);
+    reboot(); sw();
+    const S2 = W.BSIM.restore(bIn(), R.bsave.snap);
+    ok(S2 && S2.pick && same(W.BSIM.pickInfo(S2), piSaved) && S2.pick.sel === 'trigger', '새로고침 뒤 같은 선택 대기 (대상 고르는 중)');
+    { const t = S2.t; W.BSIM.step(S2, 0.5); ok(S2.t === t, '선택 대기 중엔 전투 정지'); }
+    const hp0 = S.squads.map(x => x.mem.map(m => m.hp)), rs0 = S.rs;
+    const u1 = W.BSIM.pickUse(S, 'trigger', room.z), u2 = W.BSIM.pickUse(S2, 'trigger', room.z);
+    ok(u1.ok && S.rs === rs0 && u1.rec.dmg === 6 && u1.rec.lost > 0 && u1.rec.ids.indexOf(q.id) >= 0 && u1.ev[0].type === 'card' && u1.ev[0].card === 'trigger', '긴급 작동: 확률 없이 피해 ' + u1.rec.lost + ' (분대 ' + u1.rec.ids + ')');
+    ok(W.BSIM.pickUse(S, 'trigger', room.z).ok === false, '연타 거절 (피해 한 번)');
+    ok(same(u1.rec, u2.rec), '복원한 판에서 같은 선택 = 같은 효과');
+    const lostQ = hp0[q.id].reduce((a, b) => a + b, 0) - q.mem.reduce((a, m) => a + (m.alive ? Math.max(0, m.hp) : 0), 0);
+    ok(Math.abs(lostQ - q.cardDmg) < 1e-6 && q.cardDmg > 0, '분대 체력이 실제로 깎임 ' + Math.round(lostQ));
+    const e1 = runCards(null, null, 0.05, S), e2 = runCards(null, null, 0.05, S2);
+    ok(same(e1.res, e2.res) && e1.picks.length === 0, '같은 선택 = 같은 결과 (저장·복원 판 포함), 기회 2회 뒤 창 없음');
+    const trow = e1.res.squadResults[q.id];
+    ok(trow.cardDmg === Math.round(q.cardDmg) && e1.res.cards.log[1].card === 'trigger' && e1.res.cards.log[1].z === room.z, '결과에 카드 기록·분대별 카드 피해');
+    sample.cardTrigger = { z: room.z, lost: u1.rec.lost, retreats: u1.rec.retreats, reached: e1.res.reached };
+    // 진입 제한: 같은 분대가 그 함정에 trapMax번 넘게 들어간 뒤면 대상 아님
+    if (tc1.prev) {
+      const sn = JSON.parse(JSON.stringify(tc1.prev)); sn.squads[q.id].trapIn[room.z] = BD.GRID.trapMax;   // 이번에 들어가면 trapMax + 1번째
+      const S3 = W.BSIM.restore(bIn(), sn); W.BSIM.step(S3, 0.05);
+      const c3 = S3.pick ? S3.pick.cands.filter(c => c.id === 'trigger')[0] : null;
+      ok(!c3 || !c3.rooms.some(r => r.z === room.z && r.ids.indexOf(q.id) >= 0), '함정 진입 ' + (BD.GRID.trapMax + 1) + '회째 분대는 대상 아님');
+    }
+    // 같은 단계·같은 배치·같은 선택 = 같은 결과 (처음부터 두 번)
+    const d1 = runCards(bIn(), pickTrigger), d2 = runCards(bIn(), pickTrigger);
+    ok(same(d1.res, d2.res) && d1.res.cards.log.some(l => l.card === 'trigger'), '처음부터 두 번, 같은 선택 = 같은 결과');
+  }
+  // h) 연막 지속 중 저장 -> 복원 -> 같은 결과 · 옛 저장 지점(카드 칸 없음) = 카드 없이 끝까지
+  {
+    const S = W.BSIM.create(bIn());
+    for (let i = 0; i < 40 && !S.pick; i++) W.BSIM.step(S, 0.05);
+    W.BSIM.pickUse(S, 'smoke');
+    for (let i = 0; i < 20; i++) W.BSIM.step(S, 0.05);
+    const mid = W.BSIM.snapshot(S);
+    ok(S.squads.some(q => q.smoke > 0) && mid.squads.some(q => q.smoke > 0), '연막 지속 중 저장 지점에 남은 초');
+    const a = runCards(null, null, 0.05, S), b = runCards(null, null, 0.05, W.BSIM.restore(bIn(), mid));
+    ok(same(a.res, b.res), '연막 지속 중 복원 = 같은 결과');
+    const old = JSON.parse(JSON.stringify(mid)); delete old.cards; delete old.pick;
+    const So = W.BSIM.restore(bIn(), old);
+    ok(So && !So.cards.on && !So.pick, '카드 칸 없는 옛 저장 지점 = 카드 없이');
+    const o2 = runCards(null, null, 0.05, So);
+    ok(o2.picks.length === 0, '옛 저장 지점은 끝까지 창 없음');
+  }
+  BD.CARD_RULE.massSquads = 3; BD.CARD_RULE.crisisProgress = 85;
+  // i) 재도전 = 다시 2회
+  { const a = runCards(bIn(), null), b = runCards(bIn(), null); ok(a.picks.length === b.picks.length && a.picks.length >= 1 && a.picks[0].left === 2 && b.picks[0].left === 2, '재도전(새 전투)마다 다시 2회'); }
+}
 console.log(JSON.stringify({ problems, sample }));
 """
 
@@ -1006,7 +1181,7 @@ def main():
         for p in r["problems"][:60]:
             print("  - " + p)
         return 1
-    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화 -> 흐름 시험(일반 판 반복·보스 도전) -> 시간 제한 없음·안전장치")
+    print("[test_d1_core] 통과: 판 g1·탐험 규칙 -> 미리보기 경로 = 전투 경로 -> 문 옮기기(tokens·target·disconnected·limit·budget·locked) -> 조사·빠르게·함정 2회 -> 조우 즉시 승패 -> 복원 -> 마석/회사 금·가치/전투력 -> 납품·데모 끝 -> 층별 차례 전투 -> 퇴각·쉼 -> 카드 위기 -> 튜토리얼 강조 -> 대기실 부대 -> 저장 v7·?seed= -> 시설 강화 -> 흐름 시험(일반 판 반복·보스 도전) -> 시간 제한 없음·안전장치 -> 보스전 카드 3종")
     print("  " + json.dumps(r["sample"], ensure_ascii=False))
     return 0
 

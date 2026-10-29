@@ -1318,14 +1318,24 @@
     save();
   }
   // 전투 입력 (battle.js가 BSIM.create에 그대로 넘김). units = 대기실 배치에서 쉬는 부대를 뺀 것 (이번 주 싸우는 부대만). goal = 보물방 구역
-  function battleInput(plan) {
-    var us = {};
+  //  opt.cards = true: 보스전 카드를 켬 (API.md 18절. 흐름 시험 + 보스 판일 때만 실제로 켜짐, 화면이 카드 창을 붙인 뒤 넘김. 안 넘기면 지금처럼 카드 없음)
+  function battleInput(plan, opt) {
+    var us = {}, p = plan || RUN.plan;
     Object.keys(RUN.site.units).forEach(function (z) {
       var l = RUN.site.units[z].filter(function (id) { return !isResting(id); });
       if (l.length) us[z] = l;
     });
-    return { plan: plan || RUN.plan, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal(), doors: copyDoors(RUN.site.doors),
+    var o = { plan: p, zones: RUN.site.zones, units: us, unitById: unitById, goal: ZONES.goal(), doors: copyDoors(RUN.site.doors),
       up: upMaps(RUN.site.zones, RUN.site.ups) };   // 시설 강화 (battle_sim이 전투 시작 때 한 번 적용)
+    if (opt && opt.cards && flowOn() && p && p.mode === 'boss') { o.cards = true; o.cardUnit = cardUnit(); }
+    return o;
+  }
+  // 임시 수비대(보스전 카드) 1명 능력치: 기본 무료 부대(MON_SQUAD_FREE)와 같은 부족·인원, 기본 능력치만 (레벨 1, 레벨 성장·부족 신석 강화·시설 강화 없음).
+  //  RUN에 부대를 만들지 않는다 (전투 안에서만 있는 부대 -> 영구 부대·경험치·쉼·건설 선물로 안 남음)
+  function cardUnit() {
+    var f = BD.MON_SQUAD_FREE, t = tribeData(f.tribe) || BD.TRIBES[0], u = { id: 'tmp', tribe: t.id, lv: 1 };
+    var hp = statParts(u, 'hp').base, def = Math.min(BD.DEF_MAX, statParts(u, 'def').base);
+    return { name: '임시 수비대 (' + t.name + ')', tribe: t.id, count: f.count, hp: Math.round(hp), atk: Math.round(statParts(u, 'atk').base * 100) / 100, def: Math.round(def * 100) / 100 };
   }
 
   // ---------- 전투 결과 반영 ----------
@@ -1469,11 +1479,28 @@
   function bossReport(res, p) {
     var rows = (Array.isArray(res.squadResults) ? res.squadResults : []).map(function (r) {
       return { id: r.id, grade: r.grade || '', state: r.state, cause: r.cause || '', causeText: r.state === 'reached' ? '보물방 도달' : (CAUSE_NAME[r.cause] || r.cause || ''),
-        rooms: r.rooms | 0, last: r.last || '', lastName: ZONES.NAMES[r.last] || r.last || '', trapDmg: r.trapDmg | 0, hpLeft: r.hpLeft | 0 };
+        rooms: r.rooms | 0, last: r.last || '', lastName: ZONES.NAMES[r.last] || r.last || '', trapDmg: r.trapDmg | 0, hpLeft: r.hpLeft | 0,
+        cardDmg: r.cardDmg | 0, stopped: +r.stopped || 0 };   // 보스전 카드: 긴급 작동이 깎은 체력 · 연막으로 멈춘 초
     });
     var causes = {}; rows.forEach(function (r) { if (r.state !== 'reached') causes[r.causeText] = (causes[r.causeText] || 0) + 1; });
     return { stage: p.stage, name: p.name, success: (res.reached | 0) === 0, reached: res.reached | 0, squads: res.squads | 0, rows: rows,
-      trapDmg: Math.round(res.trapDmg || 0), causes: causes, tries: RUN.flow.tries, reward: 0, supply: 0, time: Math.round((res.time || 0) * 10) / 10 };
+      trapDmg: Math.round(res.trapDmg || 0), causes: causes, tries: RUN.flow.tries, reward: 0, supply: 0, time: Math.round((res.time || 0) * 10) / 10,
+      cards: cardRows(res.cards) };
+  }
+  // 보스 결과의 카드 기록 (실제 일어난 일만, 추정 문구 없음). battle_sim result().cards.log -> [{ n, slot, card, name, z, roomName, text, ...숫자 }]
+  function cardRows(c) {
+    var log = c && Array.isArray(c.log) ? c.log : [];
+    return log.map(function (r) {
+      var o = { n: r.n | 0, slot: r.slot || '', card: r.card || '', name: r.name || '', z: r.z || '', roomName: r.z ? ZONES.NAMES[r.z] || r.z : '', text: '' };
+      if (r.card === 'skip') o.text = '넘기기';
+      else if (r.card === 'smoke') { o.squads = (r.ids || []).length; o.sec = +r.sec || 0; o.text = r.name + ' · ' + o.squads + '분대 ' + o.sec + '초 정지'; }
+      else if (r.card === 'trigger') { o.dmg = r.lost | 0; o.retreats = r.retreats | 0; o.squads = (r.ids || []).length; o.text = r.name + ' ' + r.z + ' · 피해 ' + o.dmg + (o.retreats ? ' · 퇴각 ' + o.retreats + '분대' : ''); }
+      else if (r.card === 'reserve') {
+        o.fights = r.fights | 0; o.repels = r.repels | 0; o.out = !!r.out; o.count = r.count | 0;
+        o.text = r.name + ' ' + r.z + ' · ' + (o.fights ? '교전 ' + o.fights + ' · 격퇴 ' + o.repels + (o.out ? ' · 퇴각' : '') : '교전 없음');
+      }
+      return o;
+    });
   }
   // 흐름 시험 결과 반영 (applyBattle이 부름). 일반 판: 금·신석만 (경험치·회사 경험치·마석 보급·쉼 없음, 부대는 다음 판에 회복).
   //  보스 판: 보물방 도달 0이면 성공 -> 의뢰 단계 +1 (+ 그 단계 의뢰인 보급 stages[i].budget + 첫 성공 마석 FLOW.bossReward, 단계마다 한 번만). 실패는 잃는 것 없음. 결과는 RUN.flow.show에 남김
