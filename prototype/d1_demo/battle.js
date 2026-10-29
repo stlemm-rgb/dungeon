@@ -9,7 +9,10 @@
  *  - 보스 도전: 같은 화면, 아래 = [배속][일시정지] + 안내. 탭 이동은 shell.js가 막는다. 끝나면 잠깐 뒤 보스 결과로 자동 전환.
  *  - 보스 결과: 판(끝 방 강조) + 요약 + 분대별 펼침 + 버튼. 실패 [배치 고치기][다시 도전][일반 침입 재개], 성공 [다음 보스 도전][일반 침입 재개], 5/5 [납품](shell.js가 data-deliver를 받음).
  *    결과는 닫기 전까지 새로고침·탭 이동 뒤에도 복원된다 (P.flowInfo().show). 보상은 applyBattle 때 한 번만.
- *  - 위기 카드·층 넘어가기 알림 코드는 후속 보스 카드(최대 2회)용으로 남겨 뒀다. 지금은 위기 사건을 무시한다 (카드 자리만).
+ *  - 보스 카드 3종 (2026-10-29, API.md 18절): 보스 판만 P.battleInput(plan, { cards: true }). 기회가 오면 S.pick -> 전투가 완전히 멈추고 아래에 카드 창(후보·위기 위치·n/2·[넘기기]).
+ *    방을 고르는 카드(임시 수비대·긴급 작동) = SIM.pickSelect -> 창이 접히고 판에서 가능한 방만 강조 -> 방 누름 -> [사용] pickUse / [취소] pickCancel. 연막 = 바로 [사용].
+ *    창이 열릴 때·고르기·취소·사용·넘기기 직후마다 checkpoint(): 새로고침해도 같은 창(대상 고르는 중 포함). 효과는 실제 사건만 그림 (연막 = 분대 위 ☁ 남은 초, 임시 수비대 = 새 부대 점 + 임시, 긴급 작동 = 함정 번쩍 + 피해 숫자).
+ *  - 옛 위기 카드(spawnCard) 코드와 층 넘어가기 알림 코드는 옛 규칙용으로 남아 있다. 새 흐름은 위기 사건(crisis)을 무시하고 위 카드 창만 쓴다.
  *  - 판 = ZONEVIEW.boardHtml: 싸우는 층 하나. 분대는 q.x·q.y 그대로, 좌표 = 칸 단위. 말풍선: 조사 중 ?, 조우 ⚔ -> ✔/💨, 침입자 퇴각 "퇴각". ?debug 면 분대 색 경로 선 + 문 통과 수.
  *  - 배속 1·2·3·5는 RUN.prefs에 저장 (P.setBattleSpeed). 진행 중 전투는 FLOW.saveEvery초마다·화면을 떠날 때 저장 -> 새로고침하면 이어서 (멈춤 상태도 그대로).
  *  - 곡선·시간·스와이프 기준·진동은 MOTION.* 만. 연출용 무작위는 api.fxRandom만 (게임용 무작위는 battle_sim.js 시드). 색은 shell.css 맨 위 변수만.
@@ -93,6 +96,9 @@
         '<div class="dim small-text bt-ressub">보스 ' + b.stage + '단계 · ' + esc(b.name) + ' · ' + b.tries + '번째 도전 · ' + b.time + '초</div>' +
         (b.reward || b.supply ? '<div class="bt-lv">마석 +' + ((b.supply || 0) + (b.reward || 0)) + ' (의뢰인 보급 ' + (b.supply || 0) + ' · 첫 성공 ' + (b.reward || 0) + ')</div>' : '') +
         '<div class="rsum">보물방 도달 ' + b.reached + '/' + b.squads + ' · 함정 피해 ' + b.trapDmg + ' · 퇴각 원인 ' + esc(causes) + '</div>' +
+        ((b.cards || []).length ? '<div class="rcards"><div class="bt-sub">보스 카드 기록</div>' + b.cards.map(function (c) {
+          return '<div class="rcard' + (c.card === 'skip' ? ' skip' : '') + '"><b>' + c.n + '번째</b><span>' + esc(c.text) + '</span></div>';
+        }).join('') + '</div>' : '') +
         (ok ? '' : '<div class="small-text dim">잃는 것은 없어요. 문·시설을 바꾸고 다시 도전해 보세요 (같은 배치 = 같은 결과)</div>') +
         '<div class="bt-sub">분대별 기록 (눌러서 펼치기 · 판에 끝 방 표시)</div>' + rowsHtml);
       el.appendChild(panel);
@@ -142,7 +148,7 @@
       var run = { alive: true, raf: 0 };
       api.onLeave(function () { run.alive = false; cancelAnimationFrame(run.raf); });
 
-      var simIn = P.battleInput(plan);
+      var simIn = P.battleInput(plan, boss ? { cards: true } : undefined);   // 보스 판만 카드 켬 (create·restore 둘 다)
       var bs = P.battleSave() || {};
       var S = bs.snap ? SIM.restore(simIn, bs.snap) : null, resumed = !!S;
       if (!S) S = SIM.create(simIn);
@@ -182,6 +188,7 @@
         : '<button class="fbtn main bigbtn" type="button" data-fboss' + (bi0 && bi0.canChallenge ? '' : ' aria-disabled="true"') + '>보스 도전 ' + (bi0 ? bi0.stage : '') + '<small>' + esc(bi0 ? bi0.name : '') + '</small></button>';
       var dockHtml = boss
         ? '<div class="factions"><button class="fbtn slim bt-speed" type="button">배속 ×1</button><button class="fbtn slim" type="button" data-fpause>일시정지</button></div>' +
+          '<div class="fld-note fld-cardnote" hidden></div>' +
           '<div class="fld-note">보스전 중에는 배치를 바꾸거나 탭을 옮길 수 없어요 (보스전 종료 후 이동)</div>'
         : '<div class="factions"><button class="fbtn slim bt-speed" type="button">배속 ×1</button><button class="fbtn slim" type="button" data-fpause>일시정지</button></div>' +
           '<div class="factions"><button class="fbtn" type="button" data-fsortie>출진<small>' + (RUN.site.auto ? '자동 편성 켬' : '자동 편성 꺼짐') + '</small></button>' +
@@ -276,7 +283,7 @@
       // 분대 점 위의 말풍선(.bt-bub): 조사 중 = 작은 ?, 조우 = ⚔ 1초 -> 몬스터 승이면 ✔ 아니면 💨 1초 (기호만, 글 없음). 상태(q.inspect·q.clash)를 그대로 읽어 배속·일시정지·불러오기와 늘 맞는다
       var sqEls = {}, monEls = {}, CL = BD.CLASH || { encounter: 1 };
       S.squads.forEach(function (q) {
-        var d = div('bt-sq wait', '<i class="bt-hp"><u></u></i><b>' + BD.SQUAD + '</b><span class="bt-bub" hidden></span>');
+        var d = div('bt-sq wait', '<i class="bt-hp"><u></u></i><b>' + BD.SQUAD + '</b><span class="bt-bub" hidden></span><span class="bt-smk" hidden></span>');
         d.setAttribute('data-g', q.grade); d.style.left = pctX(q.x); d.style.top = pctY(q.y);
         d.hidden = true; layer.appendChild(d); sqEls[q.id] = d;
         if (resumed) { // 저장 지점부터: 이미 나온 무리는 보이고, 끝난 분대는 처음부터 치움
@@ -298,10 +305,14 @@
           if (Z.floorOf(z) !== n) return;
           var a = Z.anchorOf(z), rows = {}, order = [];
           S.dens[z].forEach(function (m) { if (!rows[m.id]) { rows[m.id] = []; order.push(m.id); } rows[m.id].push(m); });
+          if (S.dens[z].some(function (m) { return m.tmp; })) {   // 임시 수비대(카드)가 선 방: "임시" 표시
+            var tg = div('bt-tmptag', '임시'); tg.style.left = pctX(a.x); tg.style.top = pctY(a.y - 0.22); layer.appendChild(tg);
+            monEls[z + ':tag'] = { el: tg, m: null };
+          }
           order.forEach(function (uid, ui) {
             var list = rows[uid];
             list.forEach(function (m, i) {
-              var d = div('bt-mon' + (m.guard ? ' guard' : ''), '<i class="bt-hp"><u></u></i>');
+              var d = div('bt-mon' + (m.guard ? ' guard' : '') + (m.tmp ? ' tmp' : ''), '<i class="bt-hp"><u></u></i>');
               d.style.left = pctX(a.x + (i - (list.length - 1) / 2) * 0.16); d.style.top = pctY(a.y + 0.2 + ui * 0.2);
               d.title = m.name; layer.appendChild(d); monEls[z + ':' + uid + ':' + i] = { el: d, m: m };
             });
@@ -332,11 +343,16 @@
           d.classList.toggle('fight', q.state === 'fight');
           d.classList.toggle('frozen', S.freeze > 0);
           d.classList.toggle('chilled', q.chill > 0);
+          var sm = d.querySelector('.bt-smk'), smOn = q.smoke > 1e-9, smTxt = smOn ? '☁ ' + Math.ceil(q.smoke - 1e-9) + '초' : '';   // 연막: 분대 위에 구름 + 남은 초 (글자라 움직임 줄이기에서도 같음)
+          d.classList.toggle('smoked', smOn);
+          if (sm.textContent !== smTxt) sm.textContent = smTxt;
+          sm.hidden = !smOn;
           if (bub.textContent !== bb.txt) bub.textContent = bb.txt;
           bub.className = 'bt-bub ' + bb.cls; bub.hidden = !bb.txt;
         });
         Object.keys(monEls).forEach(function (k) {
           var o = monEls[k];
+          if (!o.m) return;   // 임시 표시 글
           o.el.querySelector('u').style.width = (o.m.hp / o.m.max * 100) + '%';
           o.el.classList.toggle('down', o.m.hp <= 0);
           o.el.classList.toggle('out', !!o.m.out);   // 퇴각한 부대 (흐리게)
@@ -350,7 +366,7 @@
         var nm = '';
         Object.keys(monEls).forEach(function (k) {
           var o = monEls[k];
-          if (o.m.id !== e.id) return;
+          if (!o.m || o.m.id !== e.id) return;
           nm = (api.unitName && api.unitName(o.m.id)) || o.m.name;
           o.el.classList.remove('retreating'); void o.el.offsetWidth; o.el.classList.add('retreating');
         });
@@ -370,7 +386,10 @@
             case 'wipe': floatText(e.x, e.y, '분대 전멸', 'big'); buzz('tap'); break;
             case 'mdown': flashZone(e.z, 'bt-hit'); log(Z.NAMES[e.z] + ' 대기실 부대원이 쓰러졌어요', 'bad'); break;
             case 'mretreat': retreatFx(e); break;
-            case 'crisis': break;   // 카드는 후속 보스전용: 지금은 위기 사건을 무시
+            case 'crisis': break;   // 새 흐름은 옛 위기 사건을 무시 (보스 카드는 S.pick 창)
+            case 'cardPick': log('카드 기회 ' + e.n + '/' + cdMax() + ' — 전투가 멈췄어요', 'card'); break;
+            case 'card': cardFx(e); break;
+            case 'smokeEnd': log('분대 ' + (e.id + 1) + ' 연막이 풀렸어요', ''); break;
             case 'chill': flashZone(e.z, 'bt-chill'); floatText(e.x, e.y - 0.2, '얼어붙음', 'chill'); log('분대 ' + (e.id + 1) + '가 얼어붙은 하역장에 들어서 느려져요', 'good'); break;
             case 'reach':
               flashZone(S.goal, 'bt-hit'); floatText(e.x, e.y - 0.3, '약탈 -' + e.loot + '금', 'big');
@@ -525,6 +544,130 @@
       }
 
 
+      // ---------- 보스 카드 창 (API.md 18절): S.pick이 있으면 전투가 멈추고 이 창이 아래에 뜬다 ----------
+      // 창 = 아래 시트(sheetEl 재사용, sheetKind 'card'). 판은 위에 그대로 보인다 (위기 방 = 빨간 테두리, 고를 수 있는 방 = 초록 점선). 상태는 전부 S.pick (후보·sel), 여기는 고른 방(cd.room)만 기억
+      var cd = { open: false, room: '' }, cardsOn = !!(S.cards && S.cards.on);
+      function cdMax() { var p = SIM.pickInfo(S); return p ? p.max : 2; }
+      function cdWhy(inf) {   // 이 창이 뜬 이유 (위기 종류는 규칙 표의 라벨)
+        if (inf.slot === 'enter') return '첫 침입자가 던전에 들어섰어요';
+        var ks = (inf.kinds || []).map(function (k) { return crisisInfo(k).label; });
+        return '위기! ' + (ks.length ? ks.join(' · ') : '침입자가 보물방에 다가와요');
+      }
+      function cdTarget(c) {   // 대상 한 줄
+        if (c.id === 'smoke') return '자동 · 이 층에서 움직이는 ' + (c.ids || []).length + '분대 · ' + c.sec + '초';
+        if (c.id === 'reserve') return '방 고르기 · 빈 대기실 ' + (c.rooms || []).length + '곳 · ' + esc(c.unitName) + ' ' + c.count + '명';
+        if (c.id === 'trigger') return '방 고르기 · 침입자 있는 함정 ' + (c.rooms || []).length + '곳 · 피해 ' + (c.rooms || []).map(function (r) { return r.dmg; }).join('/');
+        return c.target === 'room' ? '방 고르기' : '자동';
+      }
+      function cdCand(inf, id) { return (inf.cands || []).filter(function (c) { return c.id === id; })[0] || null; }
+      function cdListHtml(inf) {
+        var h = '<div class="upbody"><div class="uphead"><b>보스 카드 · ' + inf.n + '/' + inf.max + '번째</b><span class="uplv">남은 기회 ' + inf.left + '회</span></div>' +
+          '<div class="cdwhy">' + esc(cdWhy(inf)) + '</div>';
+        h += inf.cands.map(function (c) {
+          return '<button class="cdopt" type="button" data-cd="' + c.id + '"><span class="cdname"><b>' + esc(c.name) + '</b><span class="chip' + (c.target === 'room' ? ' accent' : '') + '">' + (c.target === 'room' ? '방 고르기' : '바로 사용') + '</span></span>' +
+            '<span class="cdtx">' + esc(c.text) + '</span><span class="cdtg">' + cdTarget(c) + '</span></button>';
+        }).join('');
+        return h + '</div><div class="upfoot"><span class="upwhy dim">전투가 멈춰 있어요. 이번 보스전에만 써요</span><button class="upbtn" type="button" data-cd-skip>넘기기</button></div>';
+      }
+      function cdRoomInfo(c, z) {
+        var r = (c.rooms || []).filter(function (x) { return x.z === z; })[0];
+        if (!r) return '';
+        if (c.id === 'reserve') return api.zoneName(z) + ' 대기실 · ' + esc(c.unitName) + ' ' + c.count + '명이 서요';
+        return api.zoneName(z) + ' 함정 · 안에 ' + (r.ids || []).length + '분대 · 피해 ' + r.dmg;
+      }
+      function cdSelHtml(inf) {
+        var c = cdCand(inf, inf.sel), ok = !!(c && cd.room && (c.rooms || []).some(function (r) { return r.z === cd.room; }));
+        return '<div class="upbody"><div class="uphead"><b>' + esc(c ? c.name : '') + ' · 방을 골라요</b><span class="uplv">' + inf.n + '/' + inf.max + '번째</span></div>' +
+          '<div class="cdwhy ' + (ok ? 'ok' : '') + '">' + (ok ? '고른 방: ' + cdRoomInfo(c, cd.room) : '판에서 초록 점선 방 하나를 눌러요 (' + (c && c.rooms ? c.rooms.length : 0) + '곳)') + '</div></div>' +
+          '<div class="upfoot"><button class="upbtn" type="button" data-cd-cancel>취소</button><button class="upbtn main' + (ok ? '' : ' off') + '" type="button" data-cd-use aria-disabled="' + (ok ? 'false' : 'true') + '">사용' + (ok ? ' · ' + api.zoneName(cd.room) : '') + '</button></div>';
+      }
+      function cdMarks(inf) {   // 판 표시: 위기 방(빨강) · 고를 수 있는 방(초록 점선) · 고른 방(주황)
+        board.querySelectorAll('.zc.cd-where, .zc.cd-ok, .zc.sel').forEach(function (c) { c.classList.remove('cd-where', 'cd-ok', 'sel'); });
+        board.classList.toggle('cd-pickmode', !!(inf && inf.sel));
+        if (!inf) return;
+        (inf.where || []).forEach(function (w) { if (w.z && w.z !== 'Y') setCls(w.z, 'cd-where'); });
+        var c = inf.sel ? cdCand(inf, inf.sel) : null;
+        if (c) (c.rooms || []).forEach(function (r) { setCls(r.z, 'cd-ok'); });
+        if (c && cd.room) setCls(cd.room, 'sel');
+      }
+      function drawCard() {
+        var inf = SIM.pickInfo(S);
+        if (!inf) { closeCard(); return; }
+        if (inf.sel && !cdCand(inf, inf.sel)) { SIM.pickCancel(S); inf = SIM.pickInfo(S); }
+        sheetEl.hidden = false;
+        sheetEl.innerHTML = inf.sel ? cdSelHtml(inf) : cdListHtml(inf);
+        cdMarks(inf);
+      }
+      function openCardSheet() {   // 창이 열리는 순간이 저장 지점 (새로고침해도 같은 창)
+        var inf = SIM.pickInfo(S); if (!inf) return;
+        cd.open = true; cd.room = ''; sheetKind = 'card'; el.classList.add('upopen');
+        paint();
+        drawCard();
+        (inf.where || []).forEach(function (w) {
+          var a = w.z && w.z !== 'Y' ? Z.anchorOf(w.z) : null;
+          if (a) floatText(a.x, a.y - 0.3, '위기!', 'alarm');
+        });
+        board.classList.remove('bt-alarm'); void board.offsetWidth; board.classList.add('bt-alarm');
+        buzz('warn');
+        checkpoint();
+      }
+      function closeCard() {
+        cd.open = false; cd.room = ''; sheetKind = null;
+        sheetEl.hidden = true; sheetEl.innerHTML = ''; el.classList.remove('upopen');
+        cdMarks(null);
+        drawCardNote();
+      }
+      function drawCardNote() {
+        var n = el.querySelector('.fld-cardnote'); if (!n) return;
+        var r = SIM.result(S).cards, last = r.log.length ? r.log[r.log.length - 1] : null;
+        n.hidden = !cardsOn;
+        n.textContent = '카드 기회 ' + SIM.cardsLeft(S) + '회 남음' + (last ? ' · 마지막: ' + last.name : '');
+      }
+      function cdSelect(id) {
+        var r = SIM.pickSelect(S, id);
+        if (!r.ok) { api.toast(r.why); buzz('warn'); drawCard(); return; }
+        cd.room = ''; buzz('tap'); drawCard(); checkpoint();
+      }
+      function cdCancel() { SIM.pickCancel(S); cd.room = ''; buzz('tap'); drawCard(); checkpoint(); }
+      function cdUse(id, z) {
+        var r = SIM.pickUse(S, id, z);
+        if (!r.ok) { api.toast(r.why || '지금은 쓸 수 없어요'); buzz('warn'); if (SIM.pickInfo(S)) drawCard(); return; }
+        closeCard();
+        var rec = r.rec || {};
+        var text = rec.card === 'smoke' ? '연막 살포 · ' + (rec.ids || []).length + '분대 ' + rec.sec + '초 정지'
+          : rec.card === 'reserve' ? '임시 수비대 · ' + api.zoneName(rec.z) + '에 ' + rec.count + '명 배치'
+          : '긴급 작동 · ' + api.zoneName(rec.z) + ' 피해 -' + rec.lost + (rec.retreats ? ' · 퇴각 ' + rec.retreats + '분대' : '');
+        log(text, 'card');
+        show(r.ev);
+        paint(); drawCardNote(); buzz('good');
+        checkpoint();
+      }
+      function cdSkip() {
+        var r = SIM.pickSkip(S);
+        if (!r.ok) { api.toast(r.why || '지금은 넘길 수 없어요'); return; }
+        closeCard(); log('카드를 넘겼어요 (효과 없음)', 'dim'); show(r.ev); buzz('tap'); checkpoint();
+      }
+      // 판에서 방 누르기 (대상 고르는 중일 때만): 후보 방이면 고른 방으로, 아니면 안내
+      function cdBoardClick(z) {
+        var inf = SIM.pickInfo(S), c = inf && inf.sel ? cdCand(inf, inf.sel) : null;
+        if (!c) return;
+        if (!(c.rooms || []).some(function (r) { return r.z === z; })) { api.toast(api.zoneName(z) + '에는 쓸 수 없어요 (초록 점선 방만)'); buzz('warn'); return; }
+        cd.room = z; buzz('tap'); drawCard();
+      }
+      // 연막·임시 수비대·긴급 작동의 화면 연출 (사건 card): 일어난 일만 그린다. 연막 초는 분대 위 글(paint)이 보여 주고, 여기는 떠오르는 글
+      function cardFx(e) {
+        if (e.card === 'smoke') {
+          (e.ids || []).forEach(function (id) { var q = S.squads.filter(function (x) { return x.id === id; })[0]; if (q && (q.floor || 1) === V.floor) floatText(q.x, q.y - 0.3, '☁ 연막', 'smoke'); });
+        } else if (e.card === 'reserve') {
+          drawFloor(V.floor);
+          var a = Z.anchorOf(e.z);
+          flashZone(e.z, 'bt-boost'); floatText(a.x, a.y - 0.35, '임시 수비대', 'reserve');
+        } else if (e.card === 'trigger') {
+          var t = Z.anchorOf(e.z);
+          flashZone(e.z, 'bt-trig'); floatText(t.x, t.y - 0.2, '긴급 작동 -' + e.lost, 'trap');
+        }
+      }
+
       // ---------- 아래 창: 시설 강화 · 출진 (기획서 3·5·6절) ----------
       // 열려 있는 동안 전투는 멈춘다(U.hold). 확정 배치를 하나라도 바꾸면(강화·출진·조달) progress.js가 진행 중 일반 판을 버리고, 창을 닫을 때 새 배치로 새 판이 시작된다.
       var sheetKind = null, upSel = null, upLock = false, upTimer = 0, sorFloor = 1, dirty = false, pickRoom = null;
@@ -661,6 +804,17 @@
       }
       sheetEl.addEventListener('click', function (e) {
         var q = function (a) { return e.target.closest ? e.target.closest('[' + a + ']') : null; }, b;
+        if (sheetKind === 'card') {   // 보스 카드 창
+          if ((b = q('data-cd'))) { var inf = SIM.pickInfo(S), c = inf && cdCand(inf, b.getAttribute('data-cd')); if (!c) return; if (c.target === 'room') cdSelect(c.id); else cdUse(c.id); return; }
+          if (q('data-cd-skip')) { cdSkip(); return; }
+          if (q('data-cd-cancel')) { cdCancel(); return; }
+          if ((b = q('data-cd-use'))) {
+            var pi = SIM.pickInfo(S);
+            if (b.getAttribute('aria-disabled') === 'true' || !pi || !pi.sel || !cd.room) { api.toast('먼저 판에서 방을 골라요'); buzz('warn'); return; }
+            cdUse(pi.sel, cd.room);
+          }
+          return;
+        }
         if (q('data-sheet-close')) { buzz('tap'); closeSheet(); return; }
         if (sheetKind === 'up') {
           if (q('data-up-do')) {
@@ -692,6 +846,7 @@
         var c = e.target.closest ? e.target.closest('.zc[data-z]') : null;
         if (!c) return;
         var z = c.getAttribute('data-z'), f = Z.FAC[RUN.site.zones[z]];
+        if (sheetKind === 'card') { cdBoardClick(z); return; }   // 카드 대상 고르기
         if (boss) { api.toast(api.zoneName(z) + ': 보스전 중에는 바꿀 수 없어요'); buzz('tap'); return; }
         if (sheetKind === 'sortie') { buzz('tap'); api.toast(api.zoneName(z) + (f ? ' — ' + f.name : '')); return; }
         var ui = f ? P.upgradeInfo(z) : null;
@@ -770,6 +925,7 @@
         run.raf = requestAnimationFrame(frame);
         var real = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
         if (U.hold || U.dead) return;   // 아래 창이 열려 있는 동안은 멈춤
+        if (U.phase === 'fight' && S.pick) { if (!cd.open) openCardSheet(); return; }   // 카드 선택 대기: 전투 완전 정지 (일시정지 중이어도, 새로고침 뒤에도 같은 창)
         if (U.phase === 'fight' && !U.paused) {
           // 카드 전용 화면이 떠 있는 동안 전투는 완전히 멈춘다 (고를 때까지 기다림). 층 알림(U.notice·S.pending)이 떠 있는 동안도 멈춤: 누르면 다음 층 시작
           if (U.card || U.notice || U.floorNotice) fitOverlay();
@@ -778,12 +934,13 @@
             var dt = real * BD.SPEEDS[U.speedIdx], n = Math.ceil(dt / 0.05);
             for (var i = 0; i < n && !S.done; i++) {
               show(SIM.step(S, dt / n));
-              if (U.queue.length || U.floorNotice) break;   // 위기가 생기면 이번 프레임은 거기서 멈추고 바로 카드를 띄움 / 이 층이 끝나면 알림
+              if (U.queue.length || U.floorNotice || S.pick) break;   // 위기가 생기면 이번 프레임은 거기서 멈추고 바로 카드를 띄움 / 이 층이 끝나면 알림
             }
           }
           checkCards();
           checkFloorNotice();
           paint();
+          if (S.pick && !cd.open) { openCardSheet(); return; }   // 이번 프레임에 카드 기회가 생김
           if (S.done) finish();
           else if ((saveT += real) >= FL.saveEvery) { saveT = 0; flowSave(); }
         } else if (U.phase === 'fight') {
@@ -793,6 +950,7 @@
       drawSpeed();
       drawDock();
       paint();
+      drawCardNote();
       S.squads.forEach(function (q) { var d = sqEls[q.id]; if (d && !d.classList.contains('out')) d.hidden = false; });
       if (!boss) log('일반 ' + plan.no + '판: ' + plan.groups.map(function (g) { return g.grade + '급 ' + esc(g.name) + ' Lv ' + g.lv; }).join(' · ') + (resumed ? ' · 저장 지점부터 이어짐 (' + Math.floor(S.t) + '초)' : ''), 'dim');
       if (!resumed) tutStart('battle', boss ? '.bt-speed' : '[data-fboss]');   // 저장 지점에서 이어진 전투에는 안내 없음

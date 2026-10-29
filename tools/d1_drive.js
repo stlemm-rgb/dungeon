@@ -2,6 +2,8 @@
 // UI 개편(2026-10-29, docs/specs/ui_restructure.md): 하단 탭 3개(회사·현장·군단) + 현장 4상태(운영·건설·보스 도전·보스 결과).
 //  한 바퀴 = 회사에서 의뢰 수락 -> 현장 운영(일반 판 자동 반복) -> 탭 이동 멈춤/이어 감 -> 건설(취소·미확정 묻기·확정) -> 보스 실패 -> 배치 고치기 -> 재도전 성공
 //           -> (API로 빨리) 5/5 -> 현장 [납품] -> 회사 정산 -> 데모 끝. 마석 숫자는 core-dev가 바꿀 수 있어 하드코딩하지 않고 API에서 읽어 비교한다.
+//  보스 카드 (2026-10-29, API.md 18절): 본줄기 보스 판의 카드 창은 전부 [넘기기] (창 2번·시간 정지·새로고침 복원·넘침 0, 결과에 넘기기 2줄) -> 끝에 카드 한 바퀴를 새 브라우저로 따로
+//  (임시 수비대 고르기 -> 취소 -> 다시 -> 새로고침 복원 -> 방 누름 -> 사용 -> 연막 -> 결과 카드 기록). 빨리 감기 단계는 카드 없이 API로 그대로.
 /*
  * 사용: node tools/d1_drive.js shots <사진 폴더>   -> 사진 PNG + 마지막 줄 JSON { cases:[{ name, w, h, file, overflow, scrollWidth, wide[], logs[], problems[] }] }
  *       node tools/d1_drive.js flow                -> 마지막 줄 JSON { steps:[글], problems:[글], logs:[글] }
@@ -183,7 +185,30 @@ async function d1drive_flow() {
   const noOverflow = async (what) => { const o = await b.ev('__d1t.overflow()'); need(!o.overflow, what + ': 가로 넘침 scrollWidth ' + o.scrollWidth + ' > ' + o.innerWidth + ' ' + (o.wide || []).join(',')); };
   const visible = async (what, sels) => { const bad = await b.ev('__d1t.hidden(' + JSON.stringify(sels) + ')'); need(!bad.length, what + ': 버튼이 가려지거나 화면 밖: ' + bad.join(' / ')); };
   // 보스 결과 상태가 뜰 때까지 (배속 ×5 기준 넉넉히)
-  const waitResult = async () => { const t = Date.now(); while (Date.now() - t < 40000) { if (await has('.fld-result')) return true; await b.sleep(200); } return false; };
+  // 보스 카드 창(API.md 18절)이 뜨면 전부 [넘기기] (카드 없는 판과 같은 결과). check = 몇 번째 창인지 받아 확인할 일
+  const cardWin = '.fsheet:not([hidden]) [data-cd-skip]';
+  let cardWins = 0;
+  const waitResult = async (check) => {
+    const t = Date.now();
+    while (Date.now() - t < 60000) {
+      if (await has('.fld-result')) return true;
+      if (await has(cardWin)) { cardWins++; if (check) await check(cardWins); await b.click('[data-cd-skip]'); await b.sleep(120); continue; }
+      await b.sleep(200);
+    }
+    return false;
+  };
+  // 첫 보스전 첫 창: 후보·시간 정지·넘침 0·새로고침해도 같은 창
+  const firstWin = async (n) => {
+    if (n !== 1) return;
+    need((await has('.fsheet .cdopt')) && (await b.ev('document.querySelector(".fsheet").innerText.indexOf("1/2번째") >= 0')), '첫 카드 창에 후보·1/2번째가 없음');
+    await visible('카드 창', ['[data-cd-skip]', '.bt-board']);
+    await noOverflow('카드 창');
+    const tm = await b.ev('document.querySelector(".bt-time").textContent');
+    await b.sleep(700);
+    need((await b.ev('document.querySelector(".bt-time").textContent')) === tm, '카드 창이 떠 있는 동안 전투 시간이 흘러감');
+    await b.reload(500); await d1drive_page(b);
+    need(await has(cardWin), '카드 창이 떠 있을 때 새로고침하면 같은 창이 돌아와야 함');
+  };
   const rows = 'JSON.stringify(PROGRESS.flowInfo().show && PROGRESS.flowInfo().show.rows.map(function (r) { return [r.state, r.rooms, r.last, r.trapDmg]; }))';
   try {
     await d1drive_page(b);
@@ -287,9 +312,11 @@ async function d1drive_flow() {
     need((await b.ev('document.querySelectorAll("#tabs button.locked").length')) === 2 && (await b.ev('document.querySelector("#tabs").innerText.indexOf("보스전 종료 후") >= 0')), '보스 중에 다른 탭이 `보스전 종료 후 이동`으로 막혀 있지 않음');
     await b.click('#tabs [data-toast]'); await b.ev('location.hash = "#company"'); await b.sleep(300);
     need((await scr()) === 'field', '보스 판 중에는 다른 화면으로 못 감 (현장 유지)');
-    await visible('보스 도전', ['[data-fpause]', '.bt-board']);
+    await visible('보스 도전', (await has(cardWin)) ? ['[data-cd-skip]', '.bt-board'] : ['[data-fpause]', '.bt-board']);   // 보스 시작 직후 첫 카드 창이 바로 뜰 수 있음 (그동안 아래 버튼 줄은 창이 대신함)
     await noOverflow('보스 도전');
-    if (!need(await waitResult(), '보스 결과가 안 나옴')) return fin();
+    if (!need(await waitResult(firstWin), '보스 결과가 안 나옴')) return fin();
+    need(cardWins === 2, '보스 한 판에 카드 창이 2번 떠야 함(진입 1 + 위기 1): ' + cardWins);
+    need(await b.ev('(function () { var c = PROGRESS.flowInfo().show.cards; return !!c && c.length === 2 && c[0].card === "skip" && c[1].card === "skip"; })()') && (await has('.fld-result .rcard.skip')), '결과 창에 넘기기 기록 2줄이 없음');
     const fail = await b.ev('(function () { var s = PROGRESS.flowInfo().show; return s ? { ok: s.success, reached: s.reached, stage: PROGRESS.RUN.quest.stage, m: PROGRESS.RUN.site.budget } : null; })()');
     if (!need(fail && !fail.ok && fail.reached > 0 && fail.stage === 0, '대기실 하나로는 보스 1단계 실패여야 함: ' + JSON.stringify(fail))) return fin();
     need((await has('.fld-result .rrow2')) && (await has('[data-ffix]')) && (await has('[data-fretry]')) && (await has('[data-fresume]')) && !(await has('[data-deliver]')) && !(await has('[data-fnext]')),
@@ -391,11 +418,113 @@ async function d1drive_flow() {
   return fin();
 }
 
+// ---------------- 보스 카드 한 바퀴 (지시서 refs/brief_cards_ui.md · API.md 18절) ----------------
+// 새 브라우저로 따로 돈다 (한 바퀴 본줄기의 승패·마석 숫자를 건드리지 않게). 대기실 2곳 + 함정 3곳을 짓고 부대 하나를 빼서 빈 대기실을 만든 뒤 보스 1단계:
+//  첫 창(진입) = 후보 연막·임시 수비대, 멈춘 시간, 390px 넘침 0 -> 임시 수비대 고르기 -> [취소] -> 다시 고르기 -> 새로고침 복원(대상 고르는 중) -> 방 누름 -> [사용] -> 임시 부대 점·"임시" 표시, 새로고침해도 그대로
+//  둘째 창(위기) = 연막 [바로 사용] -> 분대 위 연막·남은 초 -> 결과 창에 카드 기록 줄 (새로고침 뒤에도). 넘기기는 본줄기(보스 실패 2번)가 이미 함.
+async function d1drive_cards(steps, problems, logs) {
+  const need = (cond, msg) => { if (!cond) problems.push(msg); return !!cond; };
+  const b = await cdp_launch(D1DRIVE_URL + '?seed=7', { w: 390, h: 844, preload: D1DRIVE_PRELOAD_FLOW, wait: 500 });
+  const has = (sel) => b.ev('!!document.querySelector(' + JSON.stringify(sel) + ')');
+  const cardWin = '.fsheet:not([hidden]) [data-cd-skip], .fsheet:not([hidden]) [data-cd-cancel]';
+  const waitWin = (ms) => b.until('document.querySelector(' + JSON.stringify(cardWin) + ')', ms);
+  const sheetText = () => b.ev('document.querySelector(".fsheet").innerText');
+  const noOverflow = async (what) => { const o = await b.ev('__d1t.overflow()'); need(!o.overflow, what + ': 가로 넘침 scrollWidth ' + o.scrollWidth + ' > ' + o.innerWidth + ' ' + (o.wide || []).join(',')); };
+  const visible = async (what, sels) => { const bad = await b.ev('__d1t.hidden(' + JSON.stringify(sels) + ')'); need(!bad.length, what + ': 버튼이 가려지거나 화면 밖: ' + bad.join(' / ')); };
+  const t0 = Date.now();
+  try {
+    await d1drive_page(b);
+    const r = await b.ev(`(function () {
+      var P = PROGRESS;
+      if (!P.pickQuest(P.offerQuests()[0])) return 'pickQuest 실패';
+      P.skipTutorial();
+      var c = P.commitLayout({ builds: { C6: 'den', A6: 'den', B6: 'trap', B5: 'trap', C5: 'trap' } });
+      if (!c.ok) return 'commitLayout 실패: ' + c.msg;
+      var out = P.squads().filter(function (x) { return x.floor; });
+      if (out.length < 2) return '출진 부대가 2개 미만: ' + out.length;
+      var w = P.withdrawUnit(out[0].id); if (!w.ok) return '부대 빼기 실패: ' + w.msg;
+      var ch = P.challengeBoss(); return ch.ok ? 'ok' : '보스 도전 실패: ' + ch.msg;
+    })()`);
+    if (!need(r === 'ok', '카드 시험 준비 실패: ' + r)) return;
+    await b.ev('location.hash = "#field"'); await b.reload(400); await d1drive_page(b);
+    for (let i = 0; i < 4; i++) { if ((await b.ev('document.querySelector(".bt-speed").textContent')).indexOf('×5') >= 0) break; await b.click('.bt-speed'); }
+    // 1) 첫 창
+    if (!need(await waitWin(15000), '보스 시작 뒤 카드 창이 안 뜸')) return;
+    const w1 = await sheetText();
+    need(w1.indexOf('1/2번째') >= 0 && w1.indexOf('연막 살포') >= 0 && w1.indexOf('임시 수비대') >= 0 && (await has('.fsheet [data-cd="smoke"]')) && (await has('.fsheet [data-cd="reserve"]')) && (await has('[data-cd-skip]')),
+      '첫 창에 1/2번째·연막 살포·임시 수비대·[넘기기]가 없음: ' + w1.replace(/\n/g, ' | '));
+    need(await b.ev('document.querySelectorAll(".bt-board .zc.cd-where").length === 0'), '진입 창에는 위기 위치가 없어야 함');
+    await visible('카드 창(후보)', ['[data-cd-skip]', '.bt-board', '[data-cd="reserve"]']);
+    await noOverflow('카드 창(후보)');
+    const tm1 = await b.ev('document.querySelector(".bt-time").textContent'), pt1 = await b.ev('PROGRESS.battleSave().snap.t');
+    await b.sleep(900);
+    need((await b.ev('document.querySelector(".bt-time").textContent')) === tm1, '카드 창이 떠 있는 동안 시간이 흘러감');
+    d1drive_step(steps, t0, '[카드] 첫 창(진입 1/2번째): 후보 연막·임시 수비대·[넘기기], 전투 시간 정지 ' + tm1 + ', 넘침 0');
+    // 2) 임시 수비대 -> 대상 고르기 -> 취소 -> 다시 -> 새로고침 복원
+    await b.click('[data-cd="reserve"]'); await b.sleep(250);
+    need((await has('[data-cd-cancel]')) && (await has('[data-cd-use][aria-disabled="true"]')) && (await b.ev('document.querySelectorAll(".bt-board .zc.cd-ok").length')) >= 1 && (await b.ev('document.querySelector(".bt-board").classList.contains("cd-pickmode")')),
+      '임시 수비대를 누르면 대상 고르기(창 접힘, 초록 점선 방, [취소], 꺼진 [사용])여야 함');
+    await visible('카드 창(대상 고르기)', ['[data-cd-cancel]', '[data-cd-use]', '.bt-board']);
+    await noOverflow('카드 창(대상 고르기)');
+    const boardH = await b.ev('document.querySelector(".bt-board").getBoundingClientRect().height');
+    need(boardH >= 300, '대상 고르기 중 판이 너무 작음: ' + Math.round(boardH) + 'px');
+    await b.click('[data-cd-use]'); await b.sleep(150);
+    need(await has('[data-cd-use]'), '방을 안 골랐는데 [사용]이 눌려 창이 닫힘');
+    await b.click('[data-cd-cancel]'); await b.sleep(250);
+    need((await has('[data-cd="reserve"]')) && !(await has('[data-cd-cancel]')) && (await b.ev('PROGRESS.battleSave().snap.pick.sel')) === '', '[취소] 뒤 후보 목록으로 돌아가고 저장도 sel 없음이어야 함');
+    await b.click('[data-cd="reserve"]'); await b.sleep(250);
+    need((await b.ev('PROGRESS.battleSave().snap.pick.sel')) === 'reserve', '대상 고르기 시작이 저장 지점에 안 남음');
+    await b.reload(500); await d1drive_page(b);
+    if (!need(await waitWin(5000), '새로고침 뒤 카드 창이 안 돌아옴')) return;
+    need((await has('[data-cd-cancel]')) && (await b.ev('document.querySelectorAll(".bt-board .zc.cd-ok").length')) >= 1 && (await sheetText()).indexOf('방을 골라요') >= 0, '새로고침 뒤 대상 고르는 화면부터 이어져야 함');
+    d1drive_step(steps, t0, '[카드] 임시 수비대 -> 방 고르기(초록 점선, 판 ' + Math.round(boardH) + 'px) -> [취소] -> 다시 -> 새로고침해도 대상 고르는 중');
+    // 3) 방 누름 -> 사용
+    const zr = await b.ev('document.querySelector(".bt-board .zc.cd-ok").getAttribute("data-z")');
+    await b.click('.bt-board .zc.cd-ok'); await b.sleep(200);
+    need((await has('[data-cd-use]:not([aria-disabled="true"])')) && (await b.ev('document.querySelector(".bt-board .zc.sel") !== null')), '방을 누르면 고른 방 표시와 켜진 [사용]이어야 함');
+    await b.click('[data-cd-use]'); await b.sleep(300);
+    need(!(await has('.fsheet:not([hidden])')) || !(await has(cardWin)), '[사용] 뒤 카드 창이 닫혀야 함');
+    need((await b.ev('document.querySelectorAll(".bt-mon.tmp").length')) === 3 && (await b.ev('document.querySelectorAll(".bt-tmptag").length')) === 1, '임시 수비대 부대 점 3개와 "임시" 표시가 판에 안 그려짐');
+    need((await b.ev('document.querySelector(".fld-cardnote").textContent')).indexOf('임시 수비대') >= 0, '카드 한 줄 안내에 마지막 카드가 없음');
+    await b.reload(500); await d1drive_page(b);
+    need((await b.ev('document.querySelectorAll(".bt-mon.tmp").length')) === 3 && (await b.ev('PROGRESS.battleSave().snap.cards.log.length')) >= 1, '새로고침 뒤 임시 수비대가 그대로 이어져야 함');
+    d1drive_step(steps, t0, '[카드] 방 ' + zr + ' 누름 -> [사용] -> 임시 부대 점 3개 + "임시" 표시 -> 새로고침해도 그대로');
+    // 4) 둘째 창(위기): 연막 -> 분대 위 연막 + 남은 초
+    if (!need(await waitWin(20000), '위기 카드 창이 안 뜸')) return;
+    const w2 = await sheetText();
+    need(w2.indexOf('2/2번째') >= 0 && w2.indexOf('위기') >= 0 && (await has('[data-cd="smoke"]')), '둘째 창에 2/2번째·위기·연막 살포가 없음: ' + w2.replace(/\n/g, ' | '));
+    await visible('카드 창(위기)', ['[data-cd-skip]', '.bt-board']);
+    await noOverflow('카드 창(위기)');
+    const smk = await b.ev('(function () { document.querySelector("[data-cd=\\"smoke\\"]").click(); return Array.prototype.map.call(document.querySelectorAll(".bt-smk:not([hidden])"), function (e) { return e.textContent; }); })()');
+    need(smk.length >= 1 && smk[0].indexOf('초') >= 0, '연막을 쓰면 분대 위에 연막·남은 초가 보여야 함: ' + JSON.stringify(smk));
+    need(!(await has(cardWin)), '연막 [바로 사용] 뒤 창이 닫혀야 함');
+    d1drive_step(steps, t0, '[카드] 위기 2/2번째 연막 살포 -> 분대 위 ' + smk.length + '곳 연막 ' + smk[0]);
+    // 5) 결과 창: 카드 기록 줄 (새로고침해도)
+    const t1 = Date.now(); let res = false;
+    while (Date.now() - t1 < 60000) { if (await has('.fld-result')) { res = true; break; } if (await has(cardWin)) await b.click('[data-cd-skip]'); await b.sleep(200); }
+    if (!need(res, '카드를 쓴 보스전 결과가 안 나옴')) return;
+    const txt = await b.ev('Array.prototype.map.call(document.querySelectorAll(".fld-result .rcard"), function (e) { return e.innerText.replace(/\\n/g, " "); }).join(" | ")');
+    need(txt.indexOf('임시 수비대') >= 0 && txt.indexOf('연막 살포') >= 0, '결과 창에 카드 기록(임시 수비대·연막 살포) 줄이 없음: ' + txt);
+    await visible('보스 결과(카드 기록)', ['[data-ffix], [data-fretry]', '[data-fresume]', '.bt-board']);
+    await noOverflow('보스 결과(카드 기록)');
+    await b.reload(500); await d1drive_page(b);
+    need((await b.ev('Array.prototype.map.call(document.querySelectorAll(".fld-result .rcard"), function (e) { return e.innerText; }).length')) >= 2, '새로고침 뒤에도 결과 창 카드 기록이 있어야 함');
+    d1drive_step(steps, t0, '[카드] 보스 결과 창 카드 기록: ' + txt);
+  } finally {
+    b.logs.forEach(l => logs.push('(카드 시험) ' + l));
+    await b.close();
+  }
+}
+function d1drive_step(steps, t0, s) { steps.push(s + ' [' + ((Date.now() - t0) / 1000).toFixed(1) + '초 지점]'); }
+
 async function d1drive_main() {
   const mode = process.argv[2];
   let r;
   if (mode === 'shots') r = await d1drive_shots(process.argv[3]);
-  else if (mode === 'flow') r = await d1drive_flow();
+  else if (mode === 'flow') {
+    r = await d1drive_flow();
+    if (!r.problems.length) await d1drive_cards(r.steps, r.problems, r.logs);   // 카드 한 바퀴 (본줄기가 통과했을 때만)
+  }
   else throw new Error('사용: node tools/d1_drive.js shots <폴더> | flow');
   return r;
 }

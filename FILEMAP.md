@@ -42,7 +42,7 @@
 - `tools/check_all.py` — 전체 검사 한 번에: D1 데모(지금 만드는 것) 묶음 + 옛 게임(루트 index.html·C1 시안) 묶음.
   - `start_step`, `finish_step`, `main`
 - `tools/d1_drive.js` — D1 데모(prototype/d1_demo) 화면을 헤드리스 Chrome으로 움직이는 검사 실행기: 화면 사진 찍기(shots) · 한 바퀴 진행(flow). shots.py·test_d1_flow.py가 부른다 · 앞글자 `d1drive_`
-  - `d1drive_page`, `d1drive_go`, `d1drive_setup`, `d1drive_shots`, `d1drive_flow`, `d1drive_main`, `d1drive_out`
+  - `d1drive_page`, `d1drive_go`, `d1drive_setup`, `d1drive_shots`, `d1drive_flow`, `d1drive_cards`, `d1drive_step`, `d1drive_main`, `d1drive_out`
 - `tools/filemap.py` — 파일 지도 만들기: FILEMAP.md에 파일마다 한 줄 설명과 그 안의 함수 목록을 적는다.
   - `describe`, `functions`, `main`
 - `tools/golden.py` — 정답지 검사: 정해진 씨앗으로 N턴 자동 진행한 state 요약이 tools/golden/*.json과 같은지.
