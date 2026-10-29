@@ -1266,6 +1266,8 @@ body.paneled .arena-tag { display: block; position: absolute; left: 8px; top: 8p
 .pnl.enter { animation: pnl-up var(--dur-sheet) var(--ease-out); }
 @keyframes pnl-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 body.reduce .pnl.enter, body.reduce .rsheet { animation: none; }
+/* 보스 결과의 [일반 침입 재개] = 시안대로 작은 글 링크 (카드 기록이 있어도 탭 막대에 안 가림) */
+.rsheet .fbtn.slim[data-fresume] { flex: none; align-self: center; border: 0; background: none; padding: 4px 12px; font-size: 13px; font-weight: normal; color: var(--dim); }
 .subtabs { flex: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .subtabs button { height: 36px; min-width: 0; padding: 0; border-radius: 10px; border: 0; background: var(--panel-2); color: var(--text); font-size: 13px; font-weight: 600; }
 .subtabs button.on { background: var(--accent); color: var(--accent-ink); font-weight: 800; }

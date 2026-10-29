@@ -171,6 +171,7 @@ async function d1drive_shots(outDir) {
           if (st !== 'ok') throw new Error(c.name + ': ' + st);
         }
         await d1drive_go(b, c.hash);
+        await b.sleep(800);   // 패널 위 전투 띠가 분대 쪽으로 미끄러지는 0.6초(transition)가 끝난 뒤 찍음 (사진이 매번 같게)
         const problems = [];
         if (c.expect && !(await b.ev('!!document.querySelector(' + JSON.stringify(c.expect) + ')'))) problems.push('화면에 ' + c.expect + ' 가 없음');
         const scr = await b.ev('__d1t.screen()');
